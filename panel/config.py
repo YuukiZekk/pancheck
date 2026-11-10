@@ -30,6 +30,8 @@ DEFAULTS = {
     'tv_keep_names': ['系列', '三部曲', '部曲'],          # 剧集分流时：路径含这些的视为系列电影，不分流
     # 第二期用
     'quarantine_dir': '',
+    # 首启向导是否走完（老配置：已绑过分区的视为走完）
+    'setup_done': False,
 }
 
 ZONES = [('yuanpan', '原盘区'), ('heji', '合集区'), ('remux', 'REMUX 区'), ('pack', '整夹合集区')]
@@ -61,6 +63,7 @@ def normalize(cfg):
     c['listpack_names'] = _merge_unique(BUILTIN_LISTPACK, c['listpack_names'])
     c['exclude_names'] = _merge_unique(BUILTIN_EXCLUDE, c['exclude_names'])
     c['min_video_mb'] = max(0, int(c.get('min_video_mb') or 0))
+    c['setup_done'] = bool((cfg or {}).get('setup_done')) or any(c['zones'].values())
     c['data_source'] = c.get('data_source') if c.get('data_source') in ('cache', 'scan', 'csv') else 'cache'
     c['cd2_api_name'] = str(c.get('cd2_api_name') or '115open').strip()
     c['cd2_api_user'] = str(c.get('cd2_api_user') or '').strip()

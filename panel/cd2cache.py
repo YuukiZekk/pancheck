@@ -19,7 +19,7 @@ from . import sources as S
 
 
 def find_db(cfg):
-    db = S.find_file(cfg.get('cd2_config'), 'dir_cache.sqlite')
+    db = S.find_sqlite(cfg.get('cd2_config'), 'dir_cache.sqlite', {'cached_item', 'files'})
     if not db:
         raise FileNotFoundError('在 CD2 配置目录 %r 下没找到 dir_cache.sqlite' % cfg.get('cd2_config'))
     return db
@@ -93,6 +93,39 @@ def list_dirs(cfg, vpath='/'):
     names = sorted(ch.get(base, ()))
     pre = '' if base == '/' else base
     return [{'name': n, 'path': pre + '/' + n} for n in names]
+
+
+def dir_exists(cfg, vpath):
+    """缓存里有没有这个目录（被列过，或作为某个被列过目录的上层出现过）。"""
+    ch = _children_map(cfg)
+    base = '/' + vpath.strip('/')
+    parent, _, name = base.rpartition('/')
+    return name in ch.get(parent or '/', ())
+
+
+def coverage(cfg, roots):
+    """各根下 CD2 从未打开过的目录数（判定同 zone_items：夹行有、自己的 cached_item 行没有；真空夹不算）。"""
+    db = find_db(cfg)
+    conn, _ = S.open_ro(db)
+    api_sql, api_args = _api_where(cfg)
+    out = {}
+    try:
+        for root in roots:
+            listed = {p.rstrip('/') for (p,) in conn.execute(
+                'select path from cached_item ci where ' + _under(), _under_args(root))}
+            n = nd = 0
+            for ppath, name in conn.execute(
+                    'select ci.path, f.name from files f join cached_item ci on ci.id = f.parent_id '
+                    'where f.file_type = 3 and ' + api_sql + ' and ' + _under(), api_args + _under_args(root)):
+                vp = ppath.rstrip('/') + '/' + name
+                if vp not in listed:
+                    n += 1
+                    if any(c.lower() in S.DISC_DIRS for c in vp.split('/')):
+                        nd += 1
+            out[root] = {'count': n, 'in_disc': nd}
+    finally:
+        conn.close()
+    return out
 
 
 _tops = {'key': None, 'tops': None}

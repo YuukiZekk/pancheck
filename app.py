@@ -204,6 +204,22 @@ async def put_config(request: Request):
     return {'config': c, 'fingerprint': C.fingerprint(c)}
 
 
+@app.post('/api/setup/{step}')
+async def setup_step(step: str, request: Request):
+    """向导每一步的识别验收（只读、不保存；用户点「下一步」时前端再存配置）。"""
+    from panel import setup as W
+    body = await request.json() if (await request.body()) else {}
+    c = C.load()
+    if step == 'cd2':
+        return W.check_cd2(str(body.get('cd2_config') or c['cd2_config']).strip(),
+                           dict(c, cd2_api_name=body.get('cd2_api_name') or c['cd2_api_name']))
+    if step == 'emby':
+        return W.check_emby(str(body.get('emby_data') or c['emby_data']).strip(), c)
+    if step == 'zones':
+        return W.check_zones(c)
+    raise HTTPException(404, '没有这一步')
+
+
 @app.post('/api/probe')
 def probe():
     c = C.load()

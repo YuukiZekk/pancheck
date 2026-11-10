@@ -1,5 +1,5 @@
 # sieve 筛选面板（只读：盘点 + 筛选 + 清单导出）
-# 用法：cp .env.example .env && 按你的 NAS 改路径 && docker compose up -d
+# 用法：改下面 volumes 里标出的两行路径，然后 docker compose up -d（.env 可选，只用来设口令/端口）
 # 浏览器打开 http://<NAS-IP>:8760
 services:
   sieve-panel:
@@ -18,9 +18,11 @@ services:
     volumes:
       # 面板自己的配置和筛选结果
       - ./data:/data
-      # CD2 配置目录（含 dir_cache.sqlite）：默认的数据来源，只读
-      - ${CD2_CONFIG_HOST}:/cd2-config:ro
-      # Emby 的 data 目录（含 library.db），只读
-      - ${EMBY_DATA_HOST}:/emby-data:ro
+      # ↓↓↓ 只有下面这两行要改：把 :- 后面、冒号前面那段路径改成你 NAS 上的实际路径（找法见 README）↓↓↓
+      # CD2 配置目录：装 CD2 时映射到它容器里 /Config 的那个目录。面板自己在里面找目录缓存，只读
+      - ${CD2_CONFIG_HOST:-/volume1/docker/clouddrive2/config}:/cd2-config:ro
+      # Emby 数据目录：装 Emby 时映射到它容器里 /config 的那个目录。面板自己在里面找 library.db，只读
+      - ${EMBY_DATA_HOST:-/volume1/docker/emby/config}:/emby-data:ro
+      # ↑↑↑ 其余都不用改 ↑↑↑
       # CD2 挂载目录：只有「遍历挂载目录」兜底模式才用；不填就挂一个空目录
       - ${CD2_MOUNT_HOST:-./empty}:/media/cd2:ro,rslave

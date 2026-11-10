@@ -57,6 +57,17 @@ button,input,select,textarea{font:inherit;color:inherit}
 .canvas{overflow:auto;padding:18px}
 .page{max-width:1280px;margin:0 auto}
 .hidden{display:none!important}
+.steps{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.steps span{flex:1;min-width:120px;padding:8px 12px;border-radius:10px;background:var(--chip);font-size:13px;color:var(--mut)}
+.steps span.on{background:var(--pri);color:#fff}
+.steps span.done{color:var(--ok)}
+.wz-in{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.wz-in input{flex:1;min-width:200px}
+.wz-z{display:grid;grid-template-columns:1fr auto;gap:6px 10px;align-items:center;margin:8px 0;font-size:13px;word-break:break-all}
+.guide{text-align:center;padding:42px 20px}
+.guide .big{font-size:22px}
+.idcard dd{word-break:break-all}
+.banner.warnb{background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid var(--warn)}
 /* 卡片与光效 */
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;box-shadow:var(--shadow)}
 .card h3{margin:0 0 10px;font-size:13px;color:var(--mut);font-weight:500}
@@ -71,6 +82,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .fx-beam.on{animation:beam 2.6s linear infinite}
 @keyframes beam{to{--a:360deg}}
 .grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
 .big{font-size:30px;font-weight:700;letter-spacing:-.5px;line-height:1.1}
 .mut{color:var(--mut)}.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}
 .small{font-size:12px}
@@ -149,7 +161,7 @@ textarea{min-height:64px;resize:vertical}
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.25);display:flex;align-items:flex-start;justify-content:center;padding-top:14vh;z-index:50}
 .overlay .box{width:min(560px,92vw);background:var(--card);border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.3);padding:10px}
 .overlay input{width:100%;border:0;outline:0;background:transparent;font-size:17px;padding:8px 10px}
-@media (max-width:1000px){.manifest,.inv{grid-template-columns:1fr}.ql{position:static}.grid3{grid-template-columns:1fr}}
+@media (max-width:1000px){.manifest,.inv{grid-template-columns:1fr}.ql{position:static}.grid3,.grid2{grid-template-columns:1fr}}
 @media (max-width:720px){
   .app{grid-template-columns:1fr;grid-template-rows:auto 1fr;height:auto}
   .side{flex-direction:row;flex-wrap:wrap;padding:8px;gap:2px}
@@ -196,6 +208,12 @@ textarea{min-height:64px;resize:vertical}
 
 <!-- ================= 总览 ================= -->
 <section class="page" id="p-overview">
+  <div class="card guide hidden" id="ov-guide">
+    <div class="big">还没连上数据源</div>
+    <p class="mut">只要告诉面板两个目录：CD2 配置目录、Emby 数据目录。其余自动识别，你只负责确认。</p>
+    <button class="btn pri" onclick="go('wizard')">开始设置</button>
+  </div>
+  <div id="ov-main">
   <div id="ov-banners"></div>
   <div class="grid3">
     <div class="card fx-spotlight">
@@ -221,6 +239,13 @@ textarea{min-height:64px;resize:vertical}
   <div class="card" style="margin-top:4px">
     <details><summary>分类明细（对账用）</summary><div id="ov-detail" style="margin-top:10px"></div></details>
   </div>
+  </div>
+</section>
+
+<!-- ================= 首启向导 ================= -->
+<section class="page hidden" id="p-wizard">
+  <div class="steps" id="wz-steps"></div>
+  <div class="card" id="wz-body"></div>
 </section>
 
 <!-- ================= 盘点 ================= -->
@@ -281,7 +306,12 @@ textarea{min-height:64px;resize:vertical}
 
 <!-- ================= 设置 ================= -->
 <section class="page hidden" id="p-settings">
-  <div class="stack">
+  <div class="grid2">
+    <div class="card fx-spotlight"><div class="row" style="justify-content:space-between"><h3 style="margin:0">CD2</h3><button class="btn" onclick="wizardEdit(1)">更换目录</button></div><div id="set-cd2" class="mut small" style="margin-top:8px">识别中…</div></div>
+    <div class="card fx-spotlight"><div class="row" style="justify-content:space-between"><h3 style="margin:0">Emby</h3><button class="btn" onclick="wizardEdit(2)">更换目录</button></div><div id="set-emby" class="mut small" style="margin-top:8px">识别中…</div></div>
+  </div>
+  <details class="card" style="margin-top:14px" id="adv"><summary><b>高级设置</b> <span class="mut small">数据来源模式、路径细节、保护词、体积门槛……一般不用动</span></summary>
+  <div class="stack" style="margin-top:12px">
     <div class="card">
       <h3>CD2 / Emby 路径</h3>
       <div class="form">
@@ -323,6 +353,7 @@ textarea{min-height:64px;resize:vertical}
     </div>
     <div class="card"><h3>数据源识别</h3><div id="set-probe" class="mut small">点「保存并识别数据源」。</div></div>
   </div>
+  </details>
 </section>
 
     </div>
@@ -338,7 +369,7 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const u = p => new URL(p, location.origin + location.pathname).href;   // 地址栏带 user:pw@ 时 fetch 不认相对路径
 const BUCKETS = ['可切','待定','版本型','不动','孤本','缺口','提醒','剧集分流'];
-const TITLES = {overview: ['总览', 'Overview'], inventory: ['盘点', 'Inventory'], manifest: ['清单', 'Manifest'], settings: ['设置', 'Settings']};
+const TITLES = {overview: ['总览', 'Overview'], inventory: ['盘点', 'Inventory'], manifest: ['清单', 'Manifest'], settings: ['设置', 'Settings'], wizard: ['首次设置', 'Setup']};
 let CFG = null, LB = {buckets: {}, stages: {}, classes: {}}, RES = null, PROBE = null, page = 'overview';
 let mf = {bucket: '', offset: 0, rows: [], sel: new Set(), cur: null};
 const bn = b => (LB.buckets[b] || {}).name || b;
@@ -376,14 +407,17 @@ document.addEventListener('mousemove', e => {
   el.style.setProperty('--my', (e.clientY - r.top) + 'px');
 });
 function go(p) {
-  page = p; store.set('pc.page', p);
-  document.querySelectorAll('.nav').forEach(b => b.classList.toggle('on', b.dataset.p === p));
+  if (p === 'settings' && CFG && !CFG.setup_done) p = 'wizard';      // 向导没走完前，设置入口就是向导
+  if (p === 'wizard' && WZ.step === 0) WZ = {step: 1, mode: 'first'};
+  page = p; store.set('pc.page', p === 'wizard' ? 'overview' : p);
+  document.querySelectorAll('.nav').forEach(b => b.classList.toggle('on', b.dataset.p === (p === 'wizard' ? 'settings' : p)));
   document.querySelectorAll('.page').forEach(s => s.classList.toggle('hidden', s.id !== 'p-' + p));
   $('#title').innerHTML = TITLES[p][0] + `<span>${TITLES[p][1]}</span>`;
   if (p === 'overview') loadOverview();
   if (p === 'inventory') { renderZones(); loadTree(); loadInventory(); probe(false); }
   if (p === 'manifest') { renderSeg().then(() => loadRows()); }
-  if (p === 'settings') renderProbe('#set-probe');
+  if (p === 'settings') { renderProbe('#set-probe'); probe(false).then(renderIdCards); }
+  if (p === 'wizard') renderWizard();
 }
 document.querySelectorAll('.nav').forEach(b => b.onclick = () => go(b.dataset.p));
 function toggleMenu(e) { e.stopPropagation(); $('#expmenu').classList.toggle('hidden'); }
@@ -431,12 +465,128 @@ async function saveCfg() {
 }
 function flash(m, cls) { const el = $('#cfg-msg'); el.className = 'small ' + cls; el.textContent = m; setTimeout(() => { if (el.textContent === m) el.textContent = '' }, 5000); }
 
+// ---------- 首启向导：填一页、验一页、过一页 ----------
+let WZ = {step: 0};
+const WZ_STEPS = ['连 CD2', '连 Emby', '确认分区与保护'];
+async function putCfg(c) {
+  await api('api/config', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(c)});
+  await loadCfg(); PROBE = null;
+}
+function wizardEdit(step) { WZ = {step, mode: 'edit'}; go('wizard'); }
+function wzErr(r) { return `<div class="banner bad"><b>${esc(r.error)}</b>${r.hint ? '<br>' + esc(r.hint) : ''}</div>`; }
+function renderWizard() {
+  const st = WZ.step;
+  $('#wz-steps').innerHTML = WZ.mode === 'edit' ? '' : WZ_STEPS.map((t, i) =>
+    `<span class="${i + 1 === st ? 'on' : i + 1 < st ? 'done' : ''}">${i + 1 < st ? '✓ ' : (i + 1) + ' · '}${t}</span>`).join('');
+  const b = $('#wz-body');
+  if (st === 1) {
+    b.innerHTML = `<h3>${WZ.mode === 'edit' ? '更换 CD2 配置目录' : '第 1 步 · 连 CD2'}</h3>
+      <p class="mut small">只填 CD2 的配置目录（装 CD2 时指定的数据目录）。Docker 部署时就是 compose 里挂进来的 <code>/cd2-config</code>，一般不用改。面板会自己在里面找目录缓存数据库。</p>
+      <div class="wz-in"><input type="text" id="wz-path" value="${esc(CFG.cd2_config)}" placeholder="/cd2-config"><button class="btn" onclick="wzCheck()">识别</button></div>
+      <div id="wz-res"></div><div class="row" id="wz-nav" style="margin-top:12px"></div>`;
+  } else if (st === 2) {
+    b.innerHTML = `<h3>${WZ.mode === 'edit' ? '更换 Emby 数据目录' : '第 2 步 · 连 Emby'}</h3>
+      <p class="mut small">只填 Emby 的数据目录（Emby 后台「关于」页能看到原样路径）。Docker 部署时就是 compose 里挂进来的 <code>/emby-data</code>。面板会自己找 library.db。</p>
+      <div class="wz-in"><input type="text" id="wz-path" value="${esc(CFG.emby_data)}" placeholder="/emby-data"><button class="btn" onclick="wzCheck()">识别</button></div>
+      <div id="wz-res"></div><div class="row" id="wz-nav" style="margin-top:12px"></div>`;
+  } else {
+    b.innerHTML = `<h3>第 3 步 · 确认分区与保护</h3>
+      <p class="mut small">按目录名自动猜的，逐项确认或改绑；不对的选「不用」。之后在「盘点」页的目录树里随时能改。</p>
+      <div id="wz-res" class="mut small">读取目录…</div><div class="row" id="wz-nav" style="margin-top:12px"></div>`;
+  }
+  wzCheck();
+}
+async function wzCheck() {
+  const st = WZ.step, res = $('#wz-res'), nav = $('#wz-nav');
+  const back = st > 1 && WZ.mode !== 'edit' ? `<button class="btn" onclick="WZ.step--;renderWizard()">上一步</button>` : '';
+  const cancel = WZ.mode === 'edit' ? `<button class="btn" onclick="WZ={step:0};go('settings')">取消</button>` : '';
+  if (st < 3 && !$('#wz-path').value.trim()) { res.innerHTML = '<span class="mut">填好目录后点「识别」。</span>'; nav.innerHTML = back + cancel; return; }
+  res.innerHTML = '<span class="mut">识别中…</span>'; nav.innerHTML = back + cancel;
+  let r;
+  try {
+    if (st === 1) r = await api('api/setup/cd2', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({cd2_config: $('#wz-path').value.trim(), cd2_api_name: WZ.api})});
+    else if (st === 2) r = await api('api/setup/emby', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({emby_data: $('#wz-path').value.trim()})});
+    else r = await api('api/setup/zones', {method: 'POST'});
+  } catch (e) { r = {ok: false, error: '识别时出错了。', hint: '刷新页面再试；一直这样就看容器日志。'}; }
+  WZ.r = r;
+  const nextLbl = WZ.mode === 'edit' ? '保存' : (st === 3 ? '完成，去盘点' : '下一步');
+  if (!r.ok) {
+    res.innerHTML = wzErr(r);
+    nav.innerHTML = back + cancel + (st === 2 ? `<button class="btn" onclick="wzSkipEmby()">暂不连 Emby</button><span class="mut small">不连也能用，只是少了「对比 Emby」和「正藏缺口」</span>` : '');
+    return;
+  }
+  let h = '<dl class="kv idcard">';
+  if (st === 1) {
+    WZ.api = r.api_name;
+    h += `<dt>目录缓存</dt><dd><span class="ok">✓ 找到</span> <span class="mut">${esc(r.db)}</span></dd>`;
+    h += `<dt>缓存时间</dt><dd>${fmtTime(r.time_min)} ~ ${fmtTime(r.time_max)}</dd>`;
+    h += `<dt>网盘文件</dt><dd><b>${n(r.files)}</b> 个</dd>`;
+    if (r.need_choice) h += `<dt>哪个网盘</dt><dd>${r.api_names.map(a => `<label class="row small" style="gap:6px"><input type="radio" name="wz-api" value="${esc(a.api_name)}" ${a.api_name === r.api_name ? 'checked' : ''} onchange="WZ.api=this.value;wzCheck()">${esc(a.api_name)}（${n(a.files)} 个文件）</label>`).join('')}<span class="mut">缓存里有好几个网盘，选影视所在的那个（115 一般叫 115open）</span></dd>`;
+    h += `<dt>顶层目录</dt><dd>${(r.top_dirs.length ? r.top_dirs : r.tops).map(t => `<span class="chip">${esc(t)}</span>`).join('')}</dd></dl>`;
+    h += '<p class="small">和你在 CD2 里看到的对得上，就点下一步。</p>';
+  } else if (st === 2) {
+    h += `<dt>片库</dt><dd><span class="ok">✓ 找到</span> <span class="mut">${esc(r.db)}</span></dd>`;
+    h += `<dt>电影</dt><dd><b>${n(r.movies)}</b> 部（带 TMDB 编号 ${n(r.movies_tmdb)}）<span class="jg">${esc(r.movie_rule || '')}</span></dd></dl>`;
+    const pf = r.prefix || {};
+    WZ.prefix = null;
+    h += `<div class="banner ${pf.ok ? '' : 'warnb'}" style="margin-top:10px">${esc(pf.say)}${pf.ok
+      ? `<div class="row" style="margin-top:8px"><label class="row small"><input type="radio" name="wz-pf" checked onchange="WZ.prefix=WZ.r.prefix.prefix">对，用这个</label><label class="row small"><input type="radio" name="wz-pf" onchange="WZ.prefix=null">不对，先不管</label></div>` : ''}</div>`;
+    if (pf.ok) WZ.prefix = pf.prefix;
+    h += '<p class="small">电影数和 Emby 后台对得上，就点下一步。</p>';
+  } else {
+    const opts = z => `<select class="in" style="width:auto" data-p="">${[['', '不用'], ...Object.entries(ZN)].map(([k, v]) => `<option value="${k}" ${k === z ? 'selected' : ''}>${v}</option>`).join('')}</select>`;
+    const rows = Object.entries(r.zones).flatMap(([z, ps]) => ps.map(p => [p, z]));
+    h = rows.length ? '<div class="wz-z">' + rows.map(([p, z]) => {
+      const cv = (r.coverage || {})[p];
+      return `<div>${esc(p)}${cv && cv.count ? `<br><span class="warn small">⚠ ${n(cv.count)} 个目录 CD2 还没打开过${cv.in_disc ? `（碟内 ${n(cv.in_disc)}）` : ''}，那部分不在比对范围内</span>` : ''}</div>${opts(z).replace('data-p=""', `data-p="${esc(p)}"`)}`;
+    }).join('') + '</div>' : '<div class="banner warnb">没从目录名认出像合集 / 原盘 / REMUX 的目录。点「完成」后在盘点页的目录树里手动绑定就行。</div>';
+    h += '<h3 style="margin-top:14px">保护目录（整个不看、不动）</h3>';
+    h += (r.protect_found.length ? r.protect_found.map(t => `<label class="row small" style="gap:6px"><input type="checkbox" class="wz-prot" value="${esc(t)}" checked>目录名含「${esc(t)}」的</label>`).join('')
+      : '<span class="mut small">没认出常见的保护目录（系列合集、导演合集、已刮削……）。需要的话之后在盘点页点 🔒。</span>');
+    if (r.listpack_found.length) h += `<h3 style="margin-top:14px">榜单包</h3><p class="mut small">这些按榜单包处理：留在统计里，但整包不筛（内置规则，不用勾）。</p>${r.listpack_found.map(p => `<span class="chip">${esc(p)}</span>`).join('')}`;
+  }
+  res.innerHTML = h;
+  nav.innerHTML = back + cancel + `<button class="btn pri" onclick="wzNext()">${nextLbl}</button>`;
+}
+async function wzNext() {
+  const st = WZ.step, c = JSON.parse(JSON.stringify(CFG));
+  try {
+    if (st === 1) { c.cd2_config = $('#wz-path').value.trim(); c.cd2_api_name = WZ.api || c.cd2_api_name; c.cd2_api_user = ''; c.data_source = c.data_source || 'cache'; }
+    if (st === 2) { c.emby_data = $('#wz-path').value.trim(); if (WZ.prefix != null) c.emby_prefix = WZ.prefix; }
+    if (st === 3) {
+      const z = {heji: [], yuanpan: [], remux: [], pack: []};
+      document.querySelectorAll('#wz-res select[data-p]').forEach(s => { if (s.value) z[s.value].push(s.dataset.p); });
+      for (const k in z) c.zones[k] = [...new Set([...(c.zones[k] || []), ...z[k]])];
+      document.querySelectorAll('.wz-prot:checked').forEach(i => { if (!c.protect_names.includes(i.value)) c.protect_names.push(i.value); });
+      c.setup_done = true;
+    }
+    await putCfg(c);
+  } catch (e) { $('#wz-res').insertAdjacentHTML('afterbegin', wzErr({error: '保存没成功：' + e.message})); return; }
+  if (WZ.mode === 'edit') { WZ = {step: 0}; go('settings'); return; }
+  if (st < 3) { WZ.step++; renderWizard(); return; }
+  WZ = {step: 0};
+  go('inventory');
+  runJob('inventory');
+}
+function wzSkipEmby() { WZ.step = 3; renderWizard(); }
+function renderIdCards() {
+  if (!$('#set-cd2') || !PROBE) return;
+  const k = (PROBE.cd2 || {}).cache || {}, e = PROBE.emby || {};
+  $('#set-cd2').innerHTML = k.ok ? `<dl class="kv idcard"><dt>状态</dt><dd class="ok">✓ 已识别</dd><dt>目录</dt><dd>${esc(CFG.cd2_config)}</dd>
+    <dt>缓存时间</dt><dd>${fmtTime(k.time_min)} ~ ${fmtTime(k.time_max)}</dd><dt>网盘文件</dt><dd><b>${n(k.matched_files)}</b> 个（${esc(k.api_name)}）</dd></dl>`
+    : `<div class="bad">没连上：${esc(CFG.cd2_config || '还没填目录')}</div><div class="mut">点「更换目录」重新识别。</div>`;
+  $('#set-emby').innerHTML = e.ok ? `<dl class="kv idcard"><dt>状态</dt><dd class="ok">✓ 已识别</dd><dt>目录</dt><dd>${esc(CFG.emby_data)}</dd>
+    <dt>电影</dt><dd><b>${n(e.movies)}</b> 部（带 TMDB ${n(e.movies_tmdb)}）</dd></dl>`
+    : `<div class="warn">没连上：${esc(CFG.emby_data || '还没填目录')}</div><div class="mut">不连也能用，只是少了「对比 Emby」和「正藏缺口」。</div>`;
+  $('#set-cd2').classList.remove('mut'); $('#set-emby').classList.remove('mut');
+}
+
 // ---------- 数据源识别 ----------
 async function probe(force) {
-  if (PROBE && !force) { renderProbe('#inv-probe'); return; }
+  if (PROBE && !force) { renderProbe('#inv-probe'); renderIdCards(); return; }
   ['#inv-probe', '#set-probe'].forEach(s => $(s).innerHTML = '<span class="mut">识别中…</span>');
   try { PROBE = await api('api/probe', {method: 'POST'}); } catch (e) { PROBE = {error: e.message}; }
-  renderProbe('#inv-probe'); renderProbe('#set-probe');
+  renderProbe('#inv-probe'); renderProbe('#set-probe'); renderIdCards();
 }
 function renderProbe(sel) {
   const el = $(sel);
@@ -594,6 +744,10 @@ function banners(r) {
   return h;
 }
 async function loadOverview() {
+  const fresh = CFG && !CFG.setup_done;
+  $('#ov-guide').classList.toggle('hidden', !fresh);
+  $('#ov-main').classList.toggle('hidden', fresh);
+  if (fresh) return;
   RES = await api('api/result');
   const r = RES;
   $('#ov-banners').innerHTML = banners(r);

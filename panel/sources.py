@@ -168,7 +168,10 @@ def suggest(cfg, max_depth=3, max_dirs=600):
                 break
     names = [d['name'] for d in out]
     found = [t for t in PROTECT_TEMPLATES if any(t in n for n in names)]
+    lp = [d['path'] for d in out if hit_any(d['name'], cfg['listpack_names'])][:20]
+    ex = [d['path'] for d in out if hit_any(d['name'], cfg['exclude_names'])][:20]
     return {'zones': zones, 'protect_templates': PROTECT_TEMPLATES, 'protect_found': found,
+            'listpack_found': lp, 'exclude_found': ex,
             'scanned_dirs': seen, 'truncated': seen >= max_dirs}
 
 
@@ -402,6 +405,45 @@ def find_file(root, name, maxdepth=6):
     return None
 
 
+def _has_tables(path, tables):
+    try:
+        conn = sqlite3.connect('file:' + path.replace('\\', '/').replace('?', '%3f') + '?mode=ro', uri=True)
+        try:
+            have = {r[0].lower() for r in conn.execute("select name from sqlite_master where type='table'")}
+        finally:
+            conn.close()
+        return {t.lower() for t in tables} <= have
+    except sqlite3.Error:
+        return False
+
+
+def find_sqlite(root, name, tables, maxdepth=6, max_probe=60):
+    """先按文件名找；找不到再在目录里挨个看 .sqlite/.db，带齐 tables 的就是（用户不用知道文件叫什么）。"""
+    hit = find_file(root, name, maxdepth)
+    if hit:
+        return hit
+    if not root or not os.path.isdir(root):
+        return None
+    root = os.path.abspath(root)
+    base_depth = root.rstrip(os.sep).count(os.sep)
+    n = 0
+    for dp, dns, fns in os.walk(root, onerror=lambda e: None):
+        for fn in sorted(fns):
+            if os.path.splitext(fn)[1].lower() in ('.sqlite', '.db', '.sqlite3'):
+                n += 1
+                if _has_tables(os.path.join(dp, fn), tables):
+                    return os.path.join(dp, fn)
+                if n >= max_probe:
+                    return None
+        if dp.count(os.sep) - base_depth >= maxdepth:
+            dns[:] = []
+    return None
+
+
+def find_emby_db(root):
+    return find_sqlite(root, 'library.db', {'mediaitems'})
+
+
 def open_ro(path):
     """只读打开；失败（如目录只读导致 -shm 建不了）则拷快照读副本。"""
     try:
@@ -451,7 +493,7 @@ def nominal_vh(w, h):
 
 
 def emby_items(cfg):
-    db = find_file(cfg['emby_data'], 'library.db')
+    db = find_emby_db(cfg['emby_data'])
     if not db:
         raise FileNotFoundError('在 %r 下没找到 library.db' % cfg['emby_data'])
     conn, how = open_ro(db)

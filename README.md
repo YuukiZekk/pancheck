@@ -10,24 +10,35 @@
 ```bash
 mkdir sieve-panel && cd sieve-panel
 curl -fsSLO https://raw.githubusercontent.com/YuukiZekk/pancheck/main/docker-compose.yml
-curl -fsSL https://raw.githubusercontent.com/YuukiZekk/pancheck/main/.env.example -o .env
-# 按 NAS 实际路径改 .env，然后：
+# 打开 docker-compose.yml，只改 volumes 里标出的两行路径，然后：
 docker compose up -d
 ```
 
-镜像是预构建的（`ghcr.io/yuukizekk/pancheck`，amd64 / arm64），不用在 NAS 上编译。浏览器打开 `http://<NAS-IP>:8760`。
+镜像是预构建的（`ghcr.io/yuukizekk/pancheck`，amd64 / arm64），不用在 NAS 上编译。浏览器打开 `http://<NAS-IP>:8760`，第一次打开会进入三步向导。
 
-`.env` 里要改的：
+**要改的只有两行**（`docker-compose.yml` 的 volumes 里有箭头标出）：
 
-| 变量 | 含义 |
+| 哪一行 | 填什么 |
 |---|---|
-| `CD2_CONFIG_HOST` | **必填**。CloudDrive2 的配置目录（里面有 `dir_cache.sqlite`，默认数据来源） |
-| `EMBY_DATA_HOST` | **必填**。Emby 的 data 目录（里面有 `library.db`） |
-| `PANEL_PASSWORD` | 访问口令，**强烈建议设置**；留空则局域网里谁都能打开。浏览器弹窗用户名随便填 |
-| `CD2_MOUNT_HOST` | 可选。CloudDrive2 在宿主机上的挂载根，只有「遍历挂载目录」兜底模式才用 |
-| `PANEL_PORT` | 端口，默认 8760 |
+| CD2 配置目录 | 装 CloudDrive2 时，映射到它容器里 `/Config` 的那个宿主机目录 |
+| Emby 数据目录 | 装 Emby 时，映射到它容器里 `/config` 的那个宿主机目录 |
 
-外部目录全部 **只读** 挂进容器；面板自己的配置和结果在 `./data`。
+**怎么找这两个路径：**
+
+- **CD2**：打开你当初装 CD2 的 compose 文件或容器设置，看「存储空间 / 卷」里哪个宿主机目录对应容器的 `/Config`，就是它。
+- **Emby**：Emby 后台 → 设置 → 关于（或「日志」页）能看到程序数据路径（容器里一般是 `/config`）；再到 Emby 容器的卷设置里，看哪个宿主机目录对应它。
+- **群晖（DSM）**：Container Manager → 容器 → 选中 CD2 / Emby → 详情 →「存储空间设置」，左列就是宿主机路径，常见形如 `/volume1/docker/clouddrive2/config`、`/volume1/docker/emby/config`。
+- **飞牛（fnOS）**：Docker → 容器 → 选中 CD2 / Emby →「存储位置」，常见形如 `/vol1/1000/docker/clouddrive2/config`。
+
+（截图稍后补。）目录填到上一级也行，面板会自己往里找数据库；填错了向导会用人话告诉你差什么。
+
+`.env` 是可选的，只在想设访问口令（`PANEL_PASSWORD`，**建议设**）或改端口时才建：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/YuukiZekk/pancheck/main/.env.example -o .env
+```
+
+外部目录全部 **只读** 挂进容器；面板自己的配置和结果在 `./data`。老版本的 `.env`（`CD2_CONFIG_HOST` / `EMBY_DATA_HOST`）照旧生效。
 
 常用管理：
 
@@ -39,8 +50,13 @@ docker compose down                          # 停止
 
 ## 使用流程
 
-1. **设置**：路径已按 compose 预填。填「Emby 里看到的 CD2 挂载根」（Emby 库里文件路径的前缀，默认 `/CloudNAS/CloudDrive`），点「识别数据源」：核对缓存时间、115 的文件数、Emby 电影数和「路径在前缀下」的数量。
-2. **盘点**：点「生成建议」按目录名自动给出分区和常见保护目录，勾选采用；也可以在目录树里手动点「合集 / 原盘 / REMUX / 整夹合集 / 保护」。然后「盘点」。
+1. **首次设置向导**（三步，每步识别完给出验收数字，对得上再点下一步）：
+   - 连 CD2：自动找目录缓存，显示缓存时间、115 文件数、顶层目录；缓存里有多个网盘时才让你选。
+   - 连 Emby：自动找 library.db，显示电影数；自动推断 Emby 路径前缀并请你确认（strm 镜像库会说明不用设）。
+   - 确认分区与保护：按目录名建议合集 / 原盘 / REMUX / 整夹合集，按模板预勾保护目录，显示缓存覆盖情况。完成后直接进盘点。
+
+   之后「设置」页顶部是 CD2 / Emby 两张已识别卡（可「更换目录」），其余参数在「高级设置」里，一般不用动。
+2. **盘点**：分区随时可以在目录树里改（下拉框绑定分区、🔒 加保护），然后「盘点」。
 3. **筛选**：点「开始筛选」，跑错了可以随时点「停止」。结果分成下面几类：
 
    | 分类 | 是什么 | 能不能动 |
