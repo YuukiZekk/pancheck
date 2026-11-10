@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>sieve 筛选面板</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#1d2330;--mut:#6b7385;--line:#e3e6ec;--pri:#2f6fed;--ok:#1f9d55;--warn:#c27c0e;--bad:#d64545;--chip:#eef2fb}
+@media (prefers-color-scheme:dark){:root{--bg:#14171c;--card:#1c2027;--fg:#e4e7ee;--mut:#8b93a5;--line:#2c323c;--pri:#5b8cff;--chip:#252b36}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+header{display:flex;align-items:center;gap:16px;padding:10px 20px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5;flex-wrap:wrap}
+header h1{font-size:16px;margin:0}
+nav{display:flex;gap:4px;flex-wrap:wrap}
+nav button{background:none;border:0;padding:6px 12px;border-radius:6px;color:var(--mut);cursor:pointer;font-size:14px}
+nav button.on{background:var(--chip);color:var(--pri);font-weight:600}
+#jobbar{margin-left:auto;font-size:12px;color:var(--mut)}
+main{max-width:1200px;margin:0 auto;padding:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px}
+.card h2{font-size:15px;margin:0 0 12px}
+label.f{display:block;margin:8px 0 4px;color:var(--mut);font-size:12px}
+input[type=text],input[type=number],select,textarea{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);font:inherit}
+textarea{min-height:56px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+button.b{padding:7px 14px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer;font:inherit}
+button.p{background:var(--pri);border-color:var(--pri);color:#fff}
+button.b:disabled{opacity:.5;cursor:not-allowed}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.mut{color:var(--mut)}.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+.chip{display:inline-flex;align-items:center;gap:4px;background:var(--chip);border-radius:12px;padding:2px 10px;margin:2px;font-size:12px}
+.chip b{cursor:pointer;color:var(--mut);font-weight:400}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+.tile{border:1px solid var(--line);border-radius:8px;padding:10px;cursor:pointer}
+.tile .n{font-size:22px;font-weight:600}
+.tile.cut{border-color:var(--ok)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--mut);font-weight:500;white-space:nowrap}
+td.path{word-break:break-all;font-family:ui-monospace,Consolas,monospace;font-size:12px}
+td.num{text-align:right;white-space:nowrap}
+.tree ul{list-style:none;margin:0;padding-left:18px}
+.tree li{margin:2px 0}
+.tree .node{display:flex;gap:6px;align-items:center}
+.tree .node span.nm{cursor:pointer}
+.tree .node button{font-size:11px;padding:1px 6px;border-radius:4px;border:1px solid var(--line);background:none;color:var(--mut);cursor:pointer}
+.tree .node button:hover{color:var(--pri);border-color:var(--pri)}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--pri)}
+pre{white-space:pre-wrap;font-size:12px;max-height:260px;overflow:auto;background:var(--bg);padding:8px;border-radius:6px}
+.banner{padding:10px 12px;border-radius:8px;margin-bottom:12px}
+.banner.bad{background:rgba(214,69,69,.1);border:1px solid var(--bad)}
+.banner.warn{background:rgba(194,124,14,.1);border:1px solid var(--warn)}
+.hidden{display:none}
+#probe-out,#inv-out pre,.banner pre{word-break:break-all;overflow-wrap:anywhere}
+.grid>div{min-width:0}
+@media (max-width:640px){main{padding:10px}th:nth-child(5),td:nth-child(5){display:none}}
+</style>
+</head>
+<body>
+<header>
+  <h1>sieve 筛选面板</h1>
+  <nav id="nav">
+    <button data-p="settings">设置</button>
+    <button data-p="inventory">盘点</button>
+    <button data-p="sieve">筛选</button>
+    <button data-p="list">清单</button>
+    <button data-p="exec">执行</button>
+  </nav>
+  <div id="jobbar"></div>
+</header>
+<main>
+
+<!-- 设置 -->
+<section id="p-settings" class="hidden">
+  <div class="card">
+    <h2>数据源</h2>
+    <div class="grid">
+      <div>
+        <label class="f">数据来源</label>
+        <select id="c-data_source">
+          <option value="scan">扫描 CD2 挂载目录 + 读 Emby 库</option>
+          <option value="csv">使用现成 CSV（五张表）</option>
+        </select>
+      </div>
+      <div><label class="f">CD2 挂载根目录（容器内路径）</label><input type="text" id="c-cd2_mount" placeholder="/media/cd2"></div>
+      <div><label class="f">CD2 配置目录（找 dir_cache.sqlite）</label><input type="text" id="c-cd2_config" placeholder="/cd2-config"></div>
+      <div><label class="f">Emby data 目录（找 library.db）</label><input type="text" id="c-emby_data" placeholder="/emby-data"></div>
+      <div><label class="f">Emby 里看到的 CD2 挂载根</label><input type="text" id="c-emby_prefix" placeholder="/CloudNAS/CloudDrive"></div>
+      <div><label class="f">CSV 目录（CSV 模式）</label><input type="text" id="c-csv_dir"></div>
+      <div><label class="f">忽略小于此体积的视频（MB）</label><input type="number" id="c-min_video_mb" min="0"></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="b p" onclick="saveCfg()">保存</button>
+      <button class="b" onclick="probe()">识别数据源</button>
+      <span id="cfg-msg" class="mut"></span>
+    </div>
+    <div id="probe-out"></div>
+  </div>
+  <div class="card">
+    <h2>保护与排除</h2>
+    <p class="mut" style="margin-top:0">一行一个目录名关键字。保护区与榜单包在扫描时整枝剪掉；若可切里仍有命中，整批拒绝。内置词不可删除。</p>
+    <div class="grid">
+      <div><label class="f">保护区目录名（系列合集 / 出品公司 / 已刮削…）</label><textarea id="c-protect_names"></textarea></div>
+      <div><label class="f">榜单包（不筛不拆）</label><textarea id="c-listpack_names"></textarea></div>
+      <div><label class="f">排除包（第二/三刀与纵向不碰）</label><textarea id="c-exclude_names"></textarea></div>
+      <div><label class="f">剧集分流时视为系列电影的关键字</label><textarea id="c-tv_keep_names"></textarea></div>
+    </div>
+    <label class="row" style="margin-top:8px"><input type="checkbox" id="confirm-rm"> 我确认移除保护（仅在删掉已有保护目录名时需要）</label>
+  </div>
+  <div class="card">
+    <h2>排查区（第二期执行用）</h2>
+    <label class="f">搬运目标目录（同盘 rename，只搬不删）</label>
+    <input type="text" id="c-quarantine_dir" placeholder="/115/99-排查区">
+  </div>
+</section>
+
+<!-- 盘点 -->
+<section id="p-inventory" class="hidden">
+  <div class="card">
+    <h2>分区映射</h2>
+    <div class="grid">
+      <div><b>合集区</b><div id="z-heji"></div></div>
+      <div><b>原盘区</b><div id="z-yuanpan"></div></div>
+      <div><b>REMUX 区</b> <span class="mut">（第一期只盘点）</span><div id="z-remux"></div></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="b p" onclick="saveCfg()">保存映射</button>
+      <button class="b" onclick="runJob('inventory')">盘点</button>
+      <span class="mut">在下方目录树点按钮把目录加入分区，点「保护」把目录名加入保护区。</span>
+    </div>
+  </div>
+  <div class="card">
+    <h2>目录树 <span class="mut" style="font-weight:400">（CD2 挂载）</span></h2>
+    <div id="tree" class="tree"></div>
+  </div>
+  <div class="card">
+    <h2>库存概览</h2>
+    <div id="inv-out" class="mut">还没有盘点结果。</div>
+  </div>
+</section>
+
+<!-- 筛选 -->
+<section id="p-sieve" class="hidden">
+  <div class="card">
+    <div class="row">
+      <button class="b p" id="btn-run" onclick="runJob('full')">一键跑筛</button>
+      <span class="mut">三刀 + 纵向 + 剧集分流。REMUX 三分分层 / REMUX×原盘交叉 / 原盘精确重复 尚未收编进内核。</span>
+    </div>
+    <div id="job-detail" style="margin-top:12px"></div>
+  </div>
+  <div id="res-out"></div>
+</section>
+
+<!-- 清单 -->
+<section id="p-list" class="hidden">
+  <div class="card">
+    <div class="row">
+      <select id="f-bucket" style="width:auto"></select>
+      <select id="f-stage" style="width:auto">
+        <option value="">全部来源</option><option>第一刀</option><option>第二刀</option><option>第三刀</option><option>纵向</option><option>剧集分流</option>
+      </select>
+      <input type="text" id="f-q" placeholder="搜索路径 / 保留份" style="flex:1;min-width:180px">
+      <select id="f-sort" style="width:auto"><option value="gb">按体积</option><option value="path">按路径</option></select>
+      <button class="b" onclick="exportCsv()">导出当前筛选 CSV</button>
+      <button class="b" onclick="location.href='api/export.zip'">导出全部（zip）</button>
+    </div>
+    <div id="list-meta" class="mut" style="margin-top:8px"></div>
+  </div>
+  <div class="card" style="padding:0;overflow:auto">
+    <table>
+      <thead><tr><th>来源</th><th>判定</th><th>候选路径</th><th class="num">GB</th><th>保留份 / 参照</th><th>依据</th></tr></thead>
+      <tbody id="list-body"></tbody>
+    </table>
+  </div>
+  <div class="row" style="justify-content:center"><button class="b" id="more" onclick="loadRows(true)">加载更多</button></div>
+</section>
+
+<!-- 执行 -->
+<section id="p-exec" class="hidden">
+  <div class="card">
+    <h2>执行（第二期）</h2>
+    <p>第一期只读：不批准、不搬运、不删除。第二期上线后流程为：清单里勾选「可切」→ 批准 → 同盘搬进排查区 → 自动对账 → 可凭日志回滚。</p>
+    <p class="mut">删除永远由你自己在网盘里做；待定与孤本没有执行入口。</p>
+  </div>
+</section>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const BUCKETS = ['可切','待定','版本型','不动','孤本','提醒','剧集分流'];
+let CFG = null, page = 'settings', listOffset = 0;
+// 相对路径 → 不带账号口令的绝对地址（地址栏里带 user:pw@ 时 fetch 会拒绝相对路径）；保留子路径以兼容反代
+const u = p => new URL(p, location.origin + location.pathname).href;
+
+async function api(path, opt = {}) {
+  const r = await fetch(u(path), opt);
+  if (!r.ok) {
+    let m = r.status + '';
+    try { m = (await r.json()).detail || m } catch (e) {}
+    throw new Error(m);
+  }
+  const t = await r.text();
+  return t ? JSON.parse(t) : null;
+}
+
+function show(p) {
+  page = p;
+  try { localStorage.setItem('sieve.page', p) } catch (e) {}
+  document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.dataset.p === p));
+  document.querySelectorAll('main > section').forEach(s => s.classList.toggle('hidden', s.id !== 'p-' + p));
+  if (p === 'inventory') { renderZones(); loadTree(); loadInventory(); }
+  if (p === 'sieve') loadResult();
+  if (p === 'list') { listOffset = 0; loadRows(); }
+}
+document.querySelectorAll('#nav button').forEach(b => b.onclick = () => show(b.dataset.p));
+
+// ---------- 设置 ----------
+const LISTS = ['protect_names','listpack_names','exclude_names','tv_keep_names'];
+const SCALARS = ['data_source','cd2_mount','cd2_config','emby_data','emby_prefix','csv_dir','min_video_mb','quarantine_dir'];
+async function loadCfg() {
+  const r = await api('api/config');
+  CFG = r.config;
+  SCALARS.forEach(k => $('#c-' + k).value = CFG[k] ?? '');
+  LISTS.forEach(k => $('#c-' + k).value = (CFG[k] || []).join('\n'));
+}
+function readForm() {
+  const c = JSON.parse(JSON.stringify(CFG));
+  SCALARS.forEach(k => c[k] = $('#c-' + k).value.trim());
+  c.min_video_mb = parseInt(c.min_video_mb || '0', 10);
+  LISTS.forEach(k => c[k] = $('#c-' + k).value.split('\n').map(s => s.trim()).filter(Boolean));
+  c.confirm_remove_protect = $('#confirm-rm').checked;
+  return c;
+}
+async function saveCfg() {
+  try {
+    const r = await api('api/config', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(readForm())});
+    CFG = r.config; await loadCfg();
+    $('#confirm-rm').checked = false;
+    flash('已保存（配置指纹 ' + r.fingerprint + '）', 'ok');
+    if (page === 'inventory') renderZones();
+  } catch (e) { flash(e.message, 'bad') }
+}
+function flash(m, cls) { const el = $('#cfg-msg'); el.className = cls; el.textContent = m; setTimeout(() => { if (el.textContent === m) el.textContent = '' }, 6000); }
+
+async function probe() {
+  $('#probe-out').innerHTML = '<p class="mut">识别中…</p>';
+  try {
+    const r = await api('api/probe', {method: 'POST'});
+    const c = r.cd2, e = r.emby;
+    let h = '<div class="grid" style="margin-top:12px"><div><b>CloudDrive2</b><br>';
+    h += c.mount_ok ? `<span class="ok">挂载目录可读</span>：${esc(c.mount)}<br><span class="mut">顶层：${esc((c.mount_top || []).join('、'))}</span>` : `<span class="bad">挂载目录不可读</span>：${esc(c.mount)}`;
+    h += '<br>' + (c.dir_cache ? `dir_cache.sqlite：${esc(c.dir_cache)}（${esc(c.open_mode || '')}）<br><span class="mut">表：${esc(Object.entries(c.tables || {}).map(([k, v]) => k + ' ' + v).join('，'))}</span>` : '<span class="warn">未找到 dir_cache.sqlite</span>（不影响扫描，仅作识别回显）');
+    if (c.error) h += `<br><span class="bad">${esc(c.error)}</span>`;
+    h += '</div><div><b>Emby</b><br>';
+    if (e.ok) {
+      h += `library.db：${esc(e.db)}（${esc(e.open_mode)}，表 ${esc(e.table)}）<br>条目 ${e.items}，判为电影 ${e.movies}（带 TMDB ${e.movies_tmdb}，带分辨率 ${e.movies_res}）<br>`;
+      h += `路径在前缀 <code>${esc(CFG.emby_prefix)}</code> 下：<b class="${e.under_prefix ? 'ok' : 'bad'}">${e.under_prefix}</b>`;
+      h += `<br><span class="mut">样例路径：${esc((e.sample_paths || []).join(' ｜ '))}</span>`;
+      if (!e.type_is_str) h += '<br><span class="warn">库里 type 列不是文本，电影按「非剧集、非文件夹」推断，请核对数量。</span>';
+    } else h += `<span class="bad">${esc(e.error)}</span>`;
+    h += '</div></div><p class="mut">核对规模和电影数是否和你的库对得上，再去「盘点」页指定分区。</p>';
+    $('#probe-out').innerHTML = h;
+  } catch (e) { $('#probe-out').innerHTML = `<p class="bad">${esc(e.message)}</p>` }
+}
+
+// ---------- 盘点 ----------
+function renderZones() {
+  ['heji','yuanpan','remux'].forEach(z => {
+    $('#z-' + z).innerHTML = (CFG.zones[z] || []).map((p, i) => `<span class="chip">${esc(p)} <b onclick="rmZone('${z}',${i})">×</b></span>`).join('') || '<span class="mut">未指定</span>';
+  });
+}
+function rmZone(z, i) { CFG.zones[z].splice(i, 1); renderZones(); }
+function addZone(z, p) {
+  for (const k of ['heji','yuanpan','remux']) if (CFG.zones[k].includes(p)) { alert('已在' + {heji:'合集区',yuanpan:'原盘区',remux:'REMUX 区'}[k]); return; }
+  CFG.zones[z].push(p); renderZones();
+}
+function addProtect(name) {
+  if (!CFG.protect_names.includes(name)) CFG.protect_names.push(name);
+  $('#c-protect_names').value = CFG.protect_names.join('\n');
+  alert('已把「' + name + '」加入保护区目录名，记得点保存。');
+}
+async function loadTree() {
+  const root = $('#tree');
+  root.innerHTML = '<ul></ul>';
+  await expand(root.firstChild, '/');
+}
+async function expand(ul, path) {
+  ul.innerHTML = '<li class="mut">加载中…</li>';
+  try {
+    const r = await api('api/tree?path=' + encodeURIComponent(path));
+    ul.innerHTML = '';
+    if (!r.dirs.length) ul.innerHTML = '<li class="mut">（无子目录）</li>';
+    r.dirs.forEach(d => {
+      const li = document.createElement('li');
+      li.innerHTML = `<div class="node"><span class="nm">▸ ${esc(d.name)}</span>
+        <button data-z="heji">合集</button><button data-z="yuanpan">原盘</button><button data-z="remux">REMUX</button><button data-z="protect">保护</button></div><ul class="hidden"></ul>`;
+      const sub = li.querySelector('ul'), nm = li.querySelector('.nm');
+      nm.onclick = async () => {
+        const open = sub.classList.toggle('hidden') === false;
+        nm.textContent = (open ? '▾ ' : '▸ ') + d.name;
+        if (open && !sub.dataset.loaded) { sub.dataset.loaded = 1; await expand(sub, d.path); }
+      };
+      li.querySelectorAll('button').forEach(b => b.onclick = () => b.dataset.z === 'protect' ? addProtect(d.name) : addZone(b.dataset.z, d.path));
+      ul.appendChild(li);
+    });
+  } catch (e) { ul.innerHTML = `<li class="bad">${esc(e.message)}（先在设置页填 CD2 挂载目录并保存）</li>` }
+}
+async function loadInventory() {
+  const r = await api('api/inventory');
+  if (!r) return;
+  const s = r.stats || {};
+  let h = `<p class="mut">来自 ${esc(r.run_id)}${r.stale ? ' <span class="warn">（配置已改，建议重新盘点）</span>' : ''}</p><div class="tiles">`;
+  [['heji','合集区'],['yuanpan','原盘区'],['remux','REMUX 区']].forEach(([k, n]) => {
+    const v = s[k] || {count: 0, gb: 0};
+    h += `<div class="tile"><div class="mut">${n}</div><div class="n">${v.count}</div><div class="mut">${fmtGB(v.gb)}</div></div>`;
+  });
+  if (s.emby) h += `<div class="tile"><div class="mut">Emby 电影</div><div class="n">${s.emby.movies}</div><div class="mut">路径对上 ${s.emby.matched_paths}</div></div>`;
+  h += '</div>';
+  if (s.heji_packs && s.heji_packs.length) {
+    h += '<h3 style="font-size:14px;margin:16px 0 6px">合集区大包（前 40）</h3><table><tr><th>大包</th><th class="num">片数</th><th class="num">体积</th></tr>';
+    s.heji_packs.forEach(p => h += `<tr><td>${esc(p.name)}</td><td class="num">${p.count}</td><td class="num">${fmtGB(p.gb)}</td></tr>`);
+    h += '</table>';
+  }
+  if (r.error_count) h += `<p class="warn">扫描中有 ${r.error_count} 条读取错误：</p><pre>${esc((r.errors || []).join('\n'))}</pre>`;
+  $('#inv-out').innerHTML = h;
+  $('#inv-out').classList.remove('mut');
+}
+function fmtGB(g) { g = +g || 0; return g >= 1024 ? (g / 1024).toFixed(2) + ' TB' : g.toFixed(1) + ' GB'; }
+
+// ---------- 跑筛 ----------
+async function runJob(mode) {
+  try {
+    if (page === 'inventory') await saveCfg();
+    await api('api/run/' + mode, {method: 'POST'});
+    poll();
+  } catch (e) { alert(e.message) }
+}
+let polling = false;
+async function poll() {
+  if (polling) return; polling = true;
+  try {
+    while (true) {
+      const j = await api('api/job');
+      renderJob(j);
+      if (!j.running) { if (j.run_id) { if (page === 'inventory') loadInventory(); if (page === 'sieve') loadResult(); } break; }
+      await new Promise(r => setTimeout(r, 1200));
+    }
+  } finally { polling = false }
+}
+function renderJob(j) {
+  $('#jobbar').innerHTML = j.running ? `⏳ ${esc(j.msg)} (${j.pct || 0}%)` : (j.run_id ? `${j.exit === 0 ? '✓' : '✗'} ${esc(j.msg)}` : '');
+  $('#btn-run').disabled = !!j.running;
+  if (!j.run_id) return;
+  $('#job-detail').innerHTML = `<div class="bar"><i style="width:${j.pct || 0}%"></i></div><p class="${j.exit && j.exit !== 0 ? 'bad' : 'mut'}">${esc(j.msg)} <a href="api/log?run_id=${encodeURIComponent(j.run_id)}" target="_blank">日志</a></p>` +
+    (j.exit && j.exit !== 0 && j.tail ? `<pre>${esc(j.tail.join('\n'))}</pre>` : '');
+}
+async function loadResult() {
+  const r = await api('api/result');
+  if (!r) { $('#res-out').innerHTML = '<div class="card mut">还没有跑筛结果。</div>'; return; }
+  let h = '';
+  if (r.rejected) h += `<div class="banner bad"><b>整批拒绝：</b>可切里有 ${r.protect_violations.length} 条落在保护区/榜单包，可切类不可导出。先修正配置再重跑。<pre>${esc(r.protect_violations.slice(0, 20).join('\n'))}</pre></div>`;
+  if (r.stale) h += '<div class="banner warn"><b>这份清单已作废：</b>跑完之后配置改过了，可切类不可导出，请重跑。</div>';
+  h += `<div class="card"><h2>结果总览 <span class="mut" style="font-weight:400">${esc(r.run_id)} · 盘点总量 ${fmtGB(r.total_gb)}</span></h2><div class="tiles">`;
+  BUCKETS.forEach(b => {
+    const v = r.summary[b] || {count: 0, gb: 0};
+    const pct = r.total_gb ? (v.gb / r.total_gb * 100).toFixed(1) + '%' : '';
+    h += `<div class="tile ${b === '可切' ? 'cut' : ''}" onclick="gotoList('${b}')"><div class="mut">${b}</div><div class="n">${v.count}</div><div class="mut">${fmtGB(v.gb)} ${pct}</div></div>`;
+  });
+  h += `</div><p class="mut">第二刀剧集塌缩守卫挂起 ${r.held_stage2} 条；第三刀人口 ${r.stage3_population}。</p></div>`;
+  h += '<div class="card"><h2>分刀明细</h2><table><tr><th>分类</th><th>来源</th><th>判定</th><th class="num">条数</th><th class="num">体积</th></tr>';
+  r.detail.forEach(d => h += `<tr style="cursor:pointer" onclick="gotoList('${d.bucket}','${d.stage}')"><td>${d.bucket}</td><td>${d.stage}</td><td>${esc(d.cls)}</td><td class="num">${d.count}</td><td class="num">${fmtGB(d.gb)}</td></tr>`);
+  h += '</table></div>';
+  if (r.error_count) h += `<div class="card"><p class="warn">数据准备阶段有 ${r.error_count} 条警告：</p><pre>${esc(r.errors.join('\n'))}</pre></div>`;
+  $('#res-out').innerHTML = h;
+}
+function gotoList(b, s) { $('#f-bucket').value = b || ''; $('#f-stage').value = s || ''; show('list'); }
+
+// ---------- 清单 ----------
+$('#f-bucket').innerHTML = '<option value="">全部分类</option>' + BUCKETS.map(b => `<option>${b}</option>`).join('');
+let qTimer;
+['#f-bucket','#f-stage','#f-sort'].forEach(s => $(s).onchange = () => { listOffset = 0; loadRows(); });
+$('#f-q').oninput = () => { clearTimeout(qTimer); qTimer = setTimeout(() => { listOffset = 0; loadRows(); }, 300); };
+function qs() {
+  return new URLSearchParams({bucket: $('#f-bucket').value, stage: $('#f-stage').value, q: $('#f-q').value, sort: $('#f-sort').value}).toString();
+}
+async function loadRows(more) {
+  if (!more) listOffset = 0;
+  const r = await api('api/rows?' + qs() + '&offset=' + listOffset + '&limit=200');
+  const body = $('#list-body');
+  const html = r.rows.map(x => `<tr><td>${esc(x.stage)}</td><td>${esc(x.bucket)}·${esc(x.cls)}</td><td class="path">${esc(x.path)}</td><td class="num">${x.gb}</td><td class="path">${esc(x.keep)}</td><td>${esc(x.basis)}</td></tr>`).join('');
+  if (more) body.insertAdjacentHTML('beforeend', html); else body.innerHTML = html || '<tr><td colspan="6" class="mut">没有结果</td></tr>';
+  listOffset += r.rows.length;
+  $('#list-meta').textContent = `共 ${r.total} 条，${fmtGB(r.gb)}，已显示 ${listOffset}`;
+  $('#more').classList.toggle('hidden', listOffset >= r.total);
+}
+async function exportCsv() {
+  const r = await fetch(u('api/export?' + qs()));
+  if (!r.ok) { try { alert((await r.json()).detail) } catch (e) { alert(r.status) } return; }
+  const blob = await r.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'sieve_' + ($('#f-bucket').value || 'all') + '.csv';
+  a.click();
+}
+
+// ---------- 启动 ----------
+(async () => {
+  await loadCfg();
+  let p = 'settings';
+  try { p = localStorage.getItem('sieve.page') || p } catch (e) {}
+  show(p);
+  const j = await api('api/job');
+  renderJob(j);
+  if (j.running) poll();
+})();
+</script>
+</body>
+</html>
