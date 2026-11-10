@@ -51,8 +51,23 @@ def tv_split(cfg, files):
         if keep:
             continue
         out.append(row('剧集分流', '剧集夹', '剧集分流', folder, sum(f[1] for f in fs),
-                       basis='%d 个文件中 %d 个带集号' % (len(fs), len(eps)), zone=zone))
+                       basis='%d 个文件中 %d 个带集号；夹内条目若也在刀口清单里，优先按分流处理'
+                             % (len(fs), len(eps)), zone=zone))
     return out
+
+
+def dir_parts(path):
+    """路径的目录组件（去掉最后的文件名/片夹名段）。"""
+    return [p for p in path.split('/')[:-1] if p]
+
+
+def guard_hit(path, names):
+    """保护守卫：只在目录组件里找保护词，文件名里的简介字样（如「豆瓣9.1分」）不算。"""
+    for part in dir_parts(path):
+        n = sources.hit_any(part, names)
+        if n:
+            return n
+    return None
 
 
 def main(mode, run_dir):
@@ -107,12 +122,8 @@ def main(mode, run_dir):
         rows.append(row('纵向', cls, '提醒', path, g, basis=note))
 
     emit('tvsplit', '剧集分流', 85)
-    tv = tv_split(cfg, files)
-    # 剧集不进排查：落在剧集夹里的条目从其他各类里拿掉，只在「剧集分流」里出现
-    tv_dirs = tuple(t['path'] + '/' for t in tv)
-    if tv_dirs:
-        rows = [r for r in rows if not r['path'].startswith(tv_dirs)]
-    rows += tv
+    # 第一期分流只出清单、不摘刀口行：刀口各桶保持内核原样（已对金标准），两边互斥留到第二期执行时处理
+    rows += tv_split(cfg, files)
 
     # 用户追加的排除词：第二/三刀与纵向不碰（与内核内置 EXCL 同口径）
     extra_ex = [x for x in cfg['exclude_names'] if x not in C.BUILTIN_EXCLUDE]
@@ -122,7 +133,7 @@ def main(mode, run_dir):
 
     # 红线：可切里只要有一条落在保护区/榜单包，整批拒绝（不部分放行）
     guard = sources.blocked_names(cfg)
-    viol = [r['path'] for r in rows if r['bucket'] == '可切' and sources.hit_any(r['path'], guard)]
+    viol = [r['path'] for r in rows if r['bucket'] == '可切' and guard_hit(r['path'], guard)]
     result['protect_violations'] = viol[:200]
     result['rejected'] = bool(viol)
     result['held_stage2'] = held

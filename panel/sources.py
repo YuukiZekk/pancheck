@@ -246,6 +246,7 @@ def probe_cd2(cfg):
 
 
 TMDB_RE = re.compile(r'tmdb=(\d+)', re.I)
+VIDEO_STREAM_TYPE = 2      # Emby 流表 StreamType：视频流
 
 
 def nominal_vh(w, h):
@@ -276,13 +277,17 @@ def emby_items(cfg):
             raise RuntimeError('%s 表没有 Path 列' % table)
         rows = [dict(r) for r in conn.execute('select %s from "%s" where %s is not null' %
                                               (','.join('"%s"' % s for s in sel), table, cols['path']))]
-        # 新版 Emby 分辨率可能只在 MediaStreams 里
-        if 'mediastreams' in tabs and 'id' in cols:
-            mcols = {r[1].lower(): r[1] for r in conn.execute('pragma table_info("%s")' % tabs['mediastreams'])}
+        # 新版 Emby 分辨率可能只在流表里：4.8.x 叫 MediaStreams2，更早叫 MediaStreams
+        stab = tabs.get('mediastreams2') or tabs.get('mediastreams')
+        if stab and 'id' in cols:
+            mcols = {r[1].lower(): r[1] for r in conn.execute('pragma table_info("%s")' % stab)}
             if {'itemid', 'width', 'height'} <= set(mcols):
                 res = {}
-                for r in conn.execute('select "%s","%s","%s" from "%s" where "%s">0' % (
-                        mcols['itemid'], mcols['width'], mcols['height'], tabs['mediastreams'], mcols['width'])):
+                where = '"%s">0' % mcols['width']
+                if 'streamtype' in mcols:           # 只取视频流，别混进音频/字幕
+                    where += ' and "%s"=%d' % (mcols['streamtype'], VIDEO_STREAM_TYPE)
+                for r in conn.execute('select "%s","%s","%s" from "%s" where %s' % (
+                        mcols['itemid'], mcols['width'], mcols['height'], stab, where)):
                     if r[0] not in res or r[1] > res[r[0]][0]:
                         res[r[0]] = (r[1], r[2])
                 for it in rows:
