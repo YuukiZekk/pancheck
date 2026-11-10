@@ -7,3 +7,6 @@ sieve-panel.zip
 .claude/
 *-数据包.zip
 *数据包/
+moves*.txt
+moves*.tsv
+build16*.py
