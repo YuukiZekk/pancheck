@@ -16,7 +16,7 @@ from . import sources
 sys.path.insert(0, str(C.APP_DIR))
 
 # 分类 → 面板桶。只有「可切」将来能被批准；待定/孤本永远没有执行入口。
-BUCKETS = ['可切', '待定', '版本型', '不动', '孤本', '提醒', '剧集分流']
+BUCKETS = ['可切', '待定', '版本型', '不动', '孤本', '缺口', '提醒', '剧集分流']
 S1 = {'A': '可切', 'B': '可切', 'C': '版本型', 'D1': '待定', 'D2': '待定', 'E': '不动'}
 S1_DESC = {'A': '画质低于原盘区那份', 'B': '和原盘区那份画质相同', 'C': '一份是 DIY/特效字幕版，两份都留',
            'D1': '原盘区那份画质未知', 'D2': '这份画质未知', 'E': '这份比原盘区那份画质更高'}
@@ -116,7 +116,8 @@ def main(mode, run_dir):
     emit('vertical', '对比 Emby 片库', 75)
     cut_all = cut1 | {r[1] for r in s2A} | {r[1] for r in s3A}
     for cls, path, g, note in sieve.vertical(cut_all, emby_tmdb, emby_title):
-        rows.append(row('纵向', cls, '提醒', path, g, basis=L.plain_basis(note)))
+        # 「库内无此片」单列为正藏缺口（只改面板分类，内核判定与条数不变）
+        rows.append(row('纵向', cls, '缺口' if cls == '入库提醒' else '提醒', path, g, basis=L.plain_basis(note)))
 
     emit('tvsplit', '识别混入的剧集', 85)
     # 第一期分流只出清单、不摘刀口行：刀口各桶保持内核原样（已对金标准），两边互斥留到第二期执行时处理

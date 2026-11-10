@@ -337,7 +337,7 @@ textarea{min-height:64px;resize:vertical}
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const u = p => new URL(p, location.origin + location.pathname).href;   // 地址栏带 user:pw@ 时 fetch 不认相对路径
-const BUCKETS = ['可切','待定','版本型','不动','孤本','提醒','剧集分流'];
+const BUCKETS = ['可切','待定','版本型','不动','孤本','缺口','提醒','剧集分流'];
 const TITLES = {overview: ['总览', 'Overview'], inventory: ['盘点', 'Inventory'], manifest: ['清单', 'Manifest'], settings: ['设置', 'Settings']};
 let CFG = null, LB = {buckets: {}, stages: {}, classes: {}}, RES = null, PROBE = null, page = 'overview';
 let mf = {bucket: '', offset: 0, rows: [], sel: new Set(), cur: null};
@@ -608,7 +608,7 @@ async function loadOverview() {
     ['可切', fmtGB(S('可切').gb), n(S('可切').count) + ' 条'],
     ['待定', n(S('待定').count), fmtGB(S('待定').gb)],
     ['孤本', n(S('孤本').count), fmtGB(S('孤本').gb)],
-    ['提醒', n(S('提醒').count), '与 Emby 对比'],
+    ['缺口', n(S('缺口').count), fmtGB(S('缺口').gb) + ' · Emby 里没有'],
   ].map(([b, big, sub]) => `<div onclick="openBucket('${b}')"><div class="small">${esc(bn(b))}${jg(b)}</div><div class="n ${b === '可切' ? 'ok' : ''}">${big}</div><div class="mut small">${sub}</div></div>`).join('');
   $('#ov-done').textContent = '3/6';
   $('#ov-sieves').innerHTML = SIEVES.map(sieveCard).join('');
@@ -624,7 +624,7 @@ function sieveCard(s) {
   const cut = ds.filter(d => d.bucket === '可切').reduce((a, d) => a + d.gb, 0);
   const base = s.bucket === '剧集分流' ? ds.reduce((a, d) => a + d.gb, 0) : cut;
   const heji = ((RES.stats || {}).heji || {}).gb || 0;
-  const big = s.bucket === '提醒' ? n(cnt) + ' 条提醒' : s.bucket === '剧集分流' ? fmtGB(base) : fmtGB(cut) + ' 可释放';
+  const big = s.bucket === '提醒' ? n(ds.filter(d => d.bucket === '缺口').reduce((a, d) => a + d.count, 0)) + ' 条缺口' : s.bucket === '剧集分流' ? fmtGB(base) : fmtGB(cut) + ' 可释放';
   const pct = s.bucket === '提醒' ? 100 : (heji ? Math.min(100, base / heji * 100) : 0);
   return `<div class="card fx-spotlight sieve" onclick="openBucket('${s.bucket}')"><div class="t">${esc(s.name)}${jg(s.sub)}</div>
     <div class="big" style="font-size:22px">${big}</div><div class="prog"><i style="width:${pct}%"></i></div><div class="mut small">${n(cnt)} 条</div></div>`;
