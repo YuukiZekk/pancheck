@@ -15,6 +15,21 @@ from . import config as C
 VIDEO_EXT = {'.iso', '.mkv', '.mp4', '.m2ts', '.ts', '.avi', '.wmv', '.mov', '.rmvb', '.flv'}
 DISC_DIRS = {'bdmv', 'video_ts'}
 GB = 1024 ** 3
+# 不计入的其他视频格式：只用来统计「被体积/格式门槛挡掉的文件」，帮对账定位人口差
+OTHER_VIDEO_EXT = {'.mpg', '.mpeg', '.vob', '.m4v', '.webm', '.f4v', '.divx', '.3gp', '.rm', '.asf', '.mts', '.m2t', '.dat'}
+# 提取层分集口径 = 手工流程 heji_film.py 原文：只认 SxxExx 与「第N集」，只看文件名
+# （内核 sieve.EP 更宽，还认 EP01/第N话，那是判定层「疑似剧集」用的，不拿来分人口）
+SPLIT_EP = re.compile(r'(?i)(s\d{1,2}e\d{1,3}|第\s*\d+\s*集)')
+TMDB_TAG = re.compile(r'tmdb(?:id)?[=:\-]?(\d{3,7})', re.I)
+
+
+def drop_note(drops, zone, vp, size, minb):
+    """记一笔被门槛挡掉的视频文件（体积太小 / 不在计入格式里）。"""
+    ext = os.path.splitext(vp)[1].lower()
+    if ext in VIDEO_EXT and size < minb:
+        drops[zone]['small'] += 1
+    elif ext in OTHER_VIDEO_EXT:
+        drops[zone]['ext' + ext] += 1
 
 
 # ---------------- 路径换算 ----------------
@@ -168,7 +183,7 @@ def dir_size(real):
     return tot
 
 
-def walk_zone(cfg, vroot, errors, progress=None):
+def walk_zone(cfg, vroot, errors, progress=None, drops=None):
     """遍历一个分区，产出 ('disc', 虚拟夹路径, 字节) / ('file', 虚拟文件路径, 字节)。
     这里不按名字剪枝：保护判定要先认出单片夹，统一在 scan_inputs 里用 protect_hit 过滤。"""
     minb = cfg['min_video_mb'] * 1024 * 1024
@@ -187,7 +202,10 @@ def walk_zone(cfg, vroot, errors, progress=None):
             dns[:] = []
             continue
         for fn in sorted(fns):
-            if os.path.splitext(fn)[1].lower() not in VIDEO_EXT:
+            ext = os.path.splitext(fn)[1].lower()
+            if ext not in VIDEO_EXT:
+                if drops is not None and ext in OTHER_VIDEO_EXT:
+                    drops['ext' + ext] += 1
                 continue
             try:
                 size = os.path.getsize(os.path.join(dp, fn))
@@ -196,6 +214,8 @@ def walk_zone(cfg, vroot, errors, progress=None):
                 continue
             if size >= minb:
                 yield 'file', to_virtual(cfg, os.path.join(dp, fn)), size
+            elif drops is not None:
+                drops['small'] += 1
 
 
 def gb(b):
@@ -213,19 +233,23 @@ def scan_inputs(cfg, workdir, progress):
         # 主路：读 CD2 自己的目录缓存，不向网盘发请求
         from . import cd2cache
         raw, stats['source'] = cd2cache.zone_items(cfg, progress, errors)
+        drops = stats['source'].pop('drops', {})
     else:
         # 兜底：遍历 CD2 挂载目录（大库很慢，且每个目录都会经 CD2 向网盘发请求）
-        raw = {}
+        raw, drops = {}, {}
         for zone, label in (('yuanpan', '原盘区'), ('heji', '合集区'), ('remux', 'REMUX 区')):
-            raw[zone] = []
+            raw[zone], drops[zone] = [], Counter()
             for root in cfg['zones'][zone]:
                 progress('扫描%s %s' % (label, root))
-                raw[zone] += [(root, kind, vp, size) for kind, vp, size in walk_zone(cfg, root, errors, progress)]
+                raw[zone] += [(root, kind, vp, size) for kind, vp, size in walk_zone(cfg, root, errors, progress, drops[zone])]
         stats['source'] = {'kind': 'scan'}
+    stats['dropped'] = {z: dict(c) for z, c in drops.items() if c}
     unit_dirs = film_unit_dirs([it[2] for z in raw for it in raw[z]])
-    blocked = blocked_names(cfg)
+    # 提取层只剔保护区。榜单包留在人口里（与金标准同口径），由内核判定层整包不筛，守卫兜底整批拒绝
+    blocked = list(cfg['protect_names'])
     skipped = Counter()
     skipped_bytes = 0
+    lp_n, lp_bytes = 0, 0
     for z in raw:
         kept = []
         for it in raw[z]:
@@ -235,9 +259,13 @@ def scan_inputs(cfg, workdir, progress):
                 skipped_bytes += it[3]
             else:
                 kept.append(it)
+                if z == 'heji' and protect_hit(it[2], cfg['listpack_names'], unit_dirs):
+                    lp_n += 1
+                    lp_bytes += it[3]
         raw[z] = kept
     stats['protected_skipped'] = dict(skipped)
     stats['protected_gb'] = round(skipped_bytes / GB, 1)
+    stats['listpack_kept'] = {'count': lp_n, 'gb': round(lp_bytes / GB, 1)}
 
     # 原盘区 → yuanpan_units.csv / yuanpan_files.csv
     units, yfiles = [], []
@@ -256,15 +284,14 @@ def scan_inputs(cfg, workdir, progress):
     _write(workdir, 'yuanpan_files.csv', ['path', 'GB'], yfiles, 'utf-8')
 
     # 合集区 → heji_films.csv（大包 = 分区根下第一级目录）
-    # 带集号的文件（内核 EP 口径）在提取层就分出去，归「混入的剧集」，不进电影人口——与手工流程一致
-    import sieve
+    # 带集号的文件（手工 heji_film.py 口径：SxxExx / 第N集，只看文件名）在提取层分出去，归「混入的剧集」
     heji, ep_n, ep_bytes = [], 0, 0
     for root, kind, vp, size in raw['heji']:
         rel = vp[len(root):].strip('/').split('/')
         top = rel[0] if len(rel) > 1 else root.rsplit('/', 1)[-1]
         name = vp.rsplit('/', 1)[-1]
         form = 'ISO' if kind == 'disc' else os.path.splitext(name)[1][1:].upper()
-        if kind == 'file' and sieve.EP.search(name):
+        if kind == 'file' and SPLIT_EP.search(name):
             files.append(('tv', vp, gb(size), form))
             ep_n += 1
             ep_bytes += size
@@ -490,10 +517,9 @@ def path_prefixes(items, depth=3, top=4):
 
 
 def tmdb_of_path(vp):
-    """从路径里取 TMDB 编号：先看文件名，再由近到远看各级目录名（如「片名 (2011) {tmdb-9364}」）。"""
-    import sieve
+    """从路径里取 TMDB 编号：先看文件名，再由近到远看各级目录名（{tmdb-9364} / {tmdbid-9364} 都认）。"""
     for comp in reversed(vp.strip('/').split('/')):
-        m = sieve.TMDB2.search(comp)
+        m = TMDB_TAG.search(comp)
         if m:
             return m.group(1)
     return ''

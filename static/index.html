@@ -550,6 +550,10 @@ async function loadInventory() {
   if (s.heji_episodes) h += `<dt>分出的剧集</dt><dd>${n(s.heji_episodes.count)} 个文件 · ${fmtGB(s.heji_episodes.gb)}</dd>`;
   const sk = Object.entries(s.protected_skipped || {});
   if (sk.length) h += `<dt>保护剔除</dt><dd>${sk.map(([k, v]) => esc(k) + ' ' + n(v)).join('，')}${s.protected_gb ? ' · ' + fmtGB(s.protected_gb) : ''}</dd>`;
+  if (s.listpack_kept && s.listpack_kept.count) h += `<dt>榜单包</dt><dd>${n(s.listpack_kept.count)} 条 · ${fmtGB(s.listpack_kept.gb)}<span class="jg">留在合集人口里，判定时整包不筛</span></dd>`;
+  const dh = (s.dropped || {}).heji || {};
+  const dk = Object.entries(dh);
+  if (dk.length) h += `<dt>合集区未计入</dt><dd>${dk.map(([k, v]) => (k === 'small' ? '小于体积门槛' : k.slice(3) + ' 格式') + ' ' + n(v)).join('，')}<span class="jg">体积门槛在设置里改；这些格式目前不计入</span></dd>`;
   if (em.movies !== undefined) {
     h += `<dt>Emby 电影</dt><dd>${n(em.movies)} 部${em.movie_rule ? `<span class="jg">${esc(em.movie_rule)}</span>` : ''}</dd>`;
     const hit = (em.matched_paths || 0) + (em.matched_tmdb || 0);

@@ -128,10 +128,16 @@ def main(mode, run_dir):
         rows = [r for r in rows if not (r['stage'] in ('第二刀', '第三刀', '纵向')
                                         and sources.hit_any(r['path'], extra_ex))]
 
-    # 红线：可切里只要有一条落在保护区/榜单包，整批拒绝（不部分放行）
-    guard = sources.blocked_names(cfg)
     # 与扫描剪枝同一口径：只看目录组件，单片夹夹名与文件名里的简介字样不算
     unit_dirs = sources.film_unit_dirs([f[1] for f in files])
+
+    # 用户追加的榜单包名（内核不认识）：榜单包留在人口里，但任何一刀的结论都不出
+    extra_lp = [x for x in cfg['listpack_names'] if x not in C.BUILTIN_LISTPACK]
+    if extra_lp:
+        rows = [r for r in rows if r['stage'] == '剧集分流' or not sources.protect_hit(r['path'], extra_lp, unit_dirs)]
+
+    # 红线：可切里只要有一条落在保护区/榜单包，整批拒绝（不部分放行）
+    guard = sources.blocked_names(cfg)
     viol = [r['path'] for r in rows if r['bucket'] == '可切' and sources.protect_hit(r['path'], guard, unit_dirs)]
     result['protect_violations'] = viol[:200]
     result['rejected'] = bool(viol)

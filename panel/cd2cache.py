@@ -162,10 +162,10 @@ def zone_items(cfg, progress, errors):
     conn, how = S.open_ro(db)
     minb = cfg['min_video_mb'] * 1024 * 1024
     api_sql, api_args = _api_where(cfg)
-    raw, tmins, tmaxs, rows_read = {}, [], [], 0
+    raw, tmins, tmaxs, rows_read, drops = {}, [], [], 0, {}
     try:
         for zone, label in (('yuanpan', '原盘区'), ('heji', '合集区'), ('remux', 'REMUX 区')):
-            raw[zone] = []
+            raw[zone], drops[zone] = [], S.Counter()
             for root in cfg['zones'][zone]:
                 progress('从缓存读取%s %s' % (label, root))
                 tmin, tmax, nd = conn.execute(
@@ -205,13 +205,15 @@ def zone_items(cfg, progress, errors):
                         disc_size[disc] += size
                     elif os.path.splitext(vp)[1].lower() in S.VIDEO_EXT and size >= minb:
                         items.append((_walk_key(vp, False), 'file', vp, size))
+                    else:
+                        S.drop_note(drops, zone, vp, size, minb)
                 for d in tops:
                     items.append((_walk_key(d, True), 'disc', d, disc_size.get(d, 0)))
                 items.sort(key=lambda x: x[0])
                 raw[zone] += [(root, kind, vp, size) for _, kind, vp, size in items]
     finally:
         conn.close()
-    meta = {'kind': 'cache', 'db': db, 'open_mode': how, 'rows_read': rows_read,
+    meta = {'kind': 'cache', 'db': db, 'open_mode': how, 'rows_read': rows_read, 'drops': drops,
             'time_min': min(tmins) if tmins else None, 'time_max': max(tmaxs) if tmaxs else None,
             'api_name': api_args[0], 'api_user': cfg.get('cd2_api_user') or ''}
     return raw, meta
