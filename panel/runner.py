@@ -62,13 +62,14 @@ def main(mode, run_dir):
     cfg = C.load()
     fp = C.fingerprint(cfg)
     t0 = time.time()
-    emit('prepare', '准备数据（%s 模式）' % ('扫描' if cfg['data_source'] == 'scan' else 'CSV'), 2)
+    emit('prepare', '准备数据（%s）' % {'cache': '读 CD2 目录缓存', 'scan': '遍历挂载目录', 'csv': '读现成 CSV'}[cfg['data_source']], 2)
     os.chdir(run_dir)
     if cfg['data_source'] == 'csv':
         stats, files, errors = sources.csv_inputs(cfg, run_dir, lambda m: emit('prepare', m))
     else:
         stats, files, errors = sources.scan_inputs(cfg, run_dir, lambda m: emit('prepare', m))
     result = {'mode': mode, 'fingerprint': fp, 'started': t0, 'stats': stats, 'errors': errors[:200],
+              'source': stats.get('source') or {'kind': cfg['data_source']},
               'error_count': len(errors)}
     if mode == 'inventory':
         result['finished'] = time.time()

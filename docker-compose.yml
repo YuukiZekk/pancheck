@@ -1,10 +1,9 @@
-# sieve 筛选面板（第一期：只读盘点 + 跑筛 + 清单导出）
-# 用法：cp .env.example .env && 改路径 && docker compose up -d --build
+# sieve 筛选面板（只读：盘点 + 筛选 + 清单导出）
+# 用法：cp .env.example .env && 按你的 NAS 改路径 && docker compose up -d
 # 浏览器打开 http://<NAS-IP>:8760
 services:
   sieve-panel:
-    build: .
-    image: sieve-panel:latest
+    image: ghcr.io/yuukizekk/pancheck:latest     # 预构建镜像（amd64/arm64）；想用本地代码自己构建，见 README
     container_name: sieve-panel
     restart: unless-stopped
     ports:
@@ -12,14 +11,16 @@ services:
     environment:
       - TZ=Asia/Shanghai
       - PANEL_PASSWORD=${PANEL_PASSWORD:-}
-      # 以下是面板「设置」页的默认值，对应下面挂进容器的路径
-      - CD2_MOUNT=/media/cd2
+      # 「设置」页的默认值，对应下面挂进容器的路径
       - CD2_CONFIG=/cd2-config
       - EMBY_DATA=/emby-data
+      - CD2_MOUNT=/media/cd2
     volumes:
-      # 面板自己的配置、跑筛结果、CSV 都在这里
+      # 面板自己的配置和筛选结果
       - ./data:/data
-      # 第一期全部只读挂载；rslave 让 CD2 的 FUSE 挂载在容器里可见
-      - ${CD2_MOUNT_HOST}:/media/cd2:ro,rslave
-      - ${CD2_CONFIG_HOST:-./empty}:/cd2-config:ro
+      # CD2 配置目录（含 dir_cache.sqlite）：默认的数据来源，只读
+      - ${CD2_CONFIG_HOST}:/cd2-config:ro
+      # Emby 的 data 目录（含 library.db），只读
       - ${EMBY_DATA_HOST}:/emby-data:ro
+      # CD2 挂载目录：只有「遍历挂载目录」兜底模式才用；不填就挂一个空目录
+      - ${CD2_MOUNT_HOST:-./empty}:/media/cd2:ro,rslave

@@ -113,13 +113,22 @@ PROTECT_TEMPLATES = ['系列合集', '系列电影', '出品公司', '导演合�
                      '漫威', 'DC', '皮克斯', '迪士尼', '吉卜力', '宫崎骏', '收藏']
 
 
+def dir_lister(cfg):
+    """目录树来源：缓存模式读 dir_cache（零请求），其余模式列挂载目录。"""
+    if cfg.get('data_source') == 'cache':
+        from . import cd2cache
+        return cd2cache.list_dirs
+    return list_dirs
+
+
 def suggest(cfg, max_depth=3, max_dirs=600):
     """只按目录名猜，只列目录（不 stat 文件），层数和数量都设上限，避免向网盘发大量请求。"""
+    lister = dir_lister(cfg)
     seen, queue, out = 0, [('/', 0)], []
     while queue and seen < max_dirs:
         path, depth = queue.pop(0)
         try:
-            dirs = list_dirs(cfg, path)
+            dirs = lister(cfg, path)
         except OSError:
             continue
         for d in dirs:
@@ -127,6 +136,11 @@ def suggest(cfg, max_depth=3, max_dirs=600):
             out.append(d)
             if depth + 1 < max_depth:
                 queue.append((d['path'], depth + 1))
+    if cfg.get('data_source') == 'cache':
+        # 缓存里可能混着别的网盘，只对目标网盘所在的顶层目录给分区建议
+        from . import cd2cache
+        tops = cd2cache.api_tops(cfg)
+        out = [d for d in out if d['path'].strip('/').split('/', 1)[0] in tops]
     zones = {z: [] for z in ZONE_HINTS}
     for d in out:
         low = d['name'].lower()
@@ -194,13 +208,20 @@ def scan_inputs(cfg, workdir, progress):
     files = []                     # [(zone, vpath, gb, form)]
     stats = {}
 
-    # 先全量遍历三个分区，再按统一口径剔除保护区 / 榜单包
-    raw = {}
-    for zone, label in (('yuanpan', '原盘区'), ('heji', '合集区'), ('remux', 'REMUX 区')):
-        raw[zone] = []
-        for root in cfg['zones'][zone]:
-            progress('扫描%s %s' % (label, root))
-            raw[zone] += [(root, kind, vp, size) for kind, vp, size in walk_zone(cfg, root, errors, progress)]
+    # 先拿到三个分区的全部条目，再按统一口径剔除保护区 / 榜单包
+    if cfg['data_source'] == 'cache':
+        # 主路：读 CD2 自己的目录缓存，不向网盘发请求
+        from . import cd2cache
+        raw, stats['source'] = cd2cache.zone_items(cfg, progress, errors)
+    else:
+        # 兜底：遍历 CD2 挂载目录（大库很慢，且每个目录都会经 CD2 向网盘发请求）
+        raw = {}
+        for zone, label in (('yuanpan', '原盘区'), ('heji', '合集区'), ('remux', 'REMUX 区')):
+            raw[zone] = []
+            for root in cfg['zones'][zone]:
+                progress('扫描%s %s' % (label, root))
+                raw[zone] += [(root, kind, vp, size) for kind, vp, size in walk_zone(cfg, root, errors, progress)]
+        stats['source'] = {'kind': 'scan'}
     unit_dirs = film_unit_dirs([it[2] for z in raw for it in raw[z]])
     blocked = blocked_names(cfg)
     skipped = Counter()
@@ -332,19 +353,13 @@ def probe_cd2(cfg):
             out['mount_top'] = [d['name'] for d in list_dirs(cfg, '/')][:30]
         except OSError as e:
             out['mount_error'] = str(e)
-    db = find_file(cfg['cd2_config'], 'dir_cache.sqlite')
-    out['dir_cache'] = db
-    if db:
-        try:
-            conn, how = open_ro(db)
-            with conn:
-                tabs = [r[0] for r in conn.execute("select name from sqlite_master where type='table'")]
-                out['tables'] = {t: conn.execute('select count(*) from "%s"' % t.replace('"', '""')).fetchone()[0]
-                                 for t in tabs[:20]}
-            conn.close()
-            out['open_mode'] = how
-        except Exception as e:
-            out['error'] = str(e)
+    from . import cd2cache
+    try:
+        out['cache'] = cd2cache.probe(cfg)
+    except FileNotFoundError as e:
+        out['cache'] = {'ok': False, 'missing': True, 'error': str(e)}
+    except Exception as e:
+        out['cache'] = {'ok': False, 'error': '%s: %s' % (type(e).__name__, e)}
     return out
 
 

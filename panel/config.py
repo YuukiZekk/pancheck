@@ -11,7 +11,9 @@ RUNS_DIR = DATA_DIR / 'runs'
 
 DEFAULTS = {
     # 数据源
-    'data_source': 'scan',                      # scan=扫 CD2 挂载目录 + 读 Emby 库；csv=用现成五张 CSV
+    'data_source': 'cache',                     # cache=读 CD2 目录缓存（默认，零网盘请求）；scan=遍历挂载目录（兜底）；csv=现成五张 CSV
+    'cd2_api_name': '115open',                  # 缓存里按网盘过滤（115 = 115open）
+    'cd2_api_user': '',                         # 同一网盘多个账号时填账号标识；留空=该网盘全部账号
     'cd2_mount': os.environ.get('CD2_MOUNT', ''),       # CD2 挂载根（面板里的虚拟路径 "/" 对应这里）
     'cd2_config': os.environ.get('CD2_CONFIG', ''),     # CD2 配置目录（找 dir_cache.sqlite，只用于识别回显）
     'emby_data': os.environ.get('EMBY_DATA', ''),       # Emby data 目录（找 library.db）
@@ -56,7 +58,9 @@ def normalize(cfg):
     c['listpack_names'] = _merge_unique(BUILTIN_LISTPACK, c['listpack_names'])
     c['exclude_names'] = _merge_unique(BUILTIN_EXCLUDE, c['exclude_names'])
     c['min_video_mb'] = max(0, int(c.get('min_video_mb') or 0))
-    c['data_source'] = 'csv' if c.get('data_source') == 'csv' else 'scan'
+    c['data_source'] = c.get('data_source') if c.get('data_source') in ('cache', 'scan', 'csv') else 'cache'
+    c['cd2_api_name'] = str(c.get('cd2_api_name') or '115open').strip()
+    c['cd2_api_user'] = str(c.get('cd2_api_user') or '').strip()
     return c
 
 
@@ -80,7 +84,7 @@ def save(cfg):
 
 def fingerprint(cfg):
     """影响判定的配置指纹：变了旧清单即作废。"""
-    keys = ('data_source', 'cd2_mount', 'emby_data', 'emby_prefix', 'csv_dir', 'min_video_mb', 'zones',
+    keys = ('data_source', 'cd2_mount', 'cd2_config', 'cd2_api_name', 'cd2_api_user', 'emby_data', 'emby_prefix', 'csv_dir', 'min_video_mb', 'zones',
             'protect_names', 'listpack_names', 'exclude_names', 'tv_keep_names')
     blob = json.dumps({k: cfg.get(k) for k in keys}, ensure_ascii=False, sort_keys=True)
     return hashlib.sha1(blob.encode('utf-8')).hexdigest()[:12]

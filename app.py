@@ -213,7 +213,8 @@ def probe():
 @app.get('/api/tree')
 def tree(path: str = '/'):
     try:
-        return {'path': path, 'dirs': sources.list_dirs(C.load(), path)}
+        c = C.load()
+        return {'path': path, 'dirs': sources.dir_lister(c)(c, path)}
     except OSError as e:
         raise HTTPException(400, str(e))
 
@@ -223,7 +224,7 @@ def run(mode: str):
     if mode not in ('inventory', 'full'):
         raise HTTPException(404)
     c = C.load()
-    if c['data_source'] == 'scan' and not any(c['zones'][z] for z in ('heji', 'yuanpan')):
+    if c['data_source'] != 'csv' and not any(c['zones'][z] for z in ('heji', 'yuanpan')):
         raise HTTPException(400, '先在「盘点」页至少指定一个合集区或原盘区目录')
     return JOB.start(mode)
 

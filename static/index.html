@@ -69,7 +69,6 @@ button.stop{border-color:var(--bad);color:var(--bad)}
     <button data-p="inventory">盘点</button>
     <button data-p="sieve">筛选</button>
     <button data-p="list">清单</button>
-    <button data-p="exec">执行</button>
   </nav>
   <div id="jobbar"></div>
 </header>
@@ -86,12 +85,15 @@ button.stop{border-color:var(--bad);color:var(--bad)}
       <div>
         <label class="f">数据来源</label>
         <select id="c-data_source">
-          <option value="scan">扫描 CD2 挂载目录 + 读 Emby 库</option>
-          <option value="csv">使用现成 CSV（五张表）</option>
+          <option value="cache">读 CD2 目录缓存（推荐：快，不向网盘发请求）</option>
+          <option value="scan">遍历 CD2 挂载目录（兜底：大库很慢，会向网盘发大量请求）</option>
+          <option value="csv">使用现成 CSV（五张表，用于对账）</option>
         </select>
       </div>
-      <div><label class="f">CD2 挂载根目录（容器内路径）</label><input type="text" id="c-cd2_mount" placeholder="/media/cd2"></div>
       <div><label class="f">CD2 配置目录（找 dir_cache.sqlite）</label><input type="text" id="c-cd2_config" placeholder="/cd2-config"></div>
+      <div><label class="f">缓存里的网盘标识（115 是 115open）</label><input type="text" id="c-cd2_api_name" placeholder="115open"></div>
+      <div><label class="f">网盘账号标识（同一网盘多个账号时才填）</label><input type="text" id="c-cd2_api_user" placeholder="留空 = 该网盘全部账号"></div>
+      <div><label class="f">CD2 挂载根目录（仅「遍历挂载目录」模式用）</label><input type="text" id="c-cd2_mount" placeholder="/media/cd2"></div>
       <div><label class="f">Emby data 目录（找 library.db）</label><input type="text" id="c-emby_data" placeholder="/emby-data"></div>
       <div><label class="f">Emby 里看到的 CD2 挂载根</label><input type="text" id="c-emby_prefix" placeholder="/CloudNAS/CloudDrive"></div>
       <div><label class="f">CSV 目录（CSV 模式）</label><input type="text" id="c-csv_dir"></div>
@@ -144,7 +146,7 @@ button.stop{border-color:var(--bad);color:var(--bad)}
     <div id="suggest-out"></div>
   </div>
   <div class="card">
-    <h2>目录树 <span class="mut" style="font-weight:400">（CD2 挂载）</span></h2>
+    <h2>目录树 <span class="mut" style="font-weight:400" id="tree-src"></span></h2>
     <div id="tree" class="tree"></div>
   </div>
   <div class="card">
@@ -191,14 +193,7 @@ button.stop{border-color:var(--bad);color:var(--bad)}
   <div class="row" style="justify-content:center"><button class="b" id="more" onclick="loadRows(true)">加载更多</button></div>
 </section>
 
-<!-- 执行 -->
-<section id="p-exec" class="hidden">
-  <div class="card">
-    <h2>执行（第二期）</h2>
-    <p>当前版本只读：不批准、不搬运、不删除。后续版本的流程是：在清单里勾选「可清理」的条目 → 批准 → 同盘搬进排查区 → 自动对账 → 可凭日志一键搬回。</p>
-    <p class="mut">删除永远由你自己在网盘里做；「需人工确认」和「唯一副本」永远不能被批准搬走。</p>
-  </div>
-</section>
+
 </main>
 
 <script>
@@ -242,7 +237,7 @@ document.querySelectorAll('#nav button').forEach(b => b.onclick = () => show(b.d
 
 // ---------- 设置 ----------
 const LISTS = ['protect_names','listpack_names','exclude_names','tv_keep_names'];
-const SCALARS = ['data_source','cd2_mount','cd2_config','emby_data','emby_prefix','csv_dir','min_video_mb','quarantine_dir'];
+const SCALARS = ['data_source','cd2_mount','cd2_config','cd2_api_name','cd2_api_user','emby_data','emby_prefix','csv_dir','min_video_mb','quarantine_dir'];
 async function loadCfg() {
   const r = await api('api/config');
   CFG = r.config;
@@ -275,9 +270,18 @@ async function probe() {
     const r = await api('api/probe', {method: 'POST'});
     const c = r.cd2, e = r.emby;
     let h = '<div class="grid" style="margin-top:12px"><div><b>CloudDrive2</b><br>';
-    h += c.mount_ok ? `<span class="ok">挂载目录可读</span>：${esc(c.mount)}<br><span class="mut">顶层：${esc((c.mount_top || []).join('、'))}</span>` : `<span class="bad">挂载目录不可读</span>：${esc(c.mount)}`;
-    h += '<br>' + (c.dir_cache ? `dir_cache.sqlite：${esc(c.dir_cache)}（${esc(c.open_mode || '')}）<br><span class="mut">表：${esc(Object.entries(c.tables || {}).map(([k, v]) => k + ' ' + v).join('，'))}</span>` : '<span class="warn">未找到 dir_cache.sqlite</span>（不影响扫描，仅作识别回显）');
-    if (c.error) h += `<br><span class="bad">${esc(c.error)}</span>`;
+    h += c.mount_ok ? `<span class="ok">挂载目录可读</span>：${esc(c.mount)}` : `<span class="${CFG.data_source === 'scan' ? 'bad' : 'mut'}">挂载目录不可读：${esc(c.mount || '未填')}${CFG.data_source === 'scan' ? '' : '（当前模式用不到）'}</span>`;
+    const k = c.cache || {};
+    if (k.ok) {
+      h += `<br><span class="ok">目录缓存可读</span>：${esc(k.db)}（${esc(k.open_mode)}，结构版本 ${esc(k.schema_version ?? '?')}）`;
+      h += `<br>缓存了 ${k.cached_folders} 个文件夹，缓存时间 ${fmtTime(k.time_min)} ~ ${fmtTime(k.time_max)}`;
+      h += `<br>按「${esc(k.api_name)}」${CFG.cd2_api_user ? '、账号 ' + esc(CFG.cd2_api_user) : ''} 过滤后：<b class="${k.matched_files ? 'ok' : 'bad'}">${k.matched_files} 个文件</b>`;
+      if (!CFG.cd2_api_user && k.matched_accounts > 1) h += `<br><span class="warn">这个网盘在缓存里有 ${k.matched_accounts} 个账号，会合在一起筛；只想筛其中一个就填账号标识。</span>`;
+      h += '<br><span class="mut">缓存里的网盘/账号：' + esc(k.accounts.map(a => `${a.api_name}/${a.api_user}（${a.files} 文件）`).join('，')) + '</span>';
+    } else {
+      h += `<br><span class="${CFG.data_source === 'cache' ? 'bad' : 'warn'}">${esc(k.error || '目录缓存不可用')}</span>`;
+      if (CFG.data_source === 'cache') h += '<br><span class="mut">缓存模式需要它。检查 compose 里 CD2 配置目录有没有挂进容器。</span>';
+    }
     h += '</div><div><b>Emby</b><br>';
     if (e.ok) {
       h += `library.db：${esc(e.db)}（${esc(e.open_mode)}，表 ${esc(e.table)}）<br>条目 ${e.items}，判为电影 ${e.movies}（带 TMDB ${e.movies_tmdb}，带分辨率 ${e.movies_res}）<br>`;
@@ -285,7 +289,7 @@ async function probe() {
       h += `<br><span class="mut">样例路径：${esc((e.sample_paths || []).join(' ｜ '))}</span>`;
       if (!e.type_is_str) h += '<br><span class="warn">库里 type 列不是文本，电影按「非剧集、非文件夹」推断，请核对数量。</span>';
     } else h += `<span class="bad">${esc(e.error)}</span>`;
-    h += '</div></div><p class="mut">核对规模和电影数是否和你的库对得上，然后去「盘点」页——可以点「生成建议」让它按目录名帮你填分区。</p>';
+    h += '</div></div><p class="mut">核对规模和电影数是否和你的库对得上，然后去「盘点」页——可以点「生成建议」让它按目录名帮你填分区。缓存模式下目录树和建议都只读缓存，不会向网盘发请求。</p>';
     $('#probe-out').innerHTML = h;
   } catch (e) { $('#probe-out').innerHTML = `<p class="bad">${esc(e.message)}</p>` }
 }
@@ -338,6 +342,7 @@ function applySuggest() {
   $('#suggest-out').innerHTML = '<p class="ok">已填入，请检查上面的分区映射，然后点「保存映射」。</p>';
 }
 async function loadTree() {
+  $('#tree-src').textContent = CFG.data_source === 'cache' ? '（来自 CD2 目录缓存：只列 CD2 打开过的目录）' : '（CD2 挂载目录）';
   const root = $('#tree');
   root.innerHTML = '<ul></ul>';
   await expand(root.firstChild, '/');
@@ -361,13 +366,13 @@ async function expand(ul, path) {
       li.querySelectorAll('button').forEach(b => b.onclick = () => b.dataset.z === 'protect' ? addProtect(d.name) : addZone(b.dataset.z, d.path));
       ul.appendChild(li);
     });
-  } catch (e) { ul.innerHTML = `<li class="bad">${esc(e.message)}（先在设置页填 CD2 挂载目录并保存）</li>` }
+  } catch (e) { ul.innerHTML = `<li class="bad">${esc(e.message)}（先在设置页确认数据来源和路径，点「识别数据源」看能否读到）</li>` }
 }
 async function loadInventory() {
   const r = await api('api/inventory');
   if (!r) return;
   const s = r.stats || {};
-  let h = `<p class="mut">来自 ${esc(r.run_id)}${r.stale ? ' <span class="warn">（配置已改，建议重新盘点）</span>' : ''}</p><div class="tiles">`;
+  let h = `<p class="mut">来自 ${esc(r.run_id)}${r.stale ? ' <span class="warn">（配置已改，建议重新盘点）</span>' : ''}</p>${srcNote(s.source)}<div class="tiles">`;
   [['heji','合集区'],['yuanpan','原盘区'],['remux','REMUX 区']].forEach(([k, n]) => {
     const v = s[k] || {count: 0, gb: 0};
     h += `<div class="tile"><div class="mut">${n}</div><div class="n">${v.count}</div><div class="mut">${fmtGB(v.gb)}</div></div>`;
@@ -384,6 +389,13 @@ async function loadInventory() {
   if (r.error_count) h += `<p class="warn">扫描中有 ${r.error_count} 条读取错误：</p><pre>${esc((r.errors || []).join('\n'))}</pre>`;
   $('#inv-out').innerHTML = h;
   $('#inv-out').classList.remove('mut');
+}
+function fmtTime(t) { return t ? new Date(t * 1000).toLocaleString('zh-CN', {hour12: false}) : '?'; }
+function srcNote(src) {
+  if (!src) return '';
+  if (src.kind === 'cache') return `<p class="warn" style="font-size:13px">数据来自 CD2 目录缓存，缓存时间 ${fmtTime(src.time_min)} ~ ${fmtTime(src.time_max)}。结果以缓存时刻为准：CD2 没打开过的目录不在其中，缓存之后新增或删掉的文件也看不到。想更新就先在 CD2 里把相关目录打开刷新一下，再重新筛选。</p>`;
+  if (src.kind === 'scan') return '<p class="mut" style="font-size:13px">数据来自遍历挂载目录（筛选当时的实时状态）。</p>';
+  return '<p class="mut" style="font-size:13px">数据来自现成 CSV 文件。</p>';
 }
 function fmtGB(g) { g = +g || 0; return g >= 1024 ? (g / 1024).toFixed(2) + ' TB' : g.toFixed(1) + ' GB'; }
 
@@ -427,7 +439,7 @@ async function loadResult() {
   let h = '';
   if (r.rejected) h += `<div class="banner bad"><b>整批拒绝：</b>「可清理」里有 ${r.protect_violations.length} 条落在保护区/榜单包里，整批不能导出。先修正设置再重新筛选。<pre>${esc(r.protect_violations.slice(0, 20).join('\n'))}</pre></div>`;
   if (r.stale) h += '<div class="banner warn"><b>这份结果已过期：</b>筛选完之后改过设置，「可清理」不能导出，请重新筛选。</div>';
-  h += `<div class="card"><h2>结果总览 <span class="mut" style="font-weight:400">${esc(r.run_id)} · 盘点总量 ${fmtGB(r.total_gb)}</span></h2><div class="tiles">`;
+  h += `<div class="card"><h2>结果总览 <span class="mut" style="font-weight:400">${esc(r.run_id)} · 盘点总量 ${fmtGB(r.total_gb)}</span></h2>${srcNote(r.source)}<div class="tiles">`;
   BUCKETS.forEach(b => {
     const v = r.summary[b] || {count: 0, gb: 0}, info = LB.buckets[b] || {};
     const pct = r.total_gb ? (v.gb / r.total_gb * 100).toFixed(1) + '%' : '';
