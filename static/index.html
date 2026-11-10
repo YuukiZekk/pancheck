@@ -731,7 +731,7 @@ function srcNote(src) {
 // ---------- 总览 ----------
 const SIEVES = [
   {name: 'REMUX 分层', sub: 'REMUX 三分分层', off: true},
-  {name: 'REMUX 与原盘比对', sub: 'REMUX × 原盘交叉', off: true},
+  {name: 'REMUX 与原盘比对', sub: 'REMUX × 原盘交叉', stages: ['REMUX×原盘'], bucket: '可切'},
   {name: '合集与 REMUX 比对', sub: '合集 × REMUX', stages: ['合集×REMUX'], bucket: '可切'},
   {name: '原盘完全重复', sub: '原盘同名同大小 + 改名的同字节', stages: ['原盘重复', '同字节重复'], bucket: '可切'},
   {name: '合集去重与低画质', sub: '合集区三刀', stages: ['第一刀', '第二刀', '第三刀'], bucket: '可切'},

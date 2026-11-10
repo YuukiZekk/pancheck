@@ -153,6 +153,63 @@ def yuanpan_dupes(result):
     return out
 
 
+A3_STAGE = 'REMUX×原盘'
+A3_BUCKET = {'A': '可切', 'B': '可切', 'C': '可切', 'A2': '可切', 'D1': '待定', 'D2': '待定', 'D3': '待定'}
+A3_DESC = {'A': '原盘区那份是 4K，这份 REMUX 档更低', 'B': '两边都是 4K，留原盘', 'C': '两边都是 1080p，留原盘',
+           'A2': '原盘区那份 1080p，这份 REMUX 更低', 'D1': '这份 REMUX 画质看不出、原盘区是 4K，请确认',
+           'D2': '原盘区那份画质看不出，请确认', 'D3': '画质组合不好判断，请确认'}
+
+
+def remux_x_yuanpan(cfg, rows, result):
+    """A3 REMUX × 原盘（口径 = cross_screen.py）。REMUX 侧 = REMUX 区 + 整夹合集区单元；原盘那份只当参照。
+    单元里已有文件被前面模块判可清理的，整单元跳过（当轮靠「已搬走」排除）。"""
+    from . import cross
+    if not (os.path.isfile('cross_units.csv') and os.path.isfile('yuanpan_units.csv')):
+        result['remux_x_yp'] = {'skipped': '没有 REMUX / 原盘单元清单'}
+        return []
+    cut = {r['path'] for r in rows if r['bucket'] == '可切'}
+    touched = set(cut)
+    for c in cut:                                   # 被判可清理条目的所有上层目录
+        while '/' in c.strip('/'):
+            c = c.rsplit('/', 1)[0]
+            touched.add(c)
+    rem, skipped = [], 0
+    for u in csv.DictReader(open('cross_units.csv', encoding='utf-8-sig')):
+        p = u['路径']
+        if p in touched:
+            skipped += 1
+            continue
+        rem.append({'title': u['电影'], 'main': u['主视频文件'], 'path': p, 'tgb': float(u['单元总GB'])})
+    units = [dict(r, totGB=float(r['totGB'])) for r in csv.DictReader(open('yuanpan_units.csv', encoding='utf-8'))]
+    files = [dict(r, GB=float(r['GB'])) for r in csv.DictReader(open('yuanpan_files.csv', encoding='utf-8'))]
+    meas = {}
+    if os.path.isfile('emby_yp.csv'):
+        for r in csv.DictReader(open('emby_yp.csv', encoding='utf-8')):
+            try:
+                meas[r['source_path'].replace('/CloudNAS/CloudDrive', '')] = min(int(r['width']), int(r['height']))
+            except (ValueError, KeyError):
+                pass
+    roots = sorted(cfg['zones']['yuanpan'], key=len, reverse=True)
+
+    def sub_of(p):
+        for r in roots:
+            if p.startswith(r.rstrip('/') + '/'):
+                return p[len(r.rstrip('/')) + 1:].split('/')[0]
+        return ''
+    best = cross.yuanpan_films(units, files, meas, sub_of)
+    out, cnt = [], {}
+    for cls, u, y in cross.remux_x_yuanpan(rem, best):
+        cnt[cls] = cnt.get(cls, 0) + 1
+        if cls == 'E':
+            continue
+        out.append(row(A3_STAGE, cls, A3_BUCKET[cls], u['path'], u['tgb'] * 1e9 / GIB, keep=y['path'],
+                       basis='%s：这份 %s，原盘区 %s' % (A3_DESC[cls], L.tier(u['tier']), L.tier(y['tier']))))
+    result['remux_x_yp'] = {'remux_units': len(rem), 'skipped_cut': skipped, 'yuanpan_films': len(best),
+                            'pairs': sum(cnt.values()), 'classes': cnt}
+    result['stats']['a3_cross'] = result['remux_x_yp']
+    return out
+
+
 HIDDEN_STAGE = '同字节重复'
 
 
@@ -254,6 +311,9 @@ def main(mode, run_dir):
 
     emit('hidden', '查找改了名的完全重复', 84)
     rows += hidden_dupes(cfg, rows, result)
+
+    emit('a3', '比对 REMUX 与原盘', 85)
+    rows += remux_x_yuanpan(cfg, rows, result)
 
     emit('tvsplit', '识别混入的剧集', 85)
     # 第一期分流只出清单、不摘刀口行：刀口各桶保持内核原样（已对金标准），两边互斥留到第二期执行时处理
