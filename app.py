@@ -177,11 +177,48 @@ def load_rows(d):
     return _rows_cache[key]
 
 
-def filter_rows(rows, bucket='', stage='', cls='', q=''):
+# 分面筛选：每组可多选（逗号分隔）；子类用「来源|判定」；标记组：体积推断 / 肉酱盘 / 整夹 / 单文件
+FLAGS = {'infer': lambda r: '按体积推断' in (r.get('basis') or ''), 'roujiang': lambda r: bool(r.get('flag')),
+         'whole': lambda r: r.get('move') == '整夹', 'file': lambda r: r.get('move') == '单文件'}
+FACET_KEY = {'bucket': lambda r: [r['bucket']], 'stage': lambda r: [r['stage']],
+             'cls': lambda r: ['%s|%s' % (r['stage'], r['cls'])], 'flag': lambda r: [k for k, f in FLAGS.items() if f(r)]}
+
+
+def _sel(v):
+    return {x for x in (v or '').split(',') if x}
+
+
+def _match(r, g, want):
+    return not want or bool(want.intersection(FACET_KEY[g](r)))
+
+
+def _q_ok(r, q):
+    return not q or q in r['path'].lower() or q in (r.get('keep') or '').lower() or q in (r.get('flag') or '').lower()
+
+
+def filter_rows(rows, bucket='', stage='', cls='', q='', flag=''):
     q = (q or '').strip().lower()
-    return [r for r in rows if (not bucket or r['bucket'] == bucket) and (not stage or r['stage'] == stage)
-            and (not cls or r['cls'] == cls)
-            and (not q or q in r['path'].lower() or q in (r.get('keep') or '').lower() or q in (r.get('flag') or '').lower())]
+    want = {'bucket': _sel(bucket), 'stage': _sel(stage), 'flag': _sel(flag),
+            'cls': {c if '|' in c else c for c in _sel(cls)}}
+    # 兼容旧调用：cls 只给了判定码（没有「来源|」）时按判定码匹配
+    bare = {c for c in want['cls'] if '|' not in c}
+    if bare:
+        want['cls'] -= bare
+    return [r for r in rows if all(_match(r, g, w) for g, w in want.items()) and (not bare or r['cls'] in bare) and _q_ok(r, q)]
+
+
+def facet_counts(rows, bucket='', stage='', cls='', q='', flag=''):
+    """每组的计数 = 其他组的条件都生效、本组不限时的分布（OpenStatus 式联动）。"""
+    args = {'bucket': bucket, 'stage': stage, 'cls': cls, 'flag': flag}
+    out = {}
+    for g in FACET_KEY:
+        rs = filter_rows(rows, q=q, **dict(args, **{g: ''}))
+        c = {}
+        for r in rs:
+            for k in FACET_KEY[g](r):
+                c[k] = c.get(k, 0) + 1
+        out[g] = c
+    return out
 
 
 # ---------------- API ----------------
@@ -327,17 +364,26 @@ def _new_batch_id():
 
 
 @app.post('/api/exec/plan')
-def exec_plan():
+def exec_plan(action: str = ''):
     """预演：按批准生成搬运计划（实时列一次被批准的目录），不动任何文件。"""
     res, d = _latest_full()
     if res['stale'] or res.get('rejected'):
         raise HTTPException(409, '清单已过期或被整批拒绝')
     c = C.load()
-    items = X.load_approvals(d, res['fingerprint'])
+    items = _by_action(X.load_approvals(d, res['fingerprint']), action)
     if not items:
-        raise HTTPException(400, '还没有批准任何条目')
+        raise HTTPException(400, '还没有批准任何条目' + ('（这个去向）' if action else ''))
     fs = _backend_or_400(c)
-    return X.plan(c, load_rows(d), items, _new_batch_id(), fs)
+    p = X.plan(c, load_rows(d), items, _new_batch_id(), fs)
+    p['action'] = action
+    return p
+
+
+def _by_action(items, action):
+    """排查区 / 挪入主库 / 唯一副本目录按去向分批，不混批。"""
+    if action not in ('', 'quarantine', 'mainlib', 'unique'):
+        raise HTTPException(400, '去向只能是 quarantine / mainlib / unique')
+    return {p: a for p, a in items.items() if not action or a.get('action') == action}
 
 
 def _backend_or_400(c, force=None):
@@ -351,14 +397,14 @@ def _backend_or_400(c, force=None):
 
 
 @app.post('/api/exec/run')
-def exec_run():
+def exec_run(action: str = ''):
     # 防重复（真库试跑实测：连点三次，4 秒内建了三个一样的批次）：先抢锁、先查有没有任务在跑，再预演、建批次
     if not EXEC_LOCK.acquire(blocking=False):
         raise HTTPException(409, '已有一次执行正在准备（预演中），不重复建批次')
     try:
         if JOB.state.get('running'):
             raise HTTPException(409, '已有任务在跑（%s），不重复建批次' % JOB.state.get('run_id'))
-        return _exec_run_locked()
+        return _exec_run_locked(action)
     finally:
         EXEC_LOCK.release()
 
@@ -366,7 +412,7 @@ def exec_run():
 EXEC_LOCK = threading.Lock()
 
 
-def _exec_run_locked():
+def _exec_run_locked(action=''):
     if not X.allowed():
         raise HTTPException(403, '执行开关没开：compose 里设 PANEL_ALLOW_MOVE=1 并把 CD2 挂载改成可写，重启后才有执行入口')
     c = C.load()
@@ -376,9 +422,10 @@ def _exec_run_locked():
     res, d = _latest_full()
     if res['stale'] or res.get('rejected'):
         raise HTTPException(409, '清单已过期或被整批拒绝')
-    items = X.load_approvals(d, res['fingerprint'])
+    allitems = X.load_approvals(d, res['fingerprint'])
+    items = _by_action(allitems, action)
     if not items:
-        raise HTTPException(400, '还没有批准任何条目')
+        raise HTTPException(400, '还没有批准任何条目' + ('（这个去向）' if action else ''))
     if not X.state().get('trial_ok') and len(items) > X.TRIAL_MAX:
         raise HTTPException(409, '第一次执行只许 ≤%d 条的小批量试跑，对账无误后才放开（现在批准了 %d 条）'
                             % (X.TRIAL_MAX, len(items)))
@@ -388,9 +435,10 @@ def _exec_run_locked():
         raise HTTPException(400, '预演后没有可执行的搬运（都被拒绝或源已不在）')
     bdir = X.BATCHES / bid
     bdir.mkdir(parents=True)
-    p.update(run_id=res['run_id'], created=time.time())
+    p.update(run_id=res['run_id'], created=time.time(), action=action)
     (bdir / 'plan.json').write_text(json.dumps(p, ensure_ascii=False, indent=1), encoding='utf-8')
-    X.save_approvals(d, res['fingerprint'], {})          # 批准随批次带走，不留在清单上重复执行
+    # 批准随批次带走，不留在清单上重复执行（只带走这个去向的）
+    X.save_approvals(d, res['fingerprint'], {k: v for k, v in allitems.items() if k not in items})
     return JOB.start_exec('run', bdir)
 
 
@@ -407,7 +455,10 @@ def exec_batches():
                     pass
             if 'plan' in item:
                 pl = item.pop('plan')
-                item.update(ops=len(pl['ops']), rows=pl['rows'], gb=pl['gb'], created=pl.get('created'))
+                acts = sorted({op['action'] for op in pl['ops']})
+                item.update(ops=len(pl['ops']), rows=pl['rows'], gb=pl['gb'], created=pl.get('created'),
+                            action=pl.get('action') or (acts[0] if len(acts) == 1 else ','.join(acts)),
+                            backend=pl.get('backend'))
             out.append(item)
     return out
 
@@ -415,8 +466,17 @@ def exec_batches():
 @app.get('/api/exec/batch/{bid}')
 def exec_batch(bid: str):
     b = _batch_dir(bid)
-    return {f: json.loads((b / (f + '.json')).read_text(encoding='utf-8'))
-            for f in ('plan', 'reconcile', 'rollback') if (b / (f + '.json')).exists()}
+    out = {f: json.loads((b / (f + '.json')).read_text(encoding='utf-8'))
+           for f in ('plan', 'reconcile', 'rollback') if (b / (f + '.json')).exists()}
+    # 逐条结果：每个操作日志里的最后状态（执行明细表用）
+    states = {}
+    for op_id, hist in X._journal(b).items():
+        last = [e for e in hist if e['state'] in ('done', 'skip', 'fail', 'unknown', 'rolled_back', 'intent')]
+        if last:
+            e = last[-1]
+            states[op_id] = {'state': e['state'], 'reason': e.get('reason') or e.get('note') or '', 'secs': e.get('secs')}
+    out['states'] = states
+    return out
 
 
 @app.post('/api/exec/resume/{bid}')
@@ -498,18 +558,33 @@ def result(run_id: str = ''):
 
 
 @app.get('/api/rows')
-def rows(bucket: str = '', stage: str = '', cls: str = '', q: str = '', offset: int = 0, limit: int = 100,
-         sort: str = 'gb', run_id: str = ''):
+def rows(bucket: str = '', stage: str = '', cls: str = '', q: str = '', flag: str = '', offset: int = 0, limit: int = 100,
+         sort: str = 'gb', run_id: str = '', facets: int = 0):
     res, d = load_run(run_id or None)
     if not res:
-        return {'total': 0, 'gb': 0, 'rows': []}
-    rs = filter_rows(load_rows(d), bucket, stage, cls, q)
-    if sort == 'gb':
+        return {'total': 0, 'gb': 0, 'rows': [], 'all': 0, 'facets': {}}
+    allrows = load_rows(d)
+    rs = filter_rows(allrows, bucket, stage, cls, q, flag)
+    if sort in ('gb', 'gb_desc'):
         rs = sorted(rs, key=lambda r: -r['gb'])
+    elif sort == 'gb_asc':
+        rs = sorted(rs, key=lambda r: r['gb'])
     elif sort == 'path':
         rs = sorted(rs, key=lambda r: r['path'])
     limit = max(1, min(limit, 1000))
-    return {'total': len(rs), 'gb': round(sum(r['gb'] for r in rs), 1), 'rows': rs[offset:offset + limit]}
+    out = {'total': len(rs), 'gb': round(sum(r['gb'] for r in rs), 1), 'rows': rs[offset:offset + limit], 'all': len(allrows)}
+    if facets:
+        out['facets'] = facet_counts(allrows, bucket, stage, cls, q, flag)
+    return out
+
+
+@app.get('/api/rows/paths')
+def rows_paths(bucket: str = '', stage: str = '', cls: str = '', q: str = '', flag: str = '', run_id: str = ''):
+    """「全选」作用于当前筛选的全部结果（跨页）：返回全部匹配路径。"""
+    res, d = load_run(run_id or None)
+    if not res:
+        return {'paths': []}
+    return {'paths': list(dict.fromkeys(r['path'] for r in filter_rows(load_rows(d), bucket, stage, cls, q, flag)))}
 
 
 # 导出给人看：分类/来源/判定用白话名，最后一列保留内部叫法便于对账
@@ -547,11 +622,11 @@ def _export_resp(res, rs, label, fmt):
 
 
 @app.get('/api/export')
-def export(bucket: str = '', stage: str = '', cls: str = '', q: str = '', run_id: str = '', fmt: str = 'csv'):
+def export(bucket: str = '', stage: str = '', cls: str = '', q: str = '', flag: str = '', run_id: str = '', fmt: str = 'csv'):
     res, d = load_run(run_id or None)
     if not res:
         raise HTTPException(404, '还没有筛选结果')
-    rs = sorted(filter_rows(load_rows(d), bucket, stage, cls, q), key=lambda r: -r['gb'])
+    rs = sorted(filter_rows(load_rows(d), bucket, stage, cls, q, flag), key=lambda r: -r['gb'])
     return _export_resp(res, rs, L.bucket(bucket) if bucket else '全部', fmt)
 
 
@@ -563,9 +638,9 @@ async def export_selected(request: Request, fmt: str = 'csv'):
     if not res:
         raise HTTPException(404, '还没有筛选结果')
     want = set(body.get('paths') or [])
-    rs = sorted([r for r in load_rows(d) if r['path'] in want and r['bucket'] == '可切'], key=lambda r: -r['gb'])
+    rs = sorted([r for r in load_rows(d) if r['path'] in want], key=lambda r: -r['gb'])
     if not rs:
-        raise HTTPException(400, '没有勾选任何「可清理」条目')
+        raise HTTPException(400, '没有勾选任何条目')
     return _export_resp(res, rs, '已勾选', fmt)
 
 
