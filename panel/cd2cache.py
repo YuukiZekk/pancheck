@@ -162,10 +162,11 @@ def zone_items(cfg, progress, errors):
     conn, how = S.open_ro(db)
     minb = cfg['min_video_mb'] * 1024 * 1024
     api_sql, api_args = _api_where(cfg)
-    raw, tmins, tmaxs, rows_read, drops = {}, [], [], 0, {}
+    raw, tmins, tmaxs, rows_read, drops, unlisted = {}, [], [], 0, {}, {}
     try:
         for zone, label in (('yuanpan', '原盘区'), ('heji', '合集区'), ('remux', 'REMUX 区')):
             raw[zone], drops[zone] = [], S.Counter()
+            unl = unlisted[zone] = {'count': 0, 'in_disc': 0, 'samples': []}
             for root in cfg['zones'][zone]:
                 progress('从缓存读取%s %s' % (label, root))
                 tmin, tmax, nd = conn.execute(
@@ -177,6 +178,10 @@ def zone_items(cfg, progress, errors):
                 tmins.append(tmin)
                 tmaxs.append(tmax)
                 files, disc_roots = [], set()
+                # 覆盖检查：文件夹在 files 里有行（父目录被列过），但自己的完整路径在 cached_item 里没有行
+                # = CD2 从没打开过它，它下面的文件不在缓存里。有 cached_item 行而没子项的是真空夹，不算
+                listed = {p.rstrip('/') for (p,) in conn.execute(
+                    'select path from cached_item ci where ' + _under(), _under_args(root))}
                 for ppath, name, ftype, size in conn.execute(
                         'select ci.path, f.name, f.file_type, f.size from files f join cached_item ci on ci.id = f.parent_id '
                         'where ' + api_sql + ' and ' + _under(), api_args + _under_args(root)):
@@ -184,6 +189,12 @@ def zone_items(cfg, progress, errors):
                     ppath = ppath.rstrip('/')
                     vp = ppath + '/' + name
                     if ftype == 3:
+                        if vp not in listed:
+                            unl['count'] += 1
+                            if any(c.lower() in S.DISC_DIRS for c in vp.split('/')):
+                                unl['in_disc'] += 1
+                            elif len(unl['samples']) < 20:
+                                unl['samples'].append(vp)
                         if name.lower() in S.DISC_DIRS:
                             disc_roots.add(ppath)
                     elif ftype == 4:
@@ -213,7 +224,13 @@ def zone_items(cfg, progress, errors):
                 raw[zone] += [(root, kind, vp, size) for _, kind, vp, size in items]
     finally:
         conn.close()
-    meta = {'kind': 'cache', 'db': db, 'open_mode': how, 'rows_read': rows_read, 'drops': drops,
+    for zone, label in (('yuanpan', '原盘区'), ('heji', '合集区'), ('remux', 'REMUX 区')):
+        u = unlisted.get(zone) or {}
+        if u.get('count'):
+            errors.append('%s有 %d 个目录 CD2 从未打开过%s，这些目录下的文件不在缓存里、不参与比对；'
+                          '想要全量结果，先在 CD2 里把这些目录点开一遍再跑' % (
+                              label, u['count'], '（其中 %d 个在原盘碟内）' % u['in_disc'] if u['in_disc'] else ''))
+    meta = {'kind': 'cache', 'db': db, 'open_mode': how, 'rows_read': rows_read, 'drops': drops, 'unlisted': unlisted,
             'time_min': min(tmins) if tmins else None, 'time_max': max(tmaxs) if tmaxs else None,
             'api_name': api_args[0], 'api_user': cfg.get('cd2_api_user') or ''}
     return raw, meta

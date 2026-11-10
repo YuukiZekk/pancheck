@@ -551,6 +551,11 @@ async function loadInventory() {
   const sk = Object.entries(s.protected_skipped || {});
   if (sk.length) h += `<dt>保护剔除</dt><dd>${sk.map(([k, v]) => esc(k) + ' ' + n(v)).join('，')}${s.protected_gb ? ' · ' + fmtGB(s.protected_gb) : ''}</dd>`;
   if (s.listpack_kept && s.listpack_kept.count) h += `<dt>榜单包</dt><dd>${n(s.listpack_kept.count)} 条 · ${fmtGB(s.listpack_kept.gb)}<span class="jg">留在合集人口里，判定时整包不筛</span></dd>`;
+  const unl = (s.source || {}).unlisted;
+  if (unl) {
+    const bad = Object.entries(ZN).filter(([z]) => (unl[z] || {}).count);
+    h += `<dt>缓存覆盖</dt><dd class="${bad.length ? 'warn' : ''}">${bad.length ? bad.map(([z, l]) => `${l} ${n(unl[z].count)} 个目录未打开过` + (unl[z].in_disc ? `（碟内 ${n(unl[z].in_disc)}）` : '')).join('，') + '<span class="jg">这些目录下的文件不参与比对，数字不是全量</span>' + (bad.some(([z]) => unl[z].samples.length) ? `<details><summary>示例</summary><pre>${esc(bad.flatMap(([z]) => unl[z].samples).slice(0, 20).join('\n'))}</pre></details>` : '') : '各分区目录都被 CD2 打开过，结果是全量'}</dd>`;
+  }
   const dh = (s.dropped || {}).heji || {};
   const dk = Object.entries(dh);
   if (dk.length) h += `<dt>合集区未计入</dt><dd>${dk.map(([k, v]) => (k === 'small' ? '小于体积门槛' : k.slice(3) + ' 格式') + ' ' + n(v)).join('，')}<span class="jg">体积门槛在设置里改；这些格式目前不计入</span></dd>`;
