@@ -6,6 +6,7 @@ mode = inventory（只盘点）| full（盘点 + 三刀 + 纵向 + 剧集分流�
 import csv
 import json
 import os
+import re
 import sys
 import time
 from collections import defaultdict
@@ -154,10 +155,28 @@ def yuanpan_dupes(result):
 
 
 A3_STAGE = 'REMUX×原盘'
-A3_BUCKET = {'A': '可切', 'B': '可切', 'C': '可切', 'A2': '可切', 'D1': '待定', 'D2': '待定', 'D3': '待定'}
+A3_BUCKET = {'A': '可切', 'B': '可切', 'C': '可切', 'A2': '可切', 'D1': '待定', 'D2': '待定', 'D3': '待定',
+             'D1U': '可切', 'D1H': '可切', 'D1N': '可切'}
 A3_DESC = {'A': '原盘区那份是 4K，这份 REMUX 档更低', 'B': '两边都是 4K，留原盘', 'C': '两边都是 1080p，留原盘',
            'A2': '原盘区那份 1080p，这份 REMUX 更低', 'D1': '这份 REMUX 画质看不出、原盘区是 4K，请确认',
-           'D2': '原盘区那份画质看不出，请确认', 'D3': '画质组合不好判断，请确认'}
+           'D2': '原盘区那份画质看不出，请确认', 'D3': '画质组合不好判断，请确认',
+           'D1U': '原盘 4K 已确认，这份 REMUX 文件名写的也是 4K（同档），留原盘',
+           'D1H': '原盘 4K 已确认，这份 REMUX 文件名写的是 1080p（低一档），留原盘',
+           'D1N': '原盘 4K 已确认，这份 REMUX 文件名没标分辨率，留原盘'}
+
+
+def d1_subclass(u, y):
+    """D1 改判（用户 2026-11-11）：原盘那边是已确认的 4K（实测或文件名写明，不含体积推断）→ 可清理，
+    按 REMUX 主文件名写的分辨率分子类；REMUX 不做体积推断。原盘 4K 只是推断的，仍留 D1 人工确认。"""
+    if y['tier'] != 'U':
+        return 'D1'
+    name = (u.get('main') or '').rsplit('/', 1)[-1]
+    from . import cross
+    if cross.U_NAME.search(name):
+        return 'D1U'
+    if re.search(r'(?i)1080[pi]', name):
+        return 'D1H'
+    return 'D1N'
 
 
 def remux_x_yuanpan(cfg, rows, result):
@@ -199,6 +218,8 @@ def remux_x_yuanpan(cfg, rows, result):
     best = cross.yuanpan_films(units, files, meas, sub_of, mode='v2')
     out, cnt = [], {}
     for cls, u, y in cross.remux_x_yuanpan(rem, best):
+        if cls == 'D1':
+            cls = d1_subclass(u, y)
         cnt[cls] = cnt.get(cls, 0) + 1
         if cls == 'E':
             continue
