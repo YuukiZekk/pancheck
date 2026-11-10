@@ -46,6 +46,22 @@ def blocked_names(cfg):
     return list(cfg['protect_names']) + list(cfg['listpack_names'])
 
 
+def listpack_hit(vp, names, cfg):
+    """榜单包只认「包」这一层（分区根下第一级目录），与内核第一刀按大包名判榜单包同口径。
+    更深层目录名里顺带出现的字样（如「狗神主演-戛纳影帝-…」「胜利之光 豆瓣8.1」）不算。"""
+    for roots in cfg['zones'].values():
+        for r in roots:
+            if vp.startswith(r.rstrip('/') + '/'):
+                rel = vp[len(r.rstrip('/')) + 1:].split('/')
+                return hit_any(rel[0], names) if len(rel) > 1 else None
+    return None
+
+
+def guard_hit(cfg, vp, units):
+    """可清理守卫：保护目录名（任意层目录组件）或榜单包（包这一层）。"""
+    return protect_hit(vp, cfg['protect_names'], units) or listpack_hit(vp, cfg['listpack_names'], cfg)
+
+
 def hit_any(text, names):
     return next((n for n in names if n and n in text), None)
 
@@ -251,12 +267,12 @@ def scan_inputs(cfg, workdir, progress):
     stats['dropped'] = {z: dict(c) for z, c in drops.items() if c}
     unit_dirs = film_unit_dirs([it[2] for z in raw for it in raw[z]])
     # 原盘重复（A2）要看到保护区里的那份才能判「保护档留、档外搬」：剔除前先把原盘区全量存一份
-    keep_first = list(cfg['protect_names']) + list(cfg['listpack_names']) + list(cfg['keep_first_names'])
+    keep_first = list(cfg['protect_names']) + list(cfg['keep_first_names'])
     yall = []
     for root, kind, vp, size in raw['yuanpan']:
         rel = vp[len(root):].strip('/').split('/')
         yall.append({'path': vp, 'size': size, 'kind': kind, 'pack': rel[0] if len(rel) > 1 else '',
-                     'top': 1 if protect_hit(vp, keep_first, unit_dirs) else 0})
+                     'top': 1 if (protect_hit(vp, keep_first, unit_dirs) or listpack_hit(vp, cfg['listpack_names'], cfg)) else 0})
     _write(workdir, 'yuanpan_all.csv', ['path', 'size', 'kind', 'pack', 'top'], yall, 'utf-8-sig')
     # 同字节重复（A2 第二层）：全区文件（含保护区），缓存模式带 Sha1；保留档 / 守卫命中在这里先标好
     import sieve
@@ -270,7 +286,7 @@ def scan_inputs(cfg, workdir, progress):
             hall.append({'path': vp, 'size': size, 'sha1': sha1.get(vp, ''), 'zone': z,
                          'root_depth': zroot_depth.get(root, 0),
                          'tier': 1 if protect_hit(vp, tier, unit_dirs) else 0,
-                         'guard': 1 if protect_hit(vp, blocked_names(cfg), unit_dirs) else 0})
+                         'guard': 1 if guard_hit(cfg, vp, unit_dirs) else 0})
     _write(workdir, 'hidden_all.csv', ['path', 'size', 'sha1', 'zone', 'root_depth', 'tier', 'guard'], hall, 'utf-8-sig')
     stats['hash_mode'] = 'sha1' if sha1 else 'size'
     # 提取层只剔保护区。榜单包留在人口里（与金标准同口径），由内核判定层整包不筛，守卫兜底整批拒绝
@@ -287,7 +303,7 @@ def scan_inputs(cfg, workdir, progress):
                 skipped_bytes += it[3]
             else:
                 kept.append(it)
-                if z == 'heji' and protect_hit(it[2], cfg['listpack_names'], unit_dirs):
+                if z == 'heji' and listpack_hit(it[2], cfg['listpack_names'], cfg):
                     lp_n += 1
                     lp_bytes += it[3]
         raw[z] = kept

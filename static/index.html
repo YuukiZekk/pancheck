@@ -777,7 +777,14 @@ async function loadOverview() {
   $('#ov-src').innerHTML = srcNote(r.source);
   $('#ov-detail').innerHTML = '<table><tr><th>分类</th><th>来源</th><th>判定</th><th class="num">条数</th><th class="num">体积</th></tr>' +
     r.detail.map(d => `<tr><td>${esc(bn(d.bucket))}${jg(d.bucket)}</td><td>${esc(sn(d.stage))}${jg(d.stage)}</td><td>${esc(cn(d.stage, d.cls))}${jg(d.cls)}</td><td class="num">${n(d.count)}</td><td class="num">${fmtGB(d.gb)}</td></tr>`).join('') +
-    `</table><div class="note">另有 ${n(r.held_stage2)} 条疑似剧集的重复组暂不判定${jg('第二刀塌缩守卫')}；小体积检查覆盖 ${n(r.stage3_population)} 条${jg('第三刀人口')}。</div>`;
+    `</table><div class="note">另有 ${n(r.held_stage2)} 条疑似剧集的重复组暂不判定${jg('第二刀塌缩守卫')}；小体积检查覆盖 ${n(r.stage3_population)} 条${jg('第三刀人口')}。</div>` + a2Note(r);
+}
+function a2Note(r) {
+  const a = r.dupes, b = r.hidden;
+  let h = '';
+  if (a && a.groups !== undefined) h += `原盘同名同大小：${n(a.groups)} 组，其中全在保留档不动 ${n(a.all_protected)} 组，可搬 ${n(a.moves)} 条${jg('A2 第一层')}。`;
+  if (b && b.groups !== undefined) h += `改名的完全重复（按${b.key === 'sha1' ? ' Sha1' : '字节数'}）：${n(b.groups)} 组，沾保留档 ${n(b.tier)} 组、搁置 ${n(b.shelved)} 组、判定 ${n(b.decided)} 组（有可搬的 ${n(b.move_groups)} 组），可搬 ${n(b.moves)} 条 · ${fmtGB(b.gb)}${jg('A2 第二层')}。`;
+  return h ? `<div class="note">${h}</div>` : '';
 }
 function sieveCard(s) {
   if (s.off || !RES) return `<div class="card fx-spotlight sieve ${s.off ? 'off' : ''}"><div class="t">${esc(s.name)}${jg(s.sub)}</div><div class="mut small">${s.off ? '未接入：内核还没收编这一筛' : '还没跑'}</div><div class="prog"><i style="width:0"></i></div></div>`;

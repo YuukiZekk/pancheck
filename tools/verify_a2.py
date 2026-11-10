@@ -13,7 +13,9 @@ os.environ.setdefault('SIEVE_DATA', os.path.join(PKG, '_tmp_data'))
 sys.path.insert(0, APP)
 import sieve
 from panel import config as C, cross, dupes, sources as S
-cfg = C.normalize({})
+B115 = '/115/01-好康的/'
+cfg = C.normalize({'zones': {'heji': [B115 + '01-电影合集'], 'yuanpan': [B115 + '01-电影原盘'],
+                                   'remux': [B115 + '01-电影REMUX'], 'pack': [B115 + '10-合集']}})
 J = lambda n: os.path.join(PKG, n)
 fails = []
 
@@ -26,8 +28,9 @@ items = [{'path': r['path'], 'size': r['GB'], 'kind': 'file'} for r in csv.DictR
          if '/BDMV/' not in r['path'].upper() and '/VIDEO_TS/' not in r['path'].upper()]
 items += [{'path': u['path'], 'size': u['totGB'], 'kind': 'disc'} for u in units if u['kind'] == 'BDMV']
 ud = S.film_unit_dirs([x['path'] for x in items])
-keep_tier = list(cfg['protect_names']) + list(cfg['listpack_names']) + list(cfg['keep_first_names'])
-moves, all_top = dupes.plan(items, lambda p: bool(S.protect_hit(p, keep_tier, ud)), lambda p: p.split('/')[4], pack_size)
+keep_tier = list(cfg['protect_names']) + list(cfg['keep_first_names'])
+is_top = lambda p: bool(S.protect_hit(p, keep_tier, ud) or S.listpack_hit(p, cfg['listpack_names'], cfg))
+moves, all_top = dupes.plan(items, is_top, lambda p: p.split('/')[4], pack_size)
 m5 = {l.strip() for l in open(J('moves5.txt'), encoding='utf-8') if l.strip()}
 mine = {x['path'] for x, _, _ in moves}
 grouped = {x['path'] for g in dupes.groups(items) for x in g}
@@ -46,12 +49,11 @@ B = {r['精确字节数'] for r in csv.DictReader(open(J('隐藏重复-保护区
 tier = list(cfg['protect_names']) + list(cfg['keep_first_names']) + list(sieve.LISTPACK)
 allp = [p for r in G for p in r['路径组'].split(' || ')]
 ud2 = S.film_unit_dirs(allp)
-blocked = S.blocked_names(cfg)
 zone = lambda p: 'yuanpan' if '/01-电影原盘/' in p else 'remux' if '/01-电影REMUX/' in p else 'heji'
 groups = []
 for r in G:
     groups.append([{'path': p, 'zone': zone(p), 'root_depth': 3, 'key': r['精确字节数'],
-                    'tier': bool(S.protect_hit(p, tier, ud2)), 'guard': bool(S.protect_hit(p, blocked, ud2)),
+                    'tier': bool(S.protect_hit(p, tier, ud2)), 'guard': bool(S.guard_hit(cfg, p, ud2)),
                     '_g': r['精确字节数']} for p in r['路径组'].split(' || ')])
 free = {ms[0]['_g'] for ms in groups if not any(x['tier'] for x in ms)}
 print('【第二层】3,381 组 → 不沾保留档 %d 组 | 金标准 1,176 | 面板独有 %d | 金标准独有 %d' % (len(free), len(free - B), len(B - free)))

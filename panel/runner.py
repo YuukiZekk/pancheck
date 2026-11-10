@@ -147,7 +147,9 @@ def yuanpan_dupes(result):
         where = '保护 / 保留优先目录' if why == 'top' else '更大的包「%s」' % (keep['pack'] or '分区根')
         out.append(row(DUPE_STAGE, 'A', '可切', x['path'], x['size'] / GIB, keep=keep['path'],
                        basis='同名同大小的另一份在%s，留那份' % where))
-    result['dupes'] = {'groups': len(dupes.groups(items)), 'all_protected': all_top, 'moves': len(out)}
+    result['dupes'] = {'groups': len(dupes.groups(items)), 'all_protected': all_top, 'moves': len(out),
+                       'gb': round(sum(r['gb'] for r in out), 1)}
+    result['stats']['a2_l1'] = result['dupes']
     return out
 
 
@@ -185,7 +187,9 @@ def hidden_dupes(cfg, rows, result):
     how = 'Sha1 完全一致' if use_sha1 else '字节数完全一致'
     out = [row(HIDDEN_STAGE, 'A', '可切', x['path'], x['size'] / GIB, keep=k['path'],
                basis='和保留的那份%s、只是名字不同；留规格标注更全 / 已刮削的那份' % how) for x, k in moves]
-    result['hidden'] = dict(st, key='sha1' if use_sha1 else 'size', moves=len(out))
+    result['hidden'] = dict(st, key='sha1' if use_sha1 else 'size', moves=len(out),
+                            move_groups=len({id(k) for _, k in moves}), gb=round(sum(r['gb'] for r in out), 1))
+    result['stats']['a2_l2'] = result['hidden']
     return out
 
 
@@ -267,11 +271,11 @@ def main(mode, run_dir):
     # 用户追加的榜单包名（内核不认识）：榜单包留在人口里，但任何一刀的结论都不出
     extra_lp = [x for x in cfg['listpack_names'] if x not in C.BUILTIN_LISTPACK]
     if extra_lp:
-        rows = [r for r in rows if r['stage'] == '剧集分流' or not sources.protect_hit(r['path'], extra_lp, unit_dirs)]
+        rows = [r for r in rows if r['stage'] == '剧集分流' or not sources.listpack_hit(r['path'], extra_lp, cfg)]
 
     # 红线：可切里只要有一条落在保护区/榜单包，整批拒绝（不部分放行）
-    guard = sources.blocked_names(cfg)
-    viol = [r['path'] for r in rows if r['bucket'] == '可切' and sources.protect_hit(r['path'], guard, unit_dirs)]
+
+    viol = [r['path'] for r in rows if r['bucket'] == '可切' and sources.guard_hit(cfg, r['path'], unit_dirs)]
     result['protect_violations'] = viol[:200]
     result['rejected'] = bool(viol)
 
