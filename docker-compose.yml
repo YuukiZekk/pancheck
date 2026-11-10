@@ -11,6 +11,8 @@ services:
     environment:
       - TZ=Asia/Shanghai
       - PANEL_PASSWORD=${PANEL_PASSWORD:-}
+      # CD2 直连搬移的接口地址（gRPC，CD2 默认端口 19798）；也可以在设置 → 高级里填
+      - CD2_API_ADDR=${CD2_API_ADDR:-}
       # 「设置」页的默认值，对应下面挂进容器的路径
       - CD2_CONFIG=/cd2-config
       - EMBY_DATA=/emby-data
@@ -25,5 +27,6 @@ services:
       - ${EMBY_DATA_HOST:-/volume1/docker/emby/config}:/emby-data:ro
       # ↑↑↑ 其余都不用改 ↑↑↑
       # CD2 挂载目录：「遍历挂载目录」兜底模式和第二期「执行」才用；不填就挂一个空目录
-      # 要执行搬运：把 :ro 改成 :rw，并在上面 environment 里加 PANEL_ALLOW_MOVE=1（两道开关都开才有执行入口）
+      # 要执行搬运：environment 里加 PANEL_ALLOW_MOVE=1；推荐走 CD2 直连（下面 CD2_API_ADDR），挂载保持 :ro 即可。
+      # 只有「挂载改名」方式才需要把 :ro 改成 :rw（慢，1–2 分钟一部）
       - ${CD2_MOUNT_HOST:-./empty}:/media/cd2:ro,rslave

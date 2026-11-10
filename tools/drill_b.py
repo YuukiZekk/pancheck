@@ -68,6 +68,27 @@ json.dump({'data_source': 'cache', 'cd2_config': conf, 'cd2_mount': mount, 'emby
 
 PY = sys.executable
 SRV = None
+# 后端：默认挂载改名；DRILL_BACKEND=cd2 时起一个假 CD2 gRPC 服务，走直连搬移
+CD2 = os.environ.get('DRILL_BACKEND') == 'cd2'
+FAKE, FAKE_LOG, TOKEN = None, os.path.join(W, 'fake_cd2.log'), 'drill-token-0123456789abcdef'
+
+
+def fake_cd2(perms='list,mkdir,move', die_after=0):
+    global FAKE
+    if FAKE:
+        FAKE.terminate(); FAKE.wait()
+    FAKE = subprocess.Popen([PY, os.path.join(APP, 'tools', 'fake_cd2.py'), mount, '8790', TOKEN, FAKE_LOG, perms, str(die_after)],
+                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    FAKE.stdout.readline()
+
+
+if CD2:
+    json.dump({'tokens': [{'token': TOKEN, 'rootDir': '/', 'friendly_name': 'drill'}]},
+              open(os.path.join(conf, 'api_tokens.json'), 'w', encoding='utf-8'))
+    c = json.load(open(os.path.join(DATA, 'config.json'), encoding='utf-8'))
+    c.update(exec_mode='cd2', cd2_api_addr='127.0.0.1:8790')
+    json.dump(c, open(os.path.join(DATA, 'config.json'), 'w', encoding='utf-8'), ensure_ascii=False)
+    fake_cd2()
 B = 'http://127.0.0.1:8770'
 
 
@@ -150,7 +171,14 @@ gap_dir = gap[0].rsplit('/', 1)[0]
 check('预演：红高粱 → 挪入主库（整夹）', kinds.get(gap_dir, ('', ''))[1] == '/115/00-主库/红高粱 (1987)', kinds)
 check('预演：排查区按批次保留原路径', kinds[hz_dir][1].startswith('/115/99-排查区/B') and kinds[hz_dir][1].endswith(hz_dir), kinds[hz_dir])
 report['trial_plan'] = pl
-r = cl.post('/api/exec/run')
+# 防重复：同时点三次执行，只许建一个批次
+import threading
+codes = []
+ths = [threading.Thread(target=lambda: codes.append(httpx.post(B + '/api/exec/run', timeout=120).status_code)) for _ in range(3)]
+[t.start() for t in ths]; [t.join() for t in ths]
+check('防重复：同时点三次执行 → 只建一个批次（1 个 200、2 个 409）', sorted(codes) == [200, 409, 409]
+      and len(os.listdir(os.path.join(DATA, 'batches'))) == 1, codes)
+r = cl.get('/api/job')
 check('试跑批次开跑', r.status_code == 200, r.text)
 j = wait_job()
 b1 = j['run_id']
@@ -212,7 +240,70 @@ cl.put('/api/config', json=cfg)
 check('配置改了：批准自动作废、执行被拦', cl.get('/api/exec/status').json()['approvals'] == 0
       and cl.post('/api/exec/run').status_code == 409)
 
+# ---------- 6b. 直连专项 ----------
+if CD2:
+    calls = [json.loads(l) for l in open(FAKE_LOG, encoding='utf-8')]
+    mv = [c for c in calls if c['m'] == 'MoveFile']
+    done_ops = 0
+    for b in (b1, b2):
+        done_ops += sum(1 for l in open(os.path.join(DATA, 'batches', b, 'journal.jsonl'), encoding='utf-8')
+                        if json.loads(l)['state'] in ('done',))
+    check('直连：搬移全走 CD2 MoveFile（含回滚搬回），固定不覆盖、不跨云',
+          len(mv) >= done_ops and all(c['policy'] == 2 and c['across'] == 0 for c in mv), (len(mv), done_ops))
+    check('直连：批次计划记的后端是 cd2', json.load(open(os.path.join(DATA, 'batches', b1, 'plan.json'), encoding='utf-8'))['backend'] == 'cd2')
+    check('直连：令牌没写进计划和日志', all(TOKEN not in open(os.path.join(DATA, 'batches', b, f), encoding='utf-8').read()
+                                    for b in (b1, b2) for f in ('plan.json', 'journal.jsonl')))
+    # 令牌缺「移动」权限 → 预演就拒，说清楚
+    cfg = cl.get('/api/config').json()['config']; cfg['min_video_mb'] = 100; cl.put('/api/config', json=cfg)
+    cl.post('/api/run/full'); wait_job()
+    rows = cl.get('/api/rows', params={'limit': 1000}).json()['rows']
+    todo = [r['path'] for r in rows if r['bucket'] == '可切' and exists(r['path'])][:1]
+    approve([(p, None) for p in todo])
+    fake_cd2('list,mkdir')
+    r = cl.post('/api/exec/plan')
+    check('直连：令牌缺「移动」权限 → 预演被拒并说明', r.status_code == 400 and '权限' in r.json()['detail'], r.text)
+    # 中途 CD2 断了 → 停批，不退回挂载；用户选「挂载改名」续跑才继续
+    fake_cd2()
+    os.environ['PANEL_EXEC_CRASH_AFTER'] = ''
+    r = cl.post('/api/exec/run'); check('直连：小批次开跑', r.status_code == 200, r.text)
+    j = wait_job(); b3 = j['run_id']
+    check('直连：小批次全部搬成', cl.get('/api/exec/batch/' + b3).json()['reconcile']['ok'])
+    cl.post('/api/run/full'); wait_job()
+    rows = cl.get('/api/rows', params={'limit': 1000}).json()['rows']
+    todo = [r['path'] for r in rows if r['bucket'] == '可切' and exists(r['path'])][:2]
+    approve([(p, None) for p in todo])
+    # 中途断：搬完第 1 处 CD2 就退出 → 第 2 处失败、停批；用户明确选「挂载改名」续跑才继续
+    cl.post('/api/run/full'); wait_job()
+    rows = cl.get('/api/rows', params={'limit': 1000}).json()['rows']
+    todo = [r['path'] for r in rows if r['bucket'] == '可切' and exists(r['path'])][:2]
+    check('直连：中途断测试有 2 条可用', len(todo) == 2, todo)
+    approve([(p, None) for p in todo])
+    fake_cd2(die_after=1)
+    r = cl.post('/api/exec/run'); j = wait_job(); b4 = j['run_id']
+    rec4 = cl.get('/api/exec/batch/' + b4).json()['reconcile']
+    jr = [json.loads(l) for l in open(os.path.join(DATA, 'batches', b4, 'journal.jsonl'), encoding='utf-8')]
+    check('直连：中途断（CD2 搬了、没来得及确认）→ 记「结果未知」、停批、第 2 处没动、对账不平',
+          any(e['state'] == 'unknown' for e in jr) and not rec4['ok']
+          and not exists(jr[0]['src']) and all(exists(p) for p in todo if not p.startswith(jr[0]['src'])), (rec4, jr[-3:]))
+    r = cl.post('/api/exec/resume/' + b4, params={'backend': 'mount'}); j = wait_job()
+    rec4 = cl.get('/api/exec/batch/' + b4).json()['reconcile']
+    jr = [json.loads(l) for l in open(os.path.join(DATA, 'batches', b4, 'journal.jsonl'), encoding='utf-8')]
+    check('直连：用户选「挂载改名」续跑 → 结果未知那处按实地判成已搬成、剩下的搬成，对账平（日志记了改用挂载）',
+          any(e['state'] == 'backend' and e['to'] == 'mount' for e in jr) and any(e.get('note') == '续跑：上次已搬成' for e in jr)
+          and rec4['moved_rows'] == 2 and rec4['ok'], rec4)
+    cl.post('/api/run/full'); wait_job()
+    rows = cl.get('/api/rows', params={'limit': 1000}).json()['rows']
+    todo = [r['path'] for r in rows if r['bucket'] == '可切' and exists(r['path'])][:1]
+    check('直连：还剩可用的演练条目', len(todo) == 1, todo)
+    approve([(p, None) for p in todo])
+    FAKE.terminate(); FAKE.wait()
+    r = cl.post('/api/exec/run')
+    check('直连：CD2 不通 → 不建批次、说清楚（不退回挂载）', r.status_code == 400 and '直连不可用' in r.json()['detail'], r.text)
+    check('直连：CD2 不通时文件一个没动', all(exists(p) for p in todo))
+
 SRV.terminate()
+if FAKE:
+    FAKE.terminate()
 
 # ---------- 7. 拒绝规则单测（不经接口） ----------
 os.environ['SIEVE_DATA'] = DATA
@@ -221,12 +312,12 @@ from panel import config as C, execute as X
 cfg = C.normalize(json.load(open(os.path.join(DATA, 'config.json'), encoding='utf-8')))
 put(H + '包D/成龙合集/警察故事.1985.1080p.mkv'); put(H + '包D/成龙合集/红番区.1995.1080p.mkv')
 rows = [{'path': '/115/合集/包D/成龙合集', 'bucket': '可切'}, {'path': '/115/合集/包B/混装/霸王别姬.1993.1080p.mkv', 'bucket': '可切'}]
-p = X.plan(cfg, rows, {'/115/合集/包D/成龙合集': {}}, 'Btest')
+p = X.plan(cfg, rows, {'/115/合集/包D/成龙合集': {}}, 'Btest', X.MountFS(cfg))
 check('多片夹（成龙夹）整夹批准 → 拒绝', not p['ops'] and '多片夹' in p['refused'][0]['reason'], p)
-p = X.plan(dict(cfg, quarantine_dir='/116/排查区'), rows, {'/115/合集/包B/混装/霸王别姬.1993.1080p.mkv': {}}, 'Btest')
+p = X.plan(dict(cfg, quarantine_dir='/116/排查区'), rows, {'/115/合集/包B/混装/霸王别姬.1993.1080p.mkv': {}}, 'Btest', X.MountFS(cfg))
 check('排查区不在同一网盘 → 拒绝（不复制）', not p['ops'] and '跨盘' in p['refused'][0]['reason'], p)
 put('115/99-排查区/Btest/115/合集/包B/混装/霸王别姬.1993.1080p.mkv')
-p = X.plan(cfg, rows, {'/115/合集/包B/混装/霸王别姬.1993.1080p.mkv': {}}, 'Btest')
+p = X.plan(cfg, rows, {'/115/合集/包B/混装/霸王别姬.1993.1080p.mkv': {}}, 'Btest', X.MountFS(cfg))
 check('目标位置已有同名 → 拒绝（不覆盖）', not p['ops'] and '不覆盖' in p['refused'][0]['reason'], p)
 from pathlib import Path
 bd = Path(DATA) / 'batches' / 'Bident'

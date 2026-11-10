@@ -33,6 +33,8 @@ DEFAULTS = {
     'quarantine_dir': '',                               # 排查区（「可清理」搬到这里；同一网盘内）
     'main_lib_dir': '',                                 # 主库目录（「主库缺口」挪入这里）
     'unique_dir': '',                                   # 唯一副本目录（缺口 × 唯一副本时可选的另一个去处）
+    'exec_mode': 'auto',                                # 执行方式：auto（有 CD2 令牌走直连）/ cd2 / mount
+    'cd2_api_addr': os.environ.get('CD2_API_ADDR', ''),  # CD2 接口地址（gRPC），如 192.168.1.10:19798
     # 首启向导是否走完（老配置：已绑过分区的视为走完）
     'setup_done': False,
 }

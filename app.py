@@ -54,13 +54,15 @@ class Job:
         self.proc = None
         self.state = {'running': False}
 
-    def start_exec(self, kind, bdir):
+    def start_exec(self, kind, bdir, backend=''):
         """执行 / 回滚一个批次（同样一次只跑一个任务）。"""
         with self.lock:
             if self.proc and self.proc.poll() is None:
                 raise HTTPException(409, '已有任务在跑')
             log = open(bdir / ('%s.log' % kind), 'a', encoding='utf-8')
             env = dict(os.environ, PYTHONIOENCODING='utf-8', PYTHONUNBUFFERED='1', SIEVE_DATA=str(C.DATA_DIR))
+            if backend:
+                env['PANEL_EXEC_BACKEND'] = backend
             self.proc = subprocess.Popen([sys.executable, '-m', 'panel.execute', kind, str(bdir)],
                                          cwd=str(C.APP_DIR), env=env, stdout=subprocess.PIPE,
                                          stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace')
@@ -265,7 +267,13 @@ def exec_status():
     c = C.load()
     res, d = load_run(None)
     n = len(X.load_approvals(d, res['fingerprint'])) if res and not res['stale'] else 0
+    from panel import cd2api
+    mode = c.get('exec_mode') or 'auto'
+    has_tok = bool(cd2api._token_candidates(c.get('cd2_config')))
+    direct = cd2api.mode_status(c) if (mode == 'cd2' or (mode == 'auto' and has_tok)) else None
     return {'allowed': X.allowed(), 'mount_writable': X.mount_writable(c), 'trial_ok': X.state().get('trial_ok', False),
+            'exec_mode': mode, 'backend': 'mount' if mode == 'mount' or (mode == 'auto' and not has_tok) else 'cd2',
+            'direct': direct,
             'trial_max': X.TRIAL_MAX,
             'dirs': {'quarantine': c['quarantine_dir'], 'mainlib': c['main_lib_dir'], 'unique': c['unique_dir']},
             'run_id': res and res['run_id'], 'stale': bool(res and res['stale']),
@@ -325,21 +333,46 @@ def exec_plan():
     if res['stale'] or res.get('rejected'):
         raise HTTPException(409, '清单已过期或被整批拒绝')
     c = C.load()
-    if not c['cd2_mount'] or not os.path.isdir(c['cd2_mount']):
-        raise HTTPException(400, '执行要用 CD2 挂载目录：设置 → 高级里填「CD2 挂载根」，compose 里把挂载那行打开')
     items = X.load_approvals(d, res['fingerprint'])
     if not items:
         raise HTTPException(400, '还没有批准任何条目')
-    return X.plan(c, load_rows(d), items, _new_batch_id())
+    fs = _backend_or_400(c)
+    return X.plan(c, load_rows(d), items, _new_batch_id(), fs)
+
+
+def _backend_or_400(c, force=None):
+    try:
+        fs = X.backend(c, force)
+    except X.BackendError as e:
+        raise HTTPException(400, str(e))
+    if fs.name == 'mount' and (not c['cd2_mount'] or not os.path.isdir(c['cd2_mount'])):
+        raise HTTPException(400, '挂载改名要用 CD2 挂载目录：设置 → 高级里填「CD2 挂载根」，compose 里把挂载那行打开')
+    return fs
 
 
 @app.post('/api/exec/run')
 def exec_run():
+    # 防重复（真库试跑实测：连点三次，4 秒内建了三个一样的批次）：先抢锁、先查有没有任务在跑，再预演、建批次
+    if not EXEC_LOCK.acquire(blocking=False):
+        raise HTTPException(409, '已有一次执行正在准备（预演中），不重复建批次')
+    try:
+        if JOB.state.get('running'):
+            raise HTTPException(409, '已有任务在跑（%s），不重复建批次' % JOB.state.get('run_id'))
+        return _exec_run_locked()
+    finally:
+        EXEC_LOCK.release()
+
+
+EXEC_LOCK = threading.Lock()
+
+
+def _exec_run_locked():
     if not X.allowed():
         raise HTTPException(403, '执行开关没开：compose 里设 PANEL_ALLOW_MOVE=1 并把 CD2 挂载改成可写，重启后才有执行入口')
     c = C.load()
-    if not X.mount_writable(c):
-        raise HTTPException(403, 'CD2 挂载是只读的：compose 里把挂载那行的 :ro 改成 :rw')
+    fs = _backend_or_400(c)
+    if fs.name == 'mount' and not X.mount_writable(c):
+        raise HTTPException(403, '挂载改名要挂载可写：compose 里把挂载那行的 :ro 改成 :rw（或改用 CD2 直连）')
     res, d = _latest_full()
     if res['stale'] or res.get('rejected'):
         raise HTTPException(409, '清单已过期或被整批拒绝')
@@ -350,7 +383,7 @@ def exec_run():
         raise HTTPException(409, '第一次执行只许 ≤%d 条的小批量试跑，对账无误后才放开（现在批准了 %d 条）'
                             % (X.TRIAL_MAX, len(items)))
     bid = _new_batch_id()
-    p = X.plan(c, load_rows(d), items, bid)
+    p = X.plan(c, load_rows(d), items, bid, fs)
     if not p['ops']:
         raise HTTPException(400, '预演后没有可执行的搬运（都被拒绝或源已不在）')
     bdir = X.BATCHES / bid
@@ -387,11 +420,13 @@ def exec_batch(bid: str):
 
 
 @app.post('/api/exec/resume/{bid}')
-def exec_resume(bid: str):
-    """中途崩了 / 停了：按日志续跑同一个批次。"""
+def exec_resume(bid: str, backend: str = ''):
+    """中途崩了 / 停了：按日志续跑同一个批次。backend=mount|cd2 由用户明确选择改用哪种（直连出错后不自动退回）。"""
     if not X.allowed():
         raise HTTPException(403, '执行开关没开')
-    return JOB.start_exec('run', _batch_dir(bid))
+    if backend not in ('', 'mount', 'cd2'):
+        raise HTTPException(400, 'backend 只能是 mount 或 cd2')
+    return JOB.start_exec('run', _batch_dir(bid), backend)
 
 
 @app.post('/api/exec/rollback/{bid}')

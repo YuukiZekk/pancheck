@@ -76,10 +76,16 @@ docker compose down                          # 停止
 
 ## 执行（第二期：只搬不删）
 
-默认关闭，面板保持只读。要执行，两道开关都要开：
+默认关闭，面板保持只读。要执行：
 
-1. `docker-compose.yml` 里 CD2 挂载那行 `:ro` 改成 `:rw`，`.env` 里填 `CD2_MOUNT_HOST`（CD2 在宿主机上的挂载根）；
-2. `environment` 里加 `PANEL_ALLOW_MOVE=1`，`docker compose up -d` 重建。
+1. `environment` 里加 `PANEL_ALLOW_MOVE=1`，`docker compose up -d` 重建；
+2. 选执行方式（设置 → 高级 →「执行方式」，默认自动）：
+   - **CD2 直连（推荐）**：走 CD2 的 gRPC 接口 `MoveFile`，和 `clouddrive mv` 同源，服务端改名、秒完。
+     在 CD2 里建一个 API 令牌（权限勾「列目录 / 建文件夹 / 移动」，不需要删除权限），它会出现在 CD2 配置目录的
+     `api_tokens.json` 里，面板自己读；再填「CD2 接口地址」（如 `192.168.1.10:19798`，或 `.env` 里设 `CD2_API_ADDR`）。
+     令牌只在内存里用，不写进配置、计划和日志。直连出错会停批并说明原因，**不会悄悄改用挂载**；续跑时由你选。
+   - **挂载改名**：经 CD2 挂载 `os.rename`。真库实测 1–2 分钟一部，只适合小批量；要把 compose 里挂载那行 `:ro` 改成 `:rw`，
+     `.env` 里填 `CD2_MOUNT_HOST`。
 
 然后在设置 → 高级里填三个去处（都要和片子在同一个网盘里，同盘改名是秒搬）：排查区、主库目录、唯一副本目录。
 

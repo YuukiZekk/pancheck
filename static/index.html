@@ -352,7 +352,16 @@ textarea{min-height:64px;resize:vertical}
         <div><label class="f">主库目录（「主库缺口」挪入这里）</label><input type="text" id="c-main_lib_dir" placeholder="/115/00-主库"></div>
         <div><label class="f">唯一副本目录（缺口同时是唯一副本时可选的去处）</label><input type="text" id="c-unique_dir" placeholder="/115/98-唯一副本"></div>
       </div>
-      <p class="mut small">三个目录都要和片子在同一个网盘里：同盘改名是秒搬，不复制、不删除。</p>
+      <div class="form" style="margin-top:10px">
+        <div><label class="f">执行方式</label>
+          <select class="in" id="c-exec_mode">
+            <option value="auto">自动（有 CD2 令牌就走直连，否则挂载改名）</option>
+            <option value="cd2">CD2 直连（服务端改名，秒完）</option>
+            <option value="mount">挂载改名（慢，1–2 分钟一部，只适合小批量）</option>
+          </select></div>
+        <div><label class="f">CD2 接口地址（直连用，如 192.168.1.10:19798）</label><input type="text" id="c-cd2_api_addr" placeholder="192.168.1.10:19798"></div>
+      </div>
+      <p class="mut small">三个目录都要和片子在同一个网盘里：同盘改名是秒搬，不复制、不删除。CD2 直连用的是 CD2 配置目录里的 API 令牌（api_tokens.json），要有「列目录 / 建文件夹 / 移动」权限；令牌只在内存里用，不写进配置和日志。直连出错会停批，不会悄悄改用挂载。</p>
     </div>
     <div class="card">
       <h3>保护区与榜单包目录名</h3>
@@ -458,7 +467,7 @@ $('#search-in').addEventListener('keydown', e => {
 
 // ---------- 设置 ----------
 const LISTS = ['protect_names','listpack_names','exclude_names','tv_keep_names','keep_first_names'];
-const SCALARS = ['data_source','cd2_mount','cd2_config','cd2_api_name','cd2_api_user','emby_data','emby_prefix','csv_dir','min_video_mb','quarantine_dir','main_lib_dir','unique_dir'];
+const SCALARS = ['data_source','cd2_mount','cd2_config','cd2_api_name','cd2_api_user','emby_data','emby_prefix','csv_dir','min_video_mb','quarantine_dir','main_lib_dir','unique_dir','exec_mode','cd2_api_addr'];
 async function loadCfg() {
   const r = await api('api/config');
   CFG = r.config;
@@ -498,13 +507,16 @@ async function loadExec() {
   const s = EXS, d = s.dirs;
   $('#ex-status').innerHTML = `<dl class="kv">
     <dt>执行开关</dt><dd class="${s.allowed ? 'ok' : 'warn'}">${s.allowed ? '✓ 已开（PANEL_ALLOW_MOVE=1）' : '关：compose 里设 PANEL_ALLOW_MOVE=1 才有执行入口（预演不受影响）'}</dd>
-    <dt>挂载</dt><dd class="${s.mount_writable ? 'ok' : 'warn'}">${s.mount_writable ? '✓ 可写' : '只读或没挂：compose 里 CD2 挂载那行改成 :rw'}</dd>
+    <dt>执行方式</dt><dd>${s.backend === 'cd2' ? 'CD2 直连' : '挂载改名（慢，只适合小批量）'}<span class="jg">${esc({auto: '自动', cd2: '直连', mount: '挂载'}[s.exec_mode] || s.exec_mode)}</span></dd>
+    ${s.backend === 'cd2' ? `<dt>直连</dt><dd class="${s.direct && s.direct.ok ? 'ok' : 'bad'}">${s.direct && s.direct.ok ? `✓ 令牌可用（${esc(s.direct.name || '未命名')}，根目录 ${esc(s.direct.root)}）` : esc((s.direct || {}).error || '不可用')}</dd>`
+      : `<dt>挂载</dt><dd class="${s.mount_writable ? 'ok' : 'warn'}">${s.mount_writable ? '✓ 可写' : '只读或没挂：compose 里 CD2 挂载那行改成 :rw'}</dd>`}
     <dt>排查区</dt><dd>${esc(d.quarantine || '（没填）')}</dd><dt>主库目录</dt><dd>${esc(d.mainlib || '（没填）')}</dd><dt>唯一副本目录</dt><dd>${esc(d.unique || '（没填）')}</dd>
     <dt>试跑</dt><dd class="${s.trial_ok ? 'ok' : 'warn'}">${s.trial_ok ? '✓ 小批量试跑已对账无误，放开批量' : `还没试跑：第一次只许 ≤${s.trial_max} 条`}</dd></dl>`;
   $('#ex-appr').innerHTML = s.stale ? '<span class="warn">设置改过，清单已过期：重新跑筛后再批准。</span>'
     : s.rejected ? '<span class="bad">清单被保护守卫整批拒绝，不能执行。</span>'
     : `<div class="big" style="font-size:26px">${n(s.approvals)} 条</div><div class="mut">在「清单」里勾选后点「批准」，或在右侧逐条批准。</div>`;
-  $('#ex-run').disabled = !(s.allowed && s.mount_writable && s.approvals && !s.stale && !s.rejected);
+  const ready = s.backend === 'cd2' ? (s.direct && s.direct.ok) : s.mount_writable;
+  $('#ex-run').disabled = !(s.allowed && ready && s.approvals && !s.stale && !s.rejected);
   loadBatches();
 }
 async function execPlan() {
@@ -539,7 +551,7 @@ async function loadBatches() {
     const roll = rb ? `<br><span class="mut">已回滚 ${n(rb.rolled_back)} 处${rb.problems.length ? `，问题 ${rb.problems.length}` : ''}</span>` : '';
     const id = esc(b.batch_id);
     return `<tr><td>${id}<br><span class="mut">${b.created ? fmtTime(b.created) : ''}</span></td><td class="num">${n(b.rows)}</td><td class="num">${n(b.ops)}</td><td>${rec}${roll}</td>
-      <td><button class="btn" onclick="batchDetail('${id}')">详情</button> ${r && !r.ok ? `<button class="btn" onclick="batchAct('resume','${id}')">续跑</button>` : ''} <button class="btn" onclick="batchAct('rollback','${id}')">回滚</button></td></tr>`;
+      <td><button class="btn" onclick="batchDetail('${id}')">详情</button> ${r && !r.ok ? `<button class="btn" onclick="batchAct('resume','${id}')">续跑</button> <button class="btn" onclick="batchAct('resume','${id}','mount')" title="直连不可用时，由你决定改用挂载改名续跑（慢）">改用挂载续跑</button>` : ''} <button class="btn" onclick="batchAct('rollback','${id}')">回滚</button></td></tr>`;
   }).join('') + '</table><div id="ex-detail" style="margin-top:10px"></div>';
 }
 async function batchDetail(id) {
@@ -550,10 +562,11 @@ async function batchDetail(id) {
   if (b.rollback && b.rollback.problems.length) h += '<div class="warn">回滚问题：</div><table>' + b.rollback.problems.map(f => `<tr><td>#${f.op}</td><td>${esc(f.reason)}</td></tr>`).join('') + '</table>';
   $('#ex-detail').innerHTML = h;
 }
-async function batchAct(kind, id) {
-  const msg = kind === 'rollback' ? `把批次 ${id} 搬走的东西按日志搬回原位？（体积对不上的不覆盖、报出来）` : `按日志续跑批次 ${id}？`;
+async function batchAct(kind, id, be) {
+  const msg = kind === 'rollback' ? `把批次 ${id} 搬走的东西按日志搬回原位？（体积对不上的不覆盖、报出来）`
+    : be === 'mount' ? `改用「挂载改名」续跑批次 ${id}？挂载改名慢（1–2 分钟一部），只适合剩下不多的时候。` : `按日志续跑批次 ${id}？`;
   if (!confirm(msg)) return;
-  try { await api(`api/exec/${kind}/${id}`, {method: 'POST'}); poll(); } catch (e) { alert(e.message); }
+  try { await api(`api/exec/${kind}/${id}` + (be ? '?backend=' + be : ''), {method: 'POST'}); poll(); } catch (e) { alert(e.message); }
 }
 
 // ---------- 首启向导：填一页、验一页、过一页 ----------
