@@ -125,6 +125,32 @@ def cross_heji_remux(cfg, cut_all, result):
     return out
 
 
+DUPE_STAGE = '原盘重复'
+
+
+def yuanpan_dupes(result):
+    """A2 第一层：原盘区同名同大小精确重复（口径见 panel/dupes.py）。"""
+    from . import dupes
+    if not os.path.isfile('yuanpan_all.csv'):
+        result['dupes'] = {'skipped': '这个数据来源没有原盘区全量清单（CSV 模式不支持）'}
+        return []
+    items = [{'path': r['path'], 'size': int(r['size']), 'kind': r['kind'], 'pack': r['pack'], 'top': r['top'] == '1'}
+             for r in csv.DictReader(open('yuanpan_all.csv', encoding='utf-8-sig'))]
+    top = {x['path'] for x in items if x['top']}
+    pack_of = {x['path']: x['pack'] for x in items}
+    pack_size = defaultdict(int)
+    for x in items:
+        pack_size[x['pack']] += x['size']
+    moves, all_top = dupes.plan(items, lambda p: p in top, lambda p: pack_of.get(p, ''), pack_size)
+    out = []
+    for x, keep, why in moves:
+        where = '保护 / 保留优先目录' if why == 'top' else '更大的包「%s」' % (keep['pack'] or '分区根')
+        out.append(row(DUPE_STAGE, 'A', '可切', x['path'], x['size'] / GIB, keep=keep['path'],
+                       basis='同名同大小的另一份在%s，留那份' % where))
+    result['dupes'] = {'groups': len(dupes.groups(items)), 'all_protected': all_top, 'moves': len(out)}
+    return out
+
+
 def main(mode, run_dir):
     os.makedirs(run_dir, exist_ok=True)
     cfg = C.load()
@@ -180,6 +206,9 @@ def main(mode, run_dir):
 
     emit('cross', '比对合集与 REMUX', 80)
     rows += cross_heji_remux(cfg, cut_all, result)
+
+    emit('dupes', '查找原盘区完全重复', 83)
+    rows += yuanpan_dupes(result)
 
     emit('tvsplit', '识别混入的剧集', 85)
     # 第一期分流只出清单、不摘刀口行：刀口各桶保持内核原样（已对金标准），两边互斥留到第二期执行时处理

@@ -342,6 +342,7 @@ textarea{min-height:64px;resize:vertical}
         <div><label class="f">榜单包（不筛不拆）</label><textarea id="c-listpack_names"></textarea></div>
         <div><label class="f">排除包（只参与「合集 vs 原盘」）</label><textarea id="c-exclude_names"></textarea></div>
         <div><label class="f">系列电影关键字（剧集识别时提示）</label><textarea id="c-tv_keep_names"></textarea></div>
+        <div><label class="f">原盘重复时优先保留的目录名（与保护目录同属一档，如已刮削大包）</label><textarea id="c-keep_first_names" placeholder="一行一个，如：已刮削"></textarea></div>
       </div>
       <p class="mut small">只匹配目录名，文件名和单片夹夹名里的简介字样不算。命中的目录整个不参与筛选。内置词删不掉。</p>
       <label class="row small"><input type="checkbox" id="confirm-rm"> 我确认移除保护（删掉已有保护目录名时需要）</label>
@@ -436,7 +437,7 @@ $('#search-in').addEventListener('keydown', e => {
 });
 
 // ---------- 设置 ----------
-const LISTS = ['protect_names','listpack_names','exclude_names','tv_keep_names'];
+const LISTS = ['protect_names','listpack_names','exclude_names','tv_keep_names','keep_first_names'];
 const SCALARS = ['data_source','cd2_mount','cd2_config','cd2_api_name','cd2_api_user','emby_data','emby_prefix','csv_dir','min_video_mb','quarantine_dir'];
 async function loadCfg() {
   const r = await api('api/config');
@@ -535,10 +536,11 @@ async function wzCheck() {
     h += '<p class="small">电影数和 Emby 后台对得上，就点下一步。</p>';
   } else {
     const opts = z => `<select class="in" style="width:auto" data-p="">${[['', '不用'], ...Object.entries(ZN)].map(([k, v]) => `<option value="${k}" ${k === z ? 'selected' : ''}>${v}</option>`).join('')}</select>`;
-    const rows = Object.entries(r.zones).flatMap(([z, ps]) => ps.map(p => [p, z]));
+    const sz = r.sizes || {};
+    const rows = Object.entries(r.zones).flatMap(([z, ps]) => ps.map(p => [p, z])).sort((a, b) => (sz[b[0]] || 0) - (sz[a[0]] || 0));
     h = rows.length ? '<div class="wz-z">' + rows.map(([p, z]) => {
       const cv = (r.coverage || {})[p];
-      return `<div>${esc(p)}${cv && cv.count ? `<br><span class="warn small">⚠ ${n(cv.count)} 个目录 CD2 还没打开过${cv.in_disc ? `（碟内 ${n(cv.in_disc)}）` : ''}，那部分不在比对范围内</span>` : ''}</div>${opts(z).replace('data-p=""', `data-p="${esc(p)}"`)}`;
+      return `<div>${esc(p)}${sz[p] != null ? ` <span class="mut small">${n(sz[p])} 个下层文件夹</span>` : ''}${cv && cv.count ? `<br><span class="warn small">⚠ ${n(cv.count)} 个目录 CD2 还没打开过${cv.in_disc ? `（碟内 ${n(cv.in_disc)}）` : ''}，那部分不在比对范围内</span>` : ''}</div>${opts(z).replace('data-p=""', `data-p="${esc(p)}"`)}`;
     }).join('') + '</div>' : '<div class="banner warnb">没从目录名认出像合集 / 原盘 / REMUX 的目录。点「完成」后在盘点页的目录树里手动绑定就行。</div>';
     h += '<h3 style="margin-top:14px">保护目录（整个不看、不动）</h3>';
     h += (r.protect_found.length ? r.protect_found.map(t => `<label class="row small" style="gap:6px"><input type="checkbox" class="wz-prot" value="${esc(t)}" checked>目录名含「${esc(t)}」的</label>`).join('')
@@ -731,7 +733,7 @@ const SIEVES = [
   {name: 'REMUX 分层', sub: 'REMUX 三分分层', off: true},
   {name: 'REMUX 与原盘比对', sub: 'REMUX × 原盘交叉', off: true},
   {name: '合集与 REMUX 比对', sub: '合集 × REMUX', stages: ['合集×REMUX'], bucket: '可切'},
-  {name: '原盘完全重复', sub: '原盘精确重复', off: true},
+  {name: '原盘完全重复', sub: '原盘精确重复', stages: ['原盘重复'], bucket: '可切'},
   {name: '合集去重与低画质', sub: '合集区三刀', stages: ['第一刀', '第二刀', '第三刀'], bucket: '可切'},
   {name: '对比 Emby 片库', sub: '纵向 × Emby', stages: ['纵向'], bucket: '提醒'},
   {name: '混入的剧集', sub: '电视剧分流', stages: ['剧集分流'], bucket: '剧集分流'},

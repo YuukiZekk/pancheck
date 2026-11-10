@@ -249,6 +249,14 @@ def scan_inputs(cfg, workdir, progress):
         stats['source'] = {'kind': 'scan'}
     stats['dropped'] = {z: dict(c) for z, c in drops.items() if c}
     unit_dirs = film_unit_dirs([it[2] for z in raw for it in raw[z]])
+    # 原盘重复（A2）要看到保护区里的那份才能判「保护档留、档外搬」：剔除前先把原盘区全量存一份
+    keep_first = list(cfg['protect_names']) + list(cfg['listpack_names']) + list(cfg.get('keep_first_names') or [])
+    yall = []
+    for root, kind, vp, size in raw['yuanpan']:
+        rel = vp[len(root):].strip('/').split('/')
+        yall.append({'path': vp, 'size': size, 'kind': kind, 'pack': rel[0] if len(rel) > 1 else '',
+                     'top': 1 if protect_hit(vp, keep_first, unit_dirs) else 0})
+    _write(workdir, 'yuanpan_all.csv', ['path', 'size', 'kind', 'pack', 'top'], yall, 'utf-8-sig')
     # 提取层只剔保护区。榜单包留在人口里（与金标准同口径），由内核判定层整包不筛，守卫兜底整批拒绝
     blocked = list(cfg['protect_names'])
     skipped = Counter()

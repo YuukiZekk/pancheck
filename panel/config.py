@@ -28,6 +28,7 @@ DEFAULTS = {
     'listpack_names': ['豆瓣', 'IMDB', 'IMDb', '戛纳', 'Top250', 'Top 250'],
     'exclude_names': ['金庸', '动漫', 'ADWEB'],          # 第二/三刀与纵向不碰（内核已内置，这里可追加）
     'tv_keep_names': ['系列', '三部曲', '部曲'],          # 剧集分流时：路径含这些的视为系列电影，不分流
+    'keep_first_names': [],                             # 原盘重复时优先留这里（与保护目录同属一档，如已刮削大包）
     # 第二期用
     'quarantine_dir': '',
     # 首启向导是否走完（老配置：已绑过分区的视为走完）
@@ -58,7 +59,7 @@ def normalize(cfg):
     z = c.get('zones') or {}
     c['zones'] = {k: [('/' + p.strip().strip('/')) for p in (z.get(k) or []) if str(p).strip()]
                   for k in ('heji', 'yuanpan', 'remux', 'pack')}
-    for k in ('protect_names', 'listpack_names', 'exclude_names', 'tv_keep_names'):
+    for k in ('protect_names', 'listpack_names', 'exclude_names', 'tv_keep_names', 'keep_first_names'):
         c[k] = _merge_unique([], c.get(k))
     c['listpack_names'] = _merge_unique(BUILTIN_LISTPACK, c['listpack_names'])
     c['exclude_names'] = _merge_unique(BUILTIN_EXCLUDE, c['exclude_names'])
@@ -91,6 +92,6 @@ def save(cfg):
 def fingerprint(cfg):
     """影响判定的配置指纹：变了旧清单即作废。"""
     keys = ('data_source', 'cd2_mount', 'cd2_config', 'cd2_api_name', 'cd2_api_user', 'emby_data', 'emby_prefix', 'csv_dir', 'min_video_mb', 'zones',
-            'protect_names', 'listpack_names', 'exclude_names', 'tv_keep_names')
+            'protect_names', 'listpack_names', 'exclude_names', 'tv_keep_names', 'keep_first_names')
     blob = json.dumps({k: cfg.get(k) for k in keys}, ensure_ascii=False, sort_keys=True)
     return hashlib.sha1(blob.encode('utf-8')).hexdigest()[:12]

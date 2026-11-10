@@ -142,6 +142,22 @@ def check_zones(cfg=None):
         sg = S.suggest(cfg)
     except Exception:
         return {'ok': False, 'error': '读不出网盘目录树。', 'hint': '回到第 1 步重新识别 CD2。'}
+    if cfg.get('data_source') == 'cache':
+        # 真分区一般是大目录、「未整理」里名字带合集/原盘的杂夹一般很小：按下层文件夹数从大到小排
+        from . import cd2cache
+        try:
+            ch = cd2cache._children_map(cfg)
+
+            def size(p, depth=0):
+                kids = ch.get(p, ())
+                return len(kids) + (sum(size(p + '/' + k, depth + 1) for k in kids) if depth < 6 else 0)
+            sg['sizes'] = {}
+            for z, ps in sg['zones'].items():
+                for p in ps:
+                    sg['sizes'][p] = size(p)
+                ps.sort(key=lambda p: -sg['sizes'][p])
+        except Exception:
+            pass
     roots = [p for z in sg['zones'].values() for p in z]
     cov = {}
     if cfg.get('data_source') == 'cache' and roots:
