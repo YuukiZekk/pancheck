@@ -33,27 +33,36 @@ def row(stage, cls, bucket, path, gb, keep='', basis='', **extra):
 
 
 def tv_split(cfg, files):
-    """剧集分流（未对金标准，仅出清单）：同一目录 ≥2 个带集号的视频文件 → 整夹列为剧集；
-    路径（分区根以下部分）含系列电影词的不分流。"""
+    """混入的剧集（未对金标准，仅出清单），按文件夹展示：
+    - 缓存/遍历模式：带集号的文件已在提取层分出（zone='tv'），不在电影人口里；所在夹一律列出；
+    - CSV 模式：人口由 CSV 决定，沿用夹级口径——同一目录 ≥2 个带集号文件、且不含系列电影词的才列。"""
     import sieve
     zones = cfg['zones']
     by_folder = defaultdict(list)
     for zone, vp, g, _ in files:
-        if zone in ('heji', 'yuanpan', 'remux'):
-            by_folder[(zone, vp.rsplit('/', 1)[0])].append((vp, g))
+        if zone == 'tv':
+            by_folder[('heji', vp.rsplit('/', 1)[0])].append((vp, g, True))
+        elif zone in ('heji', 'yuanpan', 'remux'):
+            by_folder[(zone, vp.rsplit('/', 1)[0])].append((vp, g, False))
     out = []
     for (zone, folder), fs in sorted(by_folder.items()):
-        eps = [f for f in fs if sieve.EP.search(f[0].rsplit('/', 1)[-1])]
-        if len(eps) < 2:
+        split = [f for f in fs if f[2]]
+        eps = [f for f in fs if f[2] or sieve.EP.search(f[0].rsplit('/', 1)[-1])]
+        if not split and len(eps) < 2:
             continue
         roots = [r for r in zones.get(zone, []) if folder.startswith(r)]
         rel = folder[len(roots[0]):] if roots else folder
         keep = sources.hit_any(rel, cfg['tv_keep_names'])
-        if keep:
+        if keep and not split:
             continue
-        out.append(row('剧集分流', '剧集夹', '剧集分流', folder, sum(f[1] for f in fs),
-                       basis='%d 个文件里 %d 个带集号；夹里的文件若也出现在其他分类，优先按剧集处理'
-                             % (len(fs), len(eps)), zone=zone))
+        if split:
+            basis = '%d 个带集号的文件已从电影里分出，不参与比对' % len(split)
+            if keep:
+                basis += '；路径含「%s」，请确认是不是系列电影' % keep
+        else:
+            basis = '%d 个文件里 %d 个带集号；夹里的文件若也出现在其他分类，优先按剧集处理' % (len(fs), len(eps))
+        out.append(row('剧集分流', '剧集夹', '剧集分流', folder, sum(f[1] for f in fs), basis=basis,
+                       zone=zone, episodes=len(eps)))
     return out
 
 

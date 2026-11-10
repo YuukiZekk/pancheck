@@ -225,16 +225,19 @@ def scan_inputs(cfg, workdir, progress):
     unit_dirs = film_unit_dirs([it[2] for z in raw for it in raw[z]])
     blocked = blocked_names(cfg)
     skipped = Counter()
+    skipped_bytes = 0
     for z in raw:
         kept = []
         for it in raw[z]:
             n = protect_hit(it[2], blocked, unit_dirs)
             if n:
                 skipped[n] += 1
+                skipped_bytes += it[3]
             else:
                 kept.append(it)
         raw[z] = kept
     stats['protected_skipped'] = dict(skipped)
+    stats['protected_gb'] = round(skipped_bytes / GB, 1)
 
     # 原盘区 → yuanpan_units.csv / yuanpan_files.csv
     units, yfiles = [], []
@@ -253,14 +256,22 @@ def scan_inputs(cfg, workdir, progress):
     _write(workdir, 'yuanpan_files.csv', ['path', 'GB'], yfiles, 'utf-8')
 
     # 合集区 → heji_films.csv（大包 = 分区根下第一级目录）
-    heji = []
+    # 带集号的文件（内核 EP 口径）在提取层就分出去，归「混入的剧集」，不进电影人口——与手工流程一致
+    import sieve
+    heji, ep_n, ep_bytes = [], 0, 0
     for root, kind, vp, size in raw['heji']:
         rel = vp[len(root):].strip('/').split('/')
         top = rel[0] if len(rel) > 1 else root.rsplit('/', 1)[-1]
         name = vp.rsplit('/', 1)[-1]
         form = 'ISO' if kind == 'disc' else os.path.splitext(name)[1][1:].upper()
+        if kind == 'file' and sieve.EP.search(name):
+            files.append(('tv', vp, gb(size), form))
+            ep_n += 1
+            ep_bytes += size
+            continue
         heji.append({'大包': top, '片名(文件名)': name, 'GB': gb(size), '形态': form, '路径': vp})
         files.append(('heji', vp, gb(size), form))
+    stats['heji_episodes'] = {'count': ep_n, 'gb': round(ep_bytes / GB, 1)}
     _write(workdir, 'heji_films.csv', ['大包', '片名(文件名)', 'GB', '形态', '路径'], heji, 'utf-8-sig')
 
     # REMUX 区：第一期只盘点（判定模块未收编）
@@ -269,7 +280,7 @@ def scan_inputs(cfg, workdir, progress):
 
     # Emby → emby_yp.csv / emby_titles.csv
     progress('读取 Emby 片库')
-    emby_info = write_emby_csvs(cfg, workdir, errors)
+    emby_info = write_emby_csvs(cfg, workdir, errors, [u['path'] for u in units] + [f['path'] for f in yfiles])
 
     for z in ('heji', 'yuanpan', 'remux'):
         fz = [f for f in files if f[0] == z]
@@ -365,6 +376,7 @@ def probe_cd2(cfg):
 
 TMDB_RE = re.compile(r'tmdb=(\d+)', re.I)
 VIDEO_STREAM_TYPE = 2      # Emby 流表 StreamType：视频流
+EMBY_MOVIE_TYPE = 5        # Emby 4.x MediaItems.Type 为整数时：5 = 电影（真库实测与金标准电影数一致）
 
 
 def nominal_vh(w, h):
@@ -418,12 +430,24 @@ def emby_items(cfg):
     def g(it, k):
         return it.get(cols[k]) if k in cols else None
 
-    type_is_str = any(isinstance(g(it, 'type'), str) for it in rows[:200])
+    def tnorm(t):
+        return int(t) if isinstance(t, str) and t.strip().isdigit() else t
+
+    types = Counter(tnorm(g(it, 'type')) for it in rows) if 'type' in cols else Counter()
+    type_is_str = any(isinstance(t, str) for t in types)
+    if type_is_str:
+        rule = '类型名以 Movie 结尾'
+    elif EMBY_MOVIE_TYPE in types:
+        rule = '类型 %d = 电影（Emby 4.x 约定）' % EMBY_MOVIE_TYPE
+    else:
+        rule = '推断：非剧集、非文件夹（库里没有类型 %d，请核对电影数）' % EMBY_MOVIE_TYPE
     out = []
     for it in rows:
-        t = g(it, 'type')
+        t = tnorm(g(it, 'type'))
         if type_is_str:
             movie = str(t).endswith('Movie')
+        elif EMBY_MOVIE_TYPE in types:
+            movie = t == EMBY_MOVIE_TYPE
         else:
             movie = not g(it, 'seriesname') and not (g(it, 'indexnumber') is not None
                                                         and g(it, 'parentindexnumber') is not None) \
@@ -439,7 +463,8 @@ def emby_items(cfg):
             'movie': movie,
         })
     return out, {'db': db, 'open_mode': how, 'table': table, 'type_col': 'type' in cols,
-                 'type_is_str': type_is_str}
+                 'type_is_str': type_is_str, 'movie_rule': rule,
+                 'type_dist': [[str(k), v] for k, v in types.most_common(8)]}
 
 
 def probe_emby(cfg):
@@ -452,26 +477,71 @@ def probe_emby(cfg):
     return dict(meta, ok=True, items=len(items), movies=len(movies),
                 movies_tmdb=sum(1 for i in movies if i['tmdb']),
                 movies_res=sum(1 for i in movies if i['width']),
+                movies_tmdb_res=sum(1 for i in movies if i['tmdb'] and i['width']),
                 under_prefix=sum(1 for i in items if pre and i['path'].startswith(pre + '/')),
+                path_prefixes=path_prefixes(items),
                 sample_paths=[i['path'] for i in movies[:5]])
 
 
-def write_emby_csvs(cfg, workdir, errors):
+def path_prefixes(items, depth=3, top=4):
+    """Emby 条目路径的前几层分布，让用户一眼看出是直挂库还是 strm 镜像树。"""
+    c = Counter('/' + '/'.join(i['path'].strip('/').split('/')[:depth]) for i in items if i['path'])
+    return [[k, v] for k, v in c.most_common(top)]
+
+
+def tmdb_of_path(vp):
+    """从路径里取 TMDB 编号：先看文件名，再由近到远看各级目录名（如「片名 (2011) {tmdb-9364}」）。"""
+    import sieve
+    for comp in reversed(vp.strip('/').split('/')):
+        m = sieve.TMDB2.search(comp)
+        if m:
+            return m.group(1)
+    return ''
+
+
+def write_emby_csvs(cfg, workdir, errors, yuanpan_paths=()):
+    """emby_titles.csv：电影条目。emby_yp.csv：原盘区实测分辨率，两种配对方式——
+    ① 路径直配：Emby 路径去掉前缀 = 库存路径（直挂库成立）；
+    ② TMDB 兜底：路径配不上时（如 strm 镜像库），从原盘路径里取 TMDB 编号，取 Emby 同编号电影的分辨率
+       （同编号多个版本取最高，与 titles 的 max_vh 同口径）。行仍按原盘路径写，内核按原样查表即可。"""
     pre = cfg['emby_prefix'].rstrip('/')
     try:
         items, meta = emby_items(cfg)
     except Exception as e:
         errors.append('Emby：' + str(e) + '（纵向轴与原盘实测分辨率将缺失）')
         items, meta = [], {}
-    yp, titles = [], []
+    yp, titles, seen = [], [], set()
+    by_tmdb = {}
     for i in items:
         if pre and i['path'].startswith(pre + '/') and i['width']:
             # 内核写死 replace('/CloudNAS/CloudDrive','')，这里统一换成该前缀以对上挂载虚拟路径
-            yp.append({'source_path': '/CloudNAS/CloudDrive' + i['path'][len(pre):],
-                       'width': i['width'], 'height': i['height']})
+            rel = i['path'][len(pre):]
+            yp.append({'source_path': '/CloudNAS/CloudDrive' + rel, 'width': i['width'], 'height': i['height']})
+            seen.add(rel)
         if i['movie'] and (i['tmdb'] or i['name']):
             titles.append({'tmdb': i['tmdb'], 'name': i['name'], 'year': i['year'],
                            'max_vh': nominal_vh(i['width'], i['height'])})
+        if i['movie'] and i['tmdb'] and i['width']:
+            cur = by_tmdb.get(i['tmdb'])
+            if cur is None or min(i['width'], i['height']) > min(cur):
+                by_tmdb[i['tmdb']] = (i['width'], i['height'])
+    path_hits = len(yp)
+    tmdb_tagged = 0
+    for vp in yuanpan_paths:
+        if vp in seen:
+            continue
+        tm = tmdb_of_path(vp)
+        tmdb_tagged += bool(tm)
+        if tm and tm in by_tmdb:
+            w, h = by_tmdb[tm]
+            yp.append({'source_path': '/CloudNAS/CloudDrive' + vp, 'width': w, 'height': h})
+            seen.add(vp)
+    tmdb_hits = len(yp) - path_hits
+    if items and not yp:
+        errors.append('原盘实测分辨率修正未生效：Emby 路径不在前缀 %s 下，原盘路径里也没有能配上的 TMDB 编号；'
+                      '原盘档位只按文件名/体积判断' % (pre or '（空）'))
     _write(workdir, 'emby_yp.csv', ['source_path', 'width', 'height'], yp, 'utf-8')
     _write(workdir, 'emby_titles.csv', ['tmdb', 'name', 'year', 'max_vh'], titles, 'utf-8-sig')
-    return {'items': len(items), 'movies': len(titles), 'matched_paths': len(yp), 'table': meta.get('table')}
+    return {'items': len(items), 'movies': len(titles), 'matched_paths': path_hits, 'matched_tmdb': tmdb_hits,
+            'yuanpan_paths': len(yuanpan_paths), 'yuanpan_tmdb_tagged': tmdb_tagged,
+            'movie_rule': meta.get('movie_rule'), 'table': meta.get('table')}
