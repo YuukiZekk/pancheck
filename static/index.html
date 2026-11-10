@@ -3,237 +3,403 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>sieve 筛选面板</title>
+<title>PanCheck</title>
 <style>
-:root{--bg:#f6f7f9;--card:#fff;--fg:#1d2330;--mut:#6b7385;--line:#e3e6ec;--pri:#2f6fed;--ok:#1f9d55;--warn:#c27c0e;--bad:#d64545;--chip:#eef2fb}
-@media (prefers-color-scheme:dark){:root{--bg:#14171c;--card:#1c2027;--fg:#e4e7ee;--mut:#8b93a5;--line:#2c323c;--pri:#5b8cff;--chip:#252b36}}
+:root{
+  --bg:#f5f5f7;--side:#ececef;--card:#ffffff;--fg:#1d1d1f;--mut:#6e6e73;--line:#e3e3e8;--chip:#f0f0f3;
+  --pri:#0a84ff;--ok:#28a745;--warn:#c27c0e;--bad:#e5484d;
+  --c-yp:#0a84ff;--c-remux:#a259ff;--c-heji:#30b0c7;--c-prot:#a1a1aa;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 4px 16px rgba(0,0,0,.05);--glow:rgba(10,132,255,.10);
+  --r:12px;color-scheme:light;
+}
+:root[data-theme=dark]{
+  --bg:#1c1c1e;--side:#232326;--card:#2a2a2d;--fg:#f5f5f7;--mut:#98989f;--line:#3a3a3e;--chip:#333337;
+  --pri:#0a84ff;--ok:#32d74b;--warn:#ffb340;--bad:#ff6961;--c-prot:#6b6b72;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 24px rgba(0,0,0,.25);--glow:rgba(10,132,255,.18);color-scheme:dark;
+}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
-header{display:flex;align-items:center;gap:16px;padding:10px 20px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5;flex-wrap:wrap}
-header h1{font-size:16px;margin:0}
-nav{display:flex;gap:4px;flex-wrap:wrap}
-nav button{background:none;border:0;padding:6px 12px;border-radius:6px;color:var(--mut);cursor:pointer;font-size:14px}
-nav button.on{background:var(--chip);color:var(--pri);font-weight:600}
-#jobbar{margin-left:auto;font-size:12px;color:var(--mut)}
-main{max-width:1200px;margin:0 auto;padding:16px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px}
-.card h2{font-size:15px;margin:0 0 12px}
-label.f{display:block;margin:8px 0 4px;color:var(--mut);font-size:12px}
-input[type=text],input[type=number],select,textarea{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);font:inherit}
-textarea{min-height:56px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
-button.b{padding:7px 14px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer;font:inherit}
-button.p{background:var(--pri);border-color:var(--pri);color:#fff}
-button.b:disabled{opacity:.5;cursor:not-allowed}
-.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--fg);font:14px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Microsoft YaHei",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+.app{display:grid;grid-template-columns:200px 1fr;height:100vh}
+/* 左侧导航 */
+.side{background:var(--side);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:14px 10px;gap:4px}
+.brand{display:flex;align-items:center;gap:8px;padding:4px 8px 14px;font-weight:700;letter-spacing:.2px}
+.brand i{width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,var(--pri),#5e5ce6);display:inline-block}
+.brand small{display:block;font-weight:400;color:var(--mut);font-size:11px}
+.nav{all:unset;display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:8px;cursor:pointer;color:var(--fg)}
+.nav:hover{background:var(--chip)}
+.nav.on{background:var(--card);box-shadow:var(--shadow);font-weight:600}
+.nav .ic{width:18px;text-align:center;opacity:.8}
+.side .foot{margin-top:auto;display:flex;flex-direction:column;gap:6px;font-size:12px}
+.pill{display:flex;gap:6px;align-items:flex-start;padding:7px 9px;border-radius:8px;background:var(--card);border:1px solid var(--line);line-height:1.35}
+.pill.bad{border-color:var(--bad);color:var(--bad)}
+.pill.ok{color:var(--ok)}
+/* 主区 */
+.main{display:grid;grid-template-rows:48px 1fr;min-width:0;height:100vh}
+.top{display:flex;align-items:center;gap:8px;padding:0 16px;border-bottom:1px solid var(--line);background:var(--bg)}
+.top h1{font-size:15px;margin:0;font-weight:600}
+.top h1 span{color:var(--mut);font-weight:400;margin-left:6px;font-size:12px}
+.top .sp{flex:1}
+.tb{height:30px;padding:0 10px;border-radius:8px;border:1px solid var(--line);background:var(--card);cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.tb:hover{border-color:color-mix(in srgb,var(--pri) 40%,var(--line))}
+.tb kbd{font:11px ui-monospace,monospace;color:var(--mut);border:1px solid var(--line);border-radius:4px;padding:0 4px}
+.tb.pri{background:var(--pri);border-color:var(--pri);color:#fff;position:relative;overflow:hidden;font-weight:600}
+.tb.pri::after{content:"";position:absolute;inset:0;background:linear-gradient(110deg,transparent 30%,rgba(255,255,255,.45) 50%,transparent 70%);transform:translateX(-120%);animation:sweep 3.2s ease-in-out infinite}
+@keyframes sweep{0%,55%{transform:translateX(-120%)}100%{transform:translateX(120%)}}
+.tb.pri:disabled{opacity:.8;cursor:default}
+.tb.pri:disabled::after{animation-duration:1.2s}
+.tb.stop{color:var(--bad);border-color:var(--bad)}
+.menu{position:relative}
+.menu .pop{position:absolute;right:0;top:36px;background:var(--card);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);padding:4px;min-width:180px;z-index:20}
+.menu .pop button{all:unset;display:block;width:100%;box-sizing:border-box;padding:7px 10px;border-radius:6px;cursor:pointer}
+.menu .pop button:hover{background:var(--chip)}
+.canvas{overflow:auto;padding:18px}
+.page{max-width:1280px;margin:0 auto}
+.hidden{display:none!important}
+/* 卡片与光效 */
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;box-shadow:var(--shadow)}
+.card h3{margin:0 0 10px;font-size:13px;color:var(--mut);font-weight:500}
+.fx-spotlight{position:relative;overflow:hidden}
+.fx-spotlight::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .25s;
+  background:radial-gradient(360px circle at var(--mx,50%) var(--my,50%),var(--glow),transparent 45%)}
+.fx-spotlight:hover::before{opacity:1}
+.fx-spotlight:hover{border-color:color-mix(in srgb,var(--pri) 35%,var(--line))}
+@property --a{syntax:"<angle>";initial-value:0deg;inherits:false}
+.fx-beam{border:1px solid transparent;background:linear-gradient(var(--card),var(--card)) padding-box,
+  conic-gradient(from var(--a),var(--line) 0 72%,var(--pri) 86%,#5e5ce6 92%,var(--line)) border-box}
+.fx-beam.on{animation:beam 2.6s linear infinite}
+@keyframes beam{to{--a:360deg}}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.big{font-size:30px;font-weight:700;letter-spacing:-.5px;line-height:1.1}
 .mut{color:var(--mut)}.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}
-.chip{display:inline-flex;align-items:center;gap:4px;background:var(--chip);border-radius:12px;padding:2px 10px;margin:2px;font-size:12px}
-.chip b{cursor:pointer;color:var(--mut);font-weight:400}
-.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
-.tile{border:1px solid var(--line);border-radius:8px;padding:10px;cursor:pointer}
-.tile .n{font-size:22px;font-weight:600}
-.tile.cut{border-color:var(--ok)}
+.small{font-size:12px}
+.jg{font-size:11px;color:var(--mut);margin-left:4px;font-weight:400}
+.bar{height:8px;border-radius:5px;background:var(--chip);overflow:hidden;display:flex}
+.bar i{display:block;height:100%}
+.legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;font-size:12px;color:var(--mut)}
+.legend b{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;vertical-align:middle}
+.quad{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.quad>div{background:var(--chip);border-radius:10px;padding:8px 10px;cursor:pointer}
+.quad .n{font-size:20px;font-weight:700}
+.sieve{cursor:pointer;display:flex;flex-direction:column;gap:6px}
+.sieve .t{font-weight:600}
+.sieve.off{cursor:default;opacity:.55}
+.prog{height:4px;border-radius:3px;background:var(--chip);overflow:hidden}
+.prog i{display:block;height:100%;background:var(--pri);border-radius:3px;transition:width .4s}
+.banner{padding:10px 14px;border-radius:10px;margin-bottom:12px;font-size:13px}
+.banner.bad{background:color-mix(in srgb,var(--bad) 12%,transparent);border:1px solid var(--bad)}
+.note{font-size:12px;color:var(--mut);margin:10px 2px}
+.btn{height:30px;padding:0 12px;border-radius:8px;border:1px solid var(--line);background:var(--card);cursor:pointer}
+.btn.pri{background:var(--pri);color:#fff;border-color:var(--pri)}
+.btn:disabled{opacity:.5;cursor:default}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
-th{color:var(--mut);font-weight:500;white-space:nowrap}
-td.path{word-break:break-all;font-family:ui-monospace,Consolas,monospace;font-size:12px}
-td.num{text-align:right;white-space:nowrap}
-.tree ul{list-style:none;margin:0;padding-left:18px}
-.tree li{margin:2px 0}
-.tree .node{display:flex;gap:6px;align-items:center}
-.tree .node span.nm{cursor:pointer}
-.tree .node button{font-size:11px;padding:1px 6px;border-radius:4px;border:1px solid var(--line);background:none;color:var(--mut);cursor:pointer}
-.tree .node button:hover{color:var(--pri);border-color:var(--pri)}
-.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden}
-.bar i{display:block;height:100%;background:var(--pri)}
-pre{white-space:pre-wrap;font-size:12px;max-height:260px;overflow:auto;background:var(--bg);padding:8px;border-radius:6px}
-.banner{padding:10px 12px;border-radius:8px;margin-bottom:12px}
-.banner.bad{background:rgba(214,69,69,.1);border:1px solid var(--bad)}
-.banner.warn{background:rgba(194,124,14,.1);border:1px solid var(--warn)}
-.hidden{display:none}
-.jg{font-size:11px;color:var(--mut);margin-left:4px;font-weight:400}
-.tile .d{font-size:12px;color:var(--mut);margin-top:6px;line-height:1.4}
-.tag{display:inline-block;font-size:11px;padding:0 6px;border-radius:8px;background:var(--chip);color:var(--mut);margin-top:4px}
-.tag.go{background:rgba(31,157,85,.12);color:var(--ok)}
-button.stop{border-color:var(--bad);color:var(--bad)}
-#probe-out,#inv-out pre,.banner pre{word-break:break-all;overflow-wrap:anywhere}
-.grid>div{min-width:0}
-@media (max-width:640px){main{padding:10px}th:nth-child(5),td:nth-child(5){display:none}}
+th{color:var(--mut);font-weight:500}
+td.num,th.num{text-align:right;white-space:nowrap}
+details summary{cursor:pointer;color:var(--mut);font-size:13px}
+pre{white-space:pre-wrap;word-break:break-all;font-size:12px;background:var(--chip);padding:8px;border-radius:8px;max-height:240px;overflow:auto}
+/* 分段控制器 */
+.seg{display:inline-flex;background:var(--chip);border-radius:9px;padding:2px;gap:2px;flex-wrap:wrap}
+.seg button{all:unset;padding:5px 11px;border-radius:7px;cursor:pointer;font-size:13px;white-space:nowrap}
+.seg button.on{background:var(--card);box-shadow:var(--shadow);font-weight:600}
+.seg button em{font-style:normal;color:var(--mut);font-size:11px;margin-left:4px}
+/* 清单 */
+.manifest{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:14px;margin-top:12px;align-items:start}
+.list{padding:0;overflow:hidden}
+.item{display:grid;grid-template-columns:26px minmax(0,1fr) auto;gap:8px;padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer;align-items:center}
+.item:hover{background:var(--chip)}
+.item.sel{background:color-mix(in srgb,var(--pri) 10%,transparent)}
+.item .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
+.item .sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;color:var(--mut)}
+.item .rt{display:flex;gap:6px;align-items:center;font-size:12px;white-space:nowrap}
+.lock{text-align:center;opacity:.6}
+.cap{display:inline-block;padding:1px 8px;border-radius:10px;background:var(--chip);font-size:11px;color:var(--mut)}
+.cap.go{background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok)}
+.cap.tag{background:color-mix(in srgb,var(--pri) 12%,transparent);color:var(--pri)}
+.ql{position:sticky;top:0}
+.ql .blk{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:10px}
+.ql .lbl{font-size:11px;color:var(--mut);margin-bottom:4px}
+.ql .path{font:12px ui-monospace,Consolas,monospace;word-break:break-all}
+.ql .vs{text-align:center;color:var(--mut);font-size:12px;margin:-4px 0 6px}
+/* 盘点 */
+.inv{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:14px;align-items:start}
+.tree ul{list-style:none;margin:0;padding-left:16px}
+.tree>ul{padding-left:0}
+.tree li{margin:1px 0}
+.node{display:flex;align-items:center;gap:6px;padding:3px 6px;border-radius:6px}
+.node:hover{background:var(--chip)}
+.node .nm{cursor:pointer;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.node select{height:24px;font-size:12px;border:1px solid var(--line);border-radius:6px;background:var(--card);padding:0 4px}
+.node.locked{opacity:.5}
+.node .pb{all:unset;cursor:pointer;font-size:12px;opacity:.5;padding:0 4px}
+.node .pb:hover{opacity:1}
+.chip{display:inline-flex;align-items:center;gap:4px;background:var(--chip);border-radius:12px;padding:2px 10px;margin:2px;font-size:12px}
+.chip b{cursor:pointer;color:var(--mut);font-weight:400}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:13px;margin:0}
+.kv dt{color:var(--mut)}.kv dd{margin:0;word-break:break-all;min-width:0}
+/* 设置 */
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px 14px}
+label.f{display:block;font-size:12px;color:var(--mut);margin-bottom:4px}
+input[type=text],input[type=number],select.in,textarea{width:100%;padding:6px 9px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+textarea{min-height:64px;resize:vertical}
+.stack>*+*{margin-top:14px}
+/* 搜索浮层 */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.25);display:flex;align-items:flex-start;justify-content:center;padding-top:14vh;z-index:50}
+.overlay .box{width:min(560px,92vw);background:var(--card);border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.3);padding:10px}
+.overlay input{width:100%;border:0;outline:0;background:transparent;font-size:17px;padding:8px 10px}
+@media (max-width:1000px){.manifest,.inv{grid-template-columns:1fr}.ql{position:static}.grid3{grid-template-columns:1fr}}
+@media (max-width:720px){
+  .app{grid-template-columns:1fr;grid-template-rows:auto 1fr;height:auto}
+  .side{flex-direction:row;flex-wrap:wrap;padding:8px;gap:2px}
+  .brand{padding:4px 8px}
+  .side .foot{width:100%;margin:4px 0 0}.side .foot .pill:not(.bad){display:none}   /* 手机上只留「未设口令」警示 */
+  .main{height:auto;grid-template-rows:auto 1fr}
+  .top{flex-wrap:wrap;height:auto;padding:8px 12px}
+  .canvas{padding:12px}
+}
 </style>
 </head>
 <body>
-<header>
-  <h1>sieve 筛选面板</h1>
-  <nav id="nav">
-    <button data-p="settings">设置</button>
-    <button data-p="inventory">盘点</button>
-    <button data-p="sieve">筛选</button>
-    <button data-p="list">清单</button>
-  </nav>
-  <div id="jobbar"></div>
-</header>
-<div id="authwarn" class="hidden" style="background:rgba(194,124,14,.12);border-bottom:1px solid var(--warn);padding:8px 20px;font-size:13px">
-  <b class="warn">当前未设访问口令：</b>同一局域网里任何人都能打开这个面板、看到你的片库清单。在 <code>.env</code> 里设置 <code>PANEL_PASSWORD</code> 后执行 <code>docker compose up -d</code> 即可。
-</div>
-<main>
-
-<!-- 设置 -->
-<section id="p-settings" class="hidden">
-  <div class="card">
-    <h2>数据源</h2>
-    <div class="grid">
-      <div>
-        <label class="f">数据来源</label>
-        <select id="c-data_source">
-          <option value="cache">读 CD2 目录缓存（推荐：快，不向网盘发请求）</option>
-          <option value="scan">遍历 CD2 挂载目录（兜底：大库很慢，会向网盘发大量请求）</option>
-          <option value="csv">使用现成 CSV（五张表，用于对账）</option>
-        </select>
+<div class="app">
+  <aside class="side">
+    <div class="brand"><i></i><div>PanCheck<small>115 低质筛</small></div></div>
+    <button class="nav" data-p="overview"><span class="ic">◎</span>总览</button>
+    <button class="nav" data-p="inventory"><span class="ic">▤</span>盘点</button>
+    <button class="nav" data-p="manifest"><span class="ic">☰</span>清单</button>
+    <button class="nav" data-p="settings"><span class="ic">⚙</span>设置</button>
+    <div class="foot">
+      <div id="authpill" class="pill bad hidden">⚠<span>未设访问口令：局域网里谁都能打开。在 .env 设 PANEL_PASSWORD 后重启</span></div>
+      <div class="pill ok">🔒<span>只读：只出清单，不会移动、改名或删除你的文件</span></div>
+      <div id="srcpill" class="pill mut small"></div>
+    </div>
+  </aside>
+  <div class="main">
+    <header class="top">
+      <h1 id="title"></h1>
+      <div class="sp"></div>
+      <button class="tb" onclick="openSearch()" title="搜索片名或路径">⌕ 搜索 <kbd>⌘K</kbd></button>
+      <button class="tb" id="themebtn" onclick="toggleTheme()" title="深浅色">☾</button>
+      <div class="menu">
+        <button class="tb" onclick="toggleMenu(event)">⤓ 导出清单</button>
+        <div class="pop hidden" id="expmenu">
+          <button onclick="exportCurrent('csv')">当前筛选 · CSV</button>
+          <button onclick="exportCurrent('json')">当前筛选 · JSON</button>
+          <button onclick="exportZip()">全部分类 · ZIP</button>
+        </div>
       </div>
-      <div><label class="f">CD2 配置目录（找 dir_cache.sqlite）</label><input type="text" id="c-cd2_config" placeholder="/cd2-config"></div>
-      <div><label class="f">缓存里的网盘标识（115 是 115open）</label><input type="text" id="c-cd2_api_name" placeholder="115open"></div>
-      <div><label class="f">网盘账号标识（同一网盘多个账号时才填）</label><input type="text" id="c-cd2_api_user" placeholder="留空 = 该网盘全部账号"></div>
-      <div><label class="f">CD2 挂载根目录（仅「遍历挂载目录」模式用）</label><input type="text" id="c-cd2_mount" placeholder="/media/cd2"></div>
-      <div><label class="f">Emby data 目录（找 library.db）</label><input type="text" id="c-emby_data" placeholder="/emby-data"></div>
-      <div><label class="f">Emby 里看到的 CD2 挂载根</label><input type="text" id="c-emby_prefix" placeholder="/CloudNAS/CloudDrive"></div>
-      <div><label class="f">CSV 目录（CSV 模式）</label><input type="text" id="c-csv_dir"></div>
-      <div><label class="f">忽略小于此体积的视频（MB）</label><input type="number" id="c-min_video_mb" min="0"></div>
+      <button class="tb stop hidden" id="btn-stop" onclick="stopJob()" title="停止">■ 停止</button>
+      <button class="tb pri" id="btn-run" onclick="runJob('full')">⚡ 一键跑筛</button>
+    </header>
+    <div class="canvas">
+
+<!-- ================= 总览 ================= -->
+<section class="page" id="p-overview">
+  <div id="ov-banners"></div>
+  <div class="grid3">
+    <div class="card fx-spotlight">
+      <h3>总库存</h3>
+      <div class="big" id="ov-total">—</div>
+      <div class="bar" id="ov-bar" style="margin-top:12px"></div>
+      <div class="legend" id="ov-legend"></div>
     </div>
-    <div class="row" style="margin-top:12px">
-      <button class="b p" onclick="saveCfg()">保存</button>
-      <button class="b" onclick="probe()">识别数据源</button>
-      <span id="cfg-msg" class="mut"></span>
+    <div class="card fx-spotlight">
+      <h3>待处理</h3>
+      <div class="quad" id="ov-quad"></div>
     </div>
-    <div id="probe-out"></div>
+    <div class="card fx-beam" id="ov-engine">
+      <h3>引擎状态</h3>
+      <div class="big" id="ov-done">—</div>
+      <div class="mut small" id="ov-msg" style="margin:6px 0 10px">筛类已完成</div>
+      <div class="prog"><i id="ov-prog" style="width:0"></i></div>
+      <div class="row" style="margin-top:12px"><button class="btn" onclick="go('manifest')">去看清单 →</button><a class="small" id="ov-log" target="_blank"></a></div>
+    </div>
   </div>
-  <div class="card">
-    <h2>保护与排除</h2>
-    <p class="mut" style="margin-top:0">一行一个目录名关键字，只匹配目录名（文件名、单片夹夹名里的简介字样不算）。命中的目录在扫描时整枝剔除；若「可清理」里仍有命中，整批拒绝。内置词不可删除。</p>
-    <div class="grid">
-      <div><label class="f">保护区目录名（系列合集 / 出品公司 / 已刮削…）</label><textarea id="c-protect_names"></textarea></div>
-      <div><label class="f">榜单包（不筛不拆）</label><textarea id="c-listpack_names"></textarea></div>
-      <div><label class="f">排除包（只参与「合集 vs 原盘」，其余比对不碰）</label><textarea id="c-exclude_names"></textarea></div>
-      <div><label class="f">剧集分流时视为系列电影的关键字</label><textarea id="c-tv_keep_names"></textarea></div>
-    </div>
-    <label class="row" style="margin-top:8px"><input type="checkbox" id="confirm-rm"> 我确认移除保护（仅在删掉已有保护目录名时需要）</label>
-  </div>
-  <div class="card">
-    <h2>排查区（第二期执行用）</h2>
-    <label class="f">搬运目标目录（同盘 rename，只搬不删）</label>
-    <input type="text" id="c-quarantine_dir" placeholder="/115/99-排查区">
+  <div class="grid3" id="ov-sieves" style="margin-top:14px"></div>
+  <div id="ov-src"></div>
+  <div class="card" style="margin-top:4px">
+    <details><summary>分类明细（对账用）</summary><div id="ov-detail" style="margin-top:10px"></div></details>
   </div>
 </section>
 
-<!-- 盘点 -->
-<section id="p-inventory" class="hidden">
-  <div class="card">
-    <h2>分区映射</h2>
-    <div class="grid">
-      <div><b>合集区</b><div id="z-heji"></div></div>
-      <div><b>原盘区</b><div id="z-yuanpan"></div></div>
-      <div><b>REMUX 区</b> <span class="mut">（第一期只盘点）</span><div id="z-remux"></div></div>
+<!-- ================= 盘点 ================= -->
+<section class="page hidden" id="p-inventory">
+  <div class="inv">
+    <div class="stack">
+      <div class="card">
+        <h3>分区</h3>
+        <dl class="kv" id="zones"></dl>
+        <div class="row" style="margin-top:12px">
+          <button class="btn pri" onclick="saveCfg()">保存</button>
+          <button class="btn" id="btn-inv" onclick="runJob('inventory')">盘点</button>
+          <span class="mut small">目录右侧下拉框绑定分区，🔒 加入保护</span>
+        </div>
+      </div>
+      <div class="card">
+        <h3>目录树 <span class="jg" id="tree-src"></span></h3>
+        <div class="tree" id="tree"></div>
+      </div>
     </div>
-    <div class="row" style="margin-top:12px">
-      <button class="b p" onclick="saveCfg()">保存映射</button>
-      <button class="b" id="btn-inv" onclick="runJob('inventory')">盘点</button>
-      <span class="mut">在下方目录树点按钮把目录加入分区，点「保护」把目录名加入保护区。</span>
+    <div class="stack">
+      <div class="card fx-spotlight">
+        <div class="row" style="justify-content:space-between"><h3 style="margin:0">数据源</h3><button class="btn" onclick="probe(true)">刷新识别</button></div>
+        <div id="inv-probe" style="margin-top:10px" class="mut small">读取中…</div>
+      </div>
+      <div class="card" id="suggest-card">
+        <div class="row" style="justify-content:space-between"><h3 style="margin:0">按目录名建议</h3><button class="btn" onclick="loadSuggest()">生成</button></div>
+        <div id="suggest-out" class="small mut" style="margin-top:8px">只看目录名（最多 3 层），不读文件。</div>
+      </div>
+      <div class="card">
+        <h3>库存概览</h3>
+        <div id="inv-out" class="mut small">还没有盘点结果。</div>
+      </div>
     </div>
-  </div>
-  <div class="card" id="suggest-card">
-    <h2>不知道怎么填？按目录名给你建议</h2>
-    <p class="mut" style="margin-top:0">只看目录名（最多 3 层），不读文件。建议勾选后点「采用」，再点「保存映射」。</p>
-    <button class="b" onclick="loadSuggest()">生成建议</button>
-    <div id="suggest-out"></div>
-  </div>
-  <div class="card">
-    <h2>目录树 <span class="mut" style="font-weight:400" id="tree-src"></span></h2>
-    <div id="tree" class="tree"></div>
-  </div>
-  <div class="card">
-    <h2>库存概览</h2>
-    <div id="inv-out" class="mut">还没有盘点结果。</div>
   </div>
 </section>
 
-<!-- 筛选 -->
-<section id="p-sieve" class="hidden">
-  <div class="card">
-    <p class="ok" style="margin:0 0 10px;font-size:13px">🔒 本工具只读：只出清单，不会移动、改名或删除你的任何文件。</p>
+<!-- ================= 清单 ================= -->
+<section class="page hidden" id="p-manifest">
+  <div id="mf-banners"></div>
+  <div class="seg" id="seg"></div>
+  <div class="row" style="margin-top:10px">
+    <input type="text" id="f-q" placeholder="搜索路径 / 保留的那份" style="flex:1;min-width:200px">
+    <select class="in" id="f-stage" style="width:auto"></select>
+    <select class="in" id="f-sort" style="width:auto"><option value="gb">体积 ↓</option><option value="path">路径</option></select>
+    <button class="btn" onclick="selectVisible()">勾选本页可清理</button>
+    <button class="btn pri" id="btn-expsel" onclick="exportSelected()" disabled>导出已勾选</button>
+  </div>
+  <div class="mut small" id="mf-meta" style="margin-top:8px"></div>
+  <div class="manifest">
+    <div>
+      <div class="card list" id="mf-list"></div>
+      <div class="row" style="justify-content:center;margin-top:10px"><button class="btn" id="more" onclick="loadRows(true)">加载更多</button></div>
+    </div>
+    <div class="card ql" id="ql"><div class="mut small">点左侧任意一行，这里对比「要清理的这份」和「保留的那份」。</div></div>
+  </div>
+</section>
+
+<!-- ================= 设置 ================= -->
+<section class="page hidden" id="p-settings">
+  <div class="stack">
+    <div class="card">
+      <h3>CD2 / Emby 路径</h3>
+      <div class="form">
+        <div><label class="f">数据来源</label>
+          <select class="in" id="c-data_source">
+            <option value="cache">读 CD2 目录缓存（推荐：快，不向网盘发请求）</option>
+            <option value="scan">遍历 CD2 挂载目录（兜底：慢，会向网盘发大量请求）</option>
+            <option value="csv">现成 CSV（五张表，用于对账）</option>
+          </select></div>
+        <div><label class="f">CD2 配置目录（含 dir_cache.sqlite）</label><input type="text" id="c-cd2_config" placeholder="/cd2-config"></div>
+        <div><label class="f">缓存里的网盘标识（115 = 115open）</label><input type="text" id="c-cd2_api_name" placeholder="115open"></div>
+        <div><label class="f">网盘账号标识（多账号时才填）</label><input type="text" id="c-cd2_api_user" placeholder="留空 = 全部账号"></div>
+        <div><label class="f">Emby data 目录（含 library.db）</label><input type="text" id="c-emby_data" placeholder="/emby-data"></div>
+        <div><label class="f">Emby 里看到的 CD2 挂载根</label><input type="text" id="c-emby_prefix" placeholder="/CloudNAS/CloudDrive"></div>
+        <div><label class="f">CD2 挂载根（仅遍历模式）</label><input type="text" id="c-cd2_mount" placeholder="/media/cd2"></div>
+        <div><label class="f">CSV 目录（CSV 模式）</label><input type="text" id="c-csv_dir"></div>
+        <div><label class="f">忽略小于此体积的视频（MB）</label><input type="number" id="c-min_video_mb" min="0"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>排查区</h3>
+      <div class="form"><div><label class="f">搬运目标目录（第二期用：同盘 rename，只搬不删）</label><input type="text" id="c-quarantine_dir" placeholder="/115/99-排查区"></div></div>
+    </div>
+    <div class="card">
+      <h3>保护区与榜单包目录名</h3>
+      <div class="form">
+        <div><label class="f">保护区目录名</label><textarea id="c-protect_names" placeholder="一行一个，如：系列合集"></textarea></div>
+        <div><label class="f">榜单包（不筛不拆）</label><textarea id="c-listpack_names"></textarea></div>
+        <div><label class="f">排除包（只参与「合集 vs 原盘」）</label><textarea id="c-exclude_names"></textarea></div>
+        <div><label class="f">系列电影关键字（剧集识别时提示）</label><textarea id="c-tv_keep_names"></textarea></div>
+      </div>
+      <p class="mut small">只匹配目录名，文件名和单片夹夹名里的简介字样不算。命中的目录整个不参与筛选。内置词删不掉。</p>
+      <label class="row small"><input type="checkbox" id="confirm-rm"> 我确认移除保护（删掉已有保护目录名时需要）</label>
+    </div>
     <div class="row">
-      <button class="b p" id="btn-run" onclick="runJob('full')">开始筛选</button>
-      <button class="b stop hidden" id="btn-stop" onclick="stopJob()">停止</button>
-      <span class="mut">依次比对：合集 vs 原盘、合集内重复、小体积低画质、对比 Emby 片库、识别混入的剧集。REMUX 区目前只盘点，暂不参与比对。</span>
+      <button class="btn pri" onclick="saveCfg()">保存</button>
+      <button class="btn" onclick="saveCfg().then(() => probe(true))">保存并识别数据源</button>
+      <span id="cfg-msg" class="small"></span>
     </div>
-    <div id="job-detail" style="margin-top:12px"></div>
+    <div class="card"><h3>数据源识别</h3><div id="set-probe" class="mut small">点「保存并识别数据源」。</div></div>
   </div>
-  <div id="res-out"></div>
 </section>
 
-<!-- 清单 -->
-<section id="p-list" class="hidden">
-  <div class="card">
-    <p class="ok" style="margin:0 0 10px;font-size:13px">🔒 本工具只读：只出清单，不会移动、改名或删除你的任何文件。</p>
-    <div class="row">
-      <select id="f-bucket" style="width:auto"></select>
-      <select id="f-stage" style="width:auto">
-      </select>
-      <input type="text" id="f-q" placeholder="搜索路径 / 保留的那份" style="flex:1;min-width:180px">
-      <select id="f-sort" style="width:auto"><option value="gb">按体积</option><option value="path">按路径</option></select>
-      <button class="b" onclick="exportCsv()">导出当前筛选 CSV</button>
-      <button class="b" onclick="exportZip()">导出全部（zip）</button>
     </div>
-    <div id="list-meta" class="mut" style="margin-top:8px"></div>
   </div>
-  <div class="card" style="padding:0;overflow:auto">
-    <table>
-      <thead><tr><th>分类</th><th>判定</th><th>路径</th><th class="num">GB</th><th>保留的那份 / 参照</th><th>依据</th></tr></thead>
-      <tbody id="list-body"></tbody>
-    </table>
-  </div>
-  <div class="row" style="justify-content:center"><button class="b" id="more" onclick="loadRows(true)">加载更多</button></div>
-</section>
+</div>
 
-
-</main>
+<div class="overlay hidden" id="search" onclick="if(event.target===this)closeSearch()">
+  <div class="box"><input id="search-in" placeholder="搜索片名或路径，回车跳到清单"></div>
+</div>
 
 <script>
 const $ = s => document.querySelector(s);
-const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const u = p => new URL(p, location.origin + location.pathname).href;   // 地址栏带 user:pw@ 时 fetch 不认相对路径
 const BUCKETS = ['可切','待定','版本型','不动','孤本','提醒','剧集分流'];
-let CFG = null, page = 'settings', listOffset = 0;
-// 白话名（来自 /api/labels）；内部叫法只做小字副标题
-let LB = {buckets: {}, stages: {}, classes: {}};
+const TITLES = {overview: ['总览', 'Overview'], inventory: ['盘点', 'Inventory'], manifest: ['清单', 'Manifest'], settings: ['设置', 'Settings']};
+let CFG = null, LB = {buckets: {}, stages: {}, classes: {}}, RES = null, PROBE = null, page = 'overview';
+let mf = {bucket: '', offset: 0, rows: [], sel: new Set(), cur: null};
 const bn = b => (LB.buckets[b] || {}).name || b;
 const sn = s => (LB.stages[s] || {}).name || s;
 const cn = (s, c) => LB.classes[s + '|' + c] || c;
 const jg = t => `<span class="jg">${esc(t)}</span>`;
-// 相对路径 → 不带账号口令的绝对地址（地址栏里带 user:pw@ 时 fetch 会拒绝相对路径）；保留子路径以兼容反代
-const u = p => new URL(p, location.origin + location.pathname).href;
+const store = {get: k => { try { return localStorage.getItem(k) } catch (e) { return null } },
+               set: (k, v) => { try { localStorage.setItem(k, v) } catch (e) {} }};
 
 async function api(path, opt = {}) {
   const r = await fetch(u(path), opt);
-  if (!r.ok) {
-    let m = r.status + '';
-    try { m = (await r.json()).detail || m } catch (e) {}
-    throw new Error(m);
-  }
+  if (!r.ok) { let m = r.status + ''; try { m = (await r.json()).detail || m } catch (e) {} throw new Error(m); }
   const t = await r.text();
   return t ? JSON.parse(t) : null;
 }
+function fmtGB(g) { g = +g || 0; return g >= 1024 ? (g / 1024).toFixed(g >= 102400 ? 0 : 1) + ' TB' : g.toFixed(g >= 100 ? 0 : 1) + ' GB'; }
+function fmtTime(t) { return t ? new Date(t * 1000).toLocaleString('zh-CN', {hour12: false}) : '?'; }
+function n(x) { return (+x || 0).toLocaleString('zh-CN'); }
 
-function show(p) {
-  page = p;
-  try { localStorage.setItem('sieve.page', p) } catch (e) {}
-  document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.dataset.p === p));
-  document.querySelectorAll('main > section').forEach(s => s.classList.toggle('hidden', s.id !== 'p-' + p));
-  if (p === 'inventory') {
-    renderZones(); loadTree(); loadInventory();
-    if (!['heji','yuanpan','remux'].some(z => CFG.zones[z].length) && !$('#suggest-out').innerHTML) loadSuggest();
-  }
-  if (p === 'sieve') loadResult();
-  if (p === 'list') { listOffset = 0; loadRows(); }
+// ---------- 主题 / 光效 / 导航 ----------
+function applyTheme(t) {
+  document.documentElement.dataset.theme = t;
+  $('#themebtn').textContent = t === 'dark' ? '☀' : '☾';
 }
-document.querySelectorAll('#nav button').forEach(b => b.onclick = () => show(b.dataset.p));
+function toggleTheme() {
+  const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  applyTheme(t); store.set('pc.theme', t);
+}
+applyTheme(store.get('pc.theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+document.addEventListener('mousemove', e => {
+  const el = e.target.closest && e.target.closest('.fx-spotlight');
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  el.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+  el.style.setProperty('--my', (e.clientY - r.top) + 'px');
+});
+function go(p) {
+  page = p; store.set('pc.page', p);
+  document.querySelectorAll('.nav').forEach(b => b.classList.toggle('on', b.dataset.p === p));
+  document.querySelectorAll('.page').forEach(s => s.classList.toggle('hidden', s.id !== 'p-' + p));
+  $('#title').innerHTML = TITLES[p][0] + `<span>${TITLES[p][1]}</span>`;
+  if (p === 'overview') loadOverview();
+  if (p === 'inventory') { renderZones(); loadTree(); loadInventory(); probe(false); }
+  if (p === 'manifest') { renderSeg().then(() => loadRows()); }
+  if (p === 'settings') renderProbe('#set-probe');
+}
+document.querySelectorAll('.nav').forEach(b => b.onclick = () => go(b.dataset.p));
+function toggleMenu(e) { e.stopPropagation(); $('#expmenu').classList.toggle('hidden'); }
+document.addEventListener('click', () => $('#expmenu').classList.add('hidden'));
+
+// ---------- 搜索 ⌘K ----------
+function openSearch() { $('#search').classList.remove('hidden'); const i = $('#search-in'); i.value = $('#f-q').value; i.focus(); i.select(); }
+function closeSearch() { $('#search').classList.add('hidden'); }
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openSearch(); }
+  if (e.key === 'Escape') closeSearch();
+});
+$('#search-in').addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  $('#f-q').value = e.target.value; closeSearch(); mf.bucket = ''; go('manifest');
+});
 
 // ---------- 设置 ----------
 const LISTS = ['protect_names','listpack_names','exclude_names','tv_keep_names'];
@@ -241,9 +407,10 @@ const SCALARS = ['data_source','cd2_mount','cd2_config','cd2_api_name','cd2_api_
 async function loadCfg() {
   const r = await api('api/config');
   CFG = r.config;
-  $('#authwarn').classList.toggle('hidden', !!r.auth_enabled);
   SCALARS.forEach(k => $('#c-' + k).value = CFG[k] ?? '');
   LISTS.forEach(k => $('#c-' + k).value = (CFG[k] || []).join('\n'));
+  $('#authpill').classList.toggle('hidden', !!r.auth_enabled);
+  $('#srcpill').textContent = '数据来源：' + {cache: 'CD2 目录缓存', scan: '遍历挂载目录', csv: 'CSV 文件'}[CFG.data_source];
 }
 function readForm() {
   const c = JSON.parse(JSON.stringify(CFG));
@@ -256,160 +423,302 @@ function readForm() {
 async function saveCfg() {
   try {
     const r = await api('api/config', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(readForm())});
-    CFG = r.config; await loadCfg();
-    $('#confirm-rm').checked = false;
-    flash('已保存（配置指纹 ' + r.fingerprint + '）', 'ok');
-    if (page === 'inventory') renderZones();
-  } catch (e) { flash(e.message, 'bad') }
+    await loadCfg(); $('#confirm-rm').checked = false; PROBE = null;
+    flash('已保存', 'ok');
+    if (page === 'inventory') { renderZones(); loadTree(); }
+    return r;
+  } catch (e) { flash(e.message, 'bad'); alert(e.message); throw e; }
 }
-function flash(m, cls) { const el = $('#cfg-msg'); el.className = cls; el.textContent = m; setTimeout(() => { if (el.textContent === m) el.textContent = '' }, 6000); }
+function flash(m, cls) { const el = $('#cfg-msg'); el.className = 'small ' + cls; el.textContent = m; setTimeout(() => { if (el.textContent === m) el.textContent = '' }, 5000); }
 
-async function probe() {
-  $('#probe-out').innerHTML = '<p class="mut">识别中…</p>';
-  try {
-    const r = await api('api/probe', {method: 'POST'});
-    const c = r.cd2, e = r.emby;
-    let h = '<div class="grid" style="margin-top:12px"><div><b>CloudDrive2</b><br>';
-    h += c.mount_ok ? `<span class="ok">挂载目录可读</span>：${esc(c.mount)}` : `<span class="${CFG.data_source === 'scan' ? 'bad' : 'mut'}">挂载目录不可读：${esc(c.mount || '未填')}${CFG.data_source === 'scan' ? '' : '（当前模式用不到）'}</span>`;
-    const k = c.cache || {};
-    if (k.ok) {
-      h += `<br><span class="ok">目录缓存可读</span>：${esc(k.db)}（${esc(k.open_mode)}，结构版本 ${esc(k.schema_version ?? '?')}）`;
-      h += `<br>缓存了 ${k.cached_folders} 个文件夹，缓存时间 ${fmtTime(k.time_min)} ~ ${fmtTime(k.time_max)}`;
-      h += `<br>按「${esc(k.api_name)}」${CFG.cd2_api_user ? '、账号 ' + esc(CFG.cd2_api_user) : ''} 过滤后：<b class="${k.matched_files ? 'ok' : 'bad'}">${k.matched_files} 个文件</b>`;
-      if (!CFG.cd2_api_user && k.matched_accounts > 1) h += `<br><span class="warn">这个网盘在缓存里有 ${k.matched_accounts} 个账号，会合在一起筛；只想筛其中一个就填账号标识。</span>`;
-      h += '<br><span class="mut">缓存里的网盘/账号：' + esc(k.accounts.map(a => `${a.api_name}/${a.api_user}（${a.files} 文件）`).join('，')) + '</span>';
-    } else {
-      h += `<br><span class="${CFG.data_source === 'cache' ? 'bad' : 'warn'}">${esc(k.error || '目录缓存不可用')}</span>`;
-      if (CFG.data_source === 'cache') h += '<br><span class="mut">缓存模式需要它。检查 compose 里 CD2 配置目录有没有挂进容器。</span>';
-    }
-    h += '</div><div><b>Emby</b><br>';
-    if (e.ok) {
-      h += `library.db：${esc(e.db)}（${esc(e.open_mode)}，表 ${esc(e.table)}）<br>条目 ${e.items}，判为电影 ${e.movies}（带 TMDB ${e.movies_tmdb}，带分辨率 ${e.movies_res}）<br>`;
-      h += `路径在前缀 <code>${esc(CFG.emby_prefix)}</code> 下：<b class="${e.under_prefix ? 'ok' : 'bad'}">${e.under_prefix}</b>`;
-      h += `<br><span class="mut">样例路径：${esc((e.sample_paths || []).join(' ｜ '))}</span>`;
-      if (!e.type_is_str) h += '<br><span class="warn">库里 type 列不是文本，电影按「非剧集、非文件夹」推断，请核对数量。</span>';
-    } else h += `<span class="bad">${esc(e.error)}</span>`;
-    h += '</div></div><p class="mut">核对规模和电影数是否和你的库对得上，然后去「盘点」页——可以点「生成建议」让它按目录名帮你填分区。缓存模式下目录树和建议都只读缓存，不会向网盘发请求。</p>';
-    $('#probe-out').innerHTML = h;
-  } catch (e) { $('#probe-out').innerHTML = `<p class="bad">${esc(e.message)}</p>` }
+// ---------- 数据源识别 ----------
+async function probe(force) {
+  if (PROBE && !force) { renderProbe('#inv-probe'); return; }
+  ['#inv-probe', '#set-probe'].forEach(s => $(s).innerHTML = '<span class="mut">识别中…</span>');
+  try { PROBE = await api('api/probe', {method: 'POST'}); } catch (e) { PROBE = {error: e.message}; }
+  renderProbe('#inv-probe'); renderProbe('#set-probe');
+}
+function renderProbe(sel) {
+  const el = $(sel);
+  if (!PROBE) return;
+  if (PROBE.error) { el.innerHTML = `<span class="bad">${esc(PROBE.error)}</span>`; return; }
+  const k = (PROBE.cd2 || {}).cache || {}, e = PROBE.emby || {}, mode = CFG.data_source;
+  let h = '<dl class="kv">';
+  if (k.ok) {
+    h += `<dt>dir_cache</dt><dd><span class="ok">✓ ${esc(k.open_mode)}</span> · 结构 v${esc(k.schema_version ?? '?')}</dd>`;
+    h += `<dt>缓存</dt><dd>${n(k.cached_folders)} 个文件夹 · ${fmtTime(k.time_min)} ~ ${fmtTime(k.time_max)}</dd>`;
+    h += `<dt>${esc(k.api_name)}</dt><dd><b class="${k.matched_files ? 'ok' : 'bad'}">${n(k.matched_files)}</b> 个文件${!CFG.cd2_api_user && k.matched_accounts > 1 ? ` <span class="warn">（${k.matched_accounts} 个账号合并）</span>` : ''}</dd>`;
+  } else {
+    h += `<dt>dir_cache</dt><dd class="${mode === 'cache' ? 'bad' : 'mut'}">${esc(k.error || '不可用')}</dd>`;
+  }
+  if (mode === 'scan') h += `<dt>挂载目录</dt><dd class="${PROBE.cd2.mount_ok ? 'ok' : 'bad'}">${PROBE.cd2.mount_ok ? '✓ 可读' : '不可读'} ${esc(PROBE.cd2.mount)}</dd>`;
+  if (e.ok) {
+    h += `<dt>library.db</dt><dd><span class="ok">✓ ${esc(e.open_mode)}</span> · 表 ${esc(e.table)}</dd>`;
+    h += `<dt>电影</dt><dd><b>${n(e.movies)}</b> 部（带 TMDB ${n(e.movies_tmdb)}，带分辨率 ${n(e.movies_res)}）</dd>`;
+    h += `<dt>判定规则</dt><dd>${esc(e.movie_rule || '')}${e.type_dist && e.type_dist.length ? `<br><span class="mut">类型分布：${esc(e.type_dist.map(([t, c]) => t + '=' + n(c)).join('，'))}</span>` : ''}</dd>`;
+    h += `<dt>路径</dt><dd>${esc((e.path_prefixes || []).map(([p, c]) => p + ' ' + n(c)).join('，'))}</dd>`;
+    h += `<dt>原盘分辨率</dt><dd>${e.under_prefix
+      ? `<span class="ok">路径直配</span>：${n(e.under_prefix)} 条在 ${esc(CFG.emby_prefix)} 下`
+      : `<span class="warn">路径不在 ${esc(CFG.emby_prefix)} 下（看起来是 strm 镜像库），改用 TMDB 编号配对：原盘目录名里要带 tmdb 编号</span>`}</dd>`;
+  } else {
+    h += `<dt>library.db</dt><dd class="bad">${esc(e.error || '不可用')}</dd>`;
+  }
+  el.innerHTML = h + '</dl>';
+  el.classList.remove('mut');
 }
 
 // ---------- 盘点 ----------
-function renderZones() {
-  ['heji','yuanpan','remux'].forEach(z => {
-    $('#z-' + z).innerHTML = (CFG.zones[z] || []).map((p, i) => `<span class="chip">${esc(p)} <b onclick="rmZone('${z}',${i})">×</b></span>`).join('') || '<span class="mut">未指定</span>';
-  });
-}
-function rmZone(z, i) { CFG.zones[z].splice(i, 1); renderZones(); }
-function addZone(z, p) {
-  for (const k of ['heji','yuanpan','remux']) if (CFG.zones[k].includes(p)) { alert('已在' + {heji:'合集区',yuanpan:'原盘区',remux:'REMUX 区'}[k]); return; }
-  CFG.zones[z].push(p); renderZones();
-}
-function addProtect(name) {
-  if (!CFG.protect_names.includes(name)) CFG.protect_names.push(name);
-  $('#c-protect_names').value = CFG.protect_names.join('\n');
-  alert('已把「' + name + '」加入保护区目录名，记得点保存。');
-}
 const ZN = {heji: '合集区', yuanpan: '原盘区', remux: 'REMUX 区'};
-async function loadSuggest() {
-  const out = $('#suggest-out');
-  out.innerHTML = '<p class="mut">正在看目录名…</p>';
-  try {
-    const r = await api('api/suggest');
-    let h = '<div class="grid" style="margin-top:10px">';
-    ['heji','yuanpan','remux'].forEach(z => {
-      h += `<div><b>${ZN[z]}</b>`;
-      const ps = r.zones[z].filter(p => !CFG.zones[z].includes(p));
-      h += ps.length ? ps.map(p => `<label class="row" style="gap:6px"><input type="checkbox" data-z="${z}" value="${esc(p)}" checked> ${esc(p)}</label>`).join('')
-        : `<div class="mut">${r.zones[z].length ? '建议的目录已经在分区里了' : '没找到像的目录，请在下方目录树里手动点选'}</div>`;
-      h += '</div>';
-    });
-    h += `<div><b>保护区（常见目录名）</b><div class="mut" style="font-size:12px">打勾的会加入保护，这些目录整个不参与筛选</div>`;
-    h += r.protect_templates.map(t => {
-      const found = r.protect_found.includes(t), on = found && !CFG.protect_names.includes(t);
-      return `<label class="row" style="gap:6px"><input type="checkbox" data-p="1" value="${esc(t)}" ${on ? 'checked' : ''} ${CFG.protect_names.includes(t) ? 'disabled checked' : ''}> ${esc(t)}${found ? ' <span class="tag go">你的目录里有</span>' : ''}</label>`;
-    }).join('');
-    h += '</div></div>';
-    h += `<div class="row" style="margin-top:10px"><button class="b p" onclick="applySuggest()">采用勾选项</button><span class="mut">看了 ${r.scanned_dirs} 个目录${r.truncated ? '（目录太多，只看了前面一部分）' : ''}</span></div>`;
-    out.innerHTML = h;
-  } catch (e) { out.innerHTML = `<p class="bad">${esc(e.message)}（先在设置页填好 CD2 挂载目录并保存）</p>` }
+function zoneOf(p) { for (const z in ZN) if ((CFG.zones[z] || []).includes(p)) return z; return ''; }
+function renderZones() {
+  $('#zones').innerHTML = Object.entries(ZN).map(([z, name]) => `<dt>${name}</dt><dd>${(CFG.zones[z] || []).map((p, i) =>
+    `<span class="chip">${esc(p)} <b onclick="rmZone('${z}',${i})">×</b></span>`).join('') || '<span class="mut">未指定</span>'}</dd>`).join('')
+    + `<dt>保护</dt><dd>${CFG.protect_names.map(p => `<span class="chip">🔒 ${esc(p)}</span>`).join('') || '<span class="mut">无</span>'}</dd>`;
 }
-function applySuggest() {
-  document.querySelectorAll('#suggest-out input[data-z]:checked').forEach(i => { if (!CFG.zones[i.dataset.z].includes(i.value)) CFG.zones[i.dataset.z].push(i.value); });
-  document.querySelectorAll('#suggest-out input[data-p]:checked:not(:disabled)').forEach(i => { if (!CFG.protect_names.includes(i.value)) CFG.protect_names.push(i.value); });
-  $('#c-protect_names').value = CFG.protect_names.join('\n');
+function rmZone(z, i) { CFG.zones[z].splice(i, 1); renderZones(); loadTree(); }
+function setZone(p, z) {
+  for (const k in ZN) CFG.zones[k] = (CFG.zones[k] || []).filter(x => x !== p);
+  if (z) CFG.zones[z].push(p);
   renderZones();
-  $('#suggest-out').innerHTML = '<p class="ok">已填入，请检查上面的分区映射，然后点「保存映射」。</p>';
+}
+function isLocked(name) { return [...CFG.protect_names, ...CFG.listpack_names].some(w => w && name.includes(w)); }
+function toggleProtect(name) {
+  if (CFG.protect_names.includes(name)) { alert('移除保护请到「设置」页操作（需要勾选确认）。'); return; }
+  if (!confirm(`把「${name}」加入保护？名字含它的目录整个不参与筛选。记得点「保存」。`)) return;
+  CFG.protect_names.push(name); $('#c-protect_names').value = CFG.protect_names.join('\n');
+  renderZones(); loadTree();
 }
 async function loadTree() {
-  $('#tree-src').textContent = CFG.data_source === 'cache' ? '（来自 CD2 目录缓存：只列 CD2 打开过的目录）' : '（CD2 挂载目录）';
-  const root = $('#tree');
-  root.innerHTML = '<ul></ul>';
-  await expand(root.firstChild, '/');
+  $('#tree-src').textContent = CFG.data_source === 'cache' ? '来自 CD2 目录缓存（只列 CD2 打开过的目录）' : 'CD2 挂载目录';
+  $('#tree').innerHTML = '<ul></ul>';
+  await expand($('#tree').firstChild, '/');
 }
 async function expand(ul, path) {
-  ul.innerHTML = '<li class="mut">加载中…</li>';
+  ul.innerHTML = '<li class="mut small">加载中…</li>';
   try {
     const r = await api('api/tree?path=' + encodeURIComponent(path));
-    ul.innerHTML = '';
-    if (!r.dirs.length) ul.innerHTML = '<li class="mut">（无子目录）</li>';
+    ul.innerHTML = r.dirs.length ? '' : '<li class="mut small">（无子目录）</li>';
     r.dirs.forEach(d => {
-      const li = document.createElement('li');
-      li.innerHTML = `<div class="node"><span class="nm">▸ ${esc(d.name)}</span>
-        <button data-z="heji">合集</button><button data-z="yuanpan">原盘</button><button data-z="remux">REMUX</button><button data-z="protect">保护</button></div><ul class="hidden"></ul>`;
+      const li = document.createElement('li'), locked = isLocked(d.name), z = zoneOf(d.path);
+      li.innerHTML = `<div class="node ${locked ? 'locked' : ''}"><span class="nm">▸ ${locked ? '🔒 ' : ''}${esc(d.name)}</span>
+        <select ${locked ? 'disabled' : ''}><option value="">—</option>${Object.entries(ZN).map(([k, v]) => `<option value="${k}" ${z === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
+        <button class="pb" title="加入保护">🔒</button></div><ul class="hidden"></ul>`;
       const sub = li.querySelector('ul'), nm = li.querySelector('.nm');
       nm.onclick = async () => {
         const open = sub.classList.toggle('hidden') === false;
-        nm.textContent = (open ? '▾ ' : '▸ ') + d.name;
+        nm.innerHTML = (open ? '▾ ' : '▸ ') + (locked ? '🔒 ' : '') + esc(d.name);
         if (open && !sub.dataset.loaded) { sub.dataset.loaded = 1; await expand(sub, d.path); }
       };
-      li.querySelectorAll('button').forEach(b => b.onclick = () => b.dataset.z === 'protect' ? addProtect(d.name) : addZone(b.dataset.z, d.path));
+      li.querySelector('select').onchange = e => setZone(d.path, e.target.value);
+      li.querySelector('.pb').onclick = () => toggleProtect(d.name);
       ul.appendChild(li);
     });
-  } catch (e) { ul.innerHTML = `<li class="bad">${esc(e.message)}（先在设置页确认数据来源和路径，点「识别数据源」看能否读到）</li>` }
+  } catch (e) { ul.innerHTML = `<li class="bad small">${esc(e.message)}（到「设置」确认数据来源和路径）</li>`; }
+}
+async function loadSuggest() {
+  const out = $('#suggest-out');
+  out.innerHTML = '正在看目录名…';
+  try {
+    const r = await api('api/suggest');
+    let h = '';
+    for (const z in ZN) {
+      const ps = r.zones[z].filter(p => !CFG.zones[z].includes(p));
+      h += `<div style="margin-top:6px"><b>${ZN[z]}</b> ` + (ps.length ? ps.map(p => `<label class="row" style="gap:6px"><input type="checkbox" data-z="${z}" value="${esc(p)}" checked>${esc(p)}</label>`).join('')
+        : `<span class="mut">${r.zones[z].length ? '已在分区里' : '没找到像的目录'}</span>`) + '</div>';
+    }
+    h += '<div style="margin-top:8px"><b>常见保护目录名</b>' + r.protect_templates.map(t => {
+      const found = r.protect_found.includes(t), has = CFG.protect_names.includes(t);
+      return `<label class="row" style="gap:6px"><input type="checkbox" data-p="1" value="${esc(t)}" ${found || has ? 'checked' : ''} ${has ? 'disabled' : ''}>${esc(t)}${found ? ' <span class="cap go">你的目录里有</span>' : ''}</label>`;
+    }).join('') + '</div>';
+    h += `<div class="row" style="margin-top:8px"><button class="btn pri" onclick="applySuggest()">采用勾选项</button><span class="mut">看了 ${r.scanned_dirs} 个目录</span></div>`;
+    out.innerHTML = h; out.classList.remove('mut');
+  } catch (e) { out.innerHTML = `<span class="bad">${esc(e.message)}</span>`; }
+}
+function applySuggest() {
+  document.querySelectorAll('#suggest-out input[data-z]:checked').forEach(i => setZone(i.value, i.dataset.z));
+  document.querySelectorAll('#suggest-out input[data-p]:checked:not(:disabled)').forEach(i => { if (!CFG.protect_names.includes(i.value)) CFG.protect_names.push(i.value); });
+  $('#c-protect_names').value = CFG.protect_names.join('\n');
+  renderZones(); loadTree();
+  $('#suggest-out').innerHTML = '<span class="ok">已填入，检查左侧分区后点「保存」。</span>';
 }
 async function loadInventory() {
   const r = await api('api/inventory');
   if (!r) return;
-  const s = r.stats || {};
-  let h = `<p class="mut">来自 ${esc(r.run_id)}${r.stale ? ' <span class="warn">（配置已改，建议重新盘点）</span>' : ''}</p>${srcNote(s.source)}<div class="tiles">`;
-  [['heji','合集区'],['yuanpan','原盘区'],['remux','REMUX 区']].forEach(([k, n]) => {
-    const v = s[k] || {count: 0, gb: 0};
-    h += `<div class="tile"><div class="mut">${n}</div><div class="n">${v.count}</div><div class="mut">${fmtGB(v.gb)}</div></div>`;
-  });
-  if (s.emby) h += `<div class="tile"><div class="mut">Emby 电影</div><div class="n">${s.emby.movies}</div><div class="mut">路径对上 ${s.emby.matched_paths}</div></div>`;
-  h += '</div>';
+  const s = r.stats || {}, em = s.emby || {};
+  let h = `<div class="mut">${esc(r.run_id)}${r.stale ? ' · <span class="warn">设置改过，建议重新盘点</span>' : ''}</div>${srcNote(s.source)}<dl class="kv">`;
+  for (const z in ZN) h += `<dt>${ZN[z]}</dt><dd>${n((s[z] || {}).count)} 条 · ${fmtGB((s[z] || {}).gb)}</dd>`;
+  if (s.heji_episodes) h += `<dt>分出的剧集</dt><dd>${n(s.heji_episodes.count)} 个文件 · ${fmtGB(s.heji_episodes.gb)}</dd>`;
   const sk = Object.entries(s.protected_skipped || {});
-  if (sk.length) h += `<p class="mut" style="margin-top:12px">保护区 / 榜单包已剔除：${sk.map(([k, v]) => esc(k) + ' ' + v + ' 条').join('，')}</p>`;
-  if (s.heji_packs && s.heji_packs.length) {
-    h += '<h3 style="font-size:14px;margin:16px 0 6px">合集区大包（前 40）</h3><table><tr><th>大包</th><th class="num">片数</th><th class="num">体积</th></tr>';
-    s.heji_packs.forEach(p => h += `<tr><td>${esc(p.name)}</td><td class="num">${p.count}</td><td class="num">${fmtGB(p.gb)}</td></tr>`);
-    h += '</table>';
+  if (sk.length) h += `<dt>保护剔除</dt><dd>${sk.map(([k, v]) => esc(k) + ' ' + n(v)).join('，')}${s.protected_gb ? ' · ' + fmtGB(s.protected_gb) : ''}</dd>`;
+  if (em.movies !== undefined) {
+    h += `<dt>Emby 电影</dt><dd>${n(em.movies)} 部${em.movie_rule ? `<span class="jg">${esc(em.movie_rule)}</span>` : ''}</dd>`;
+    const hit = (em.matched_paths || 0) + (em.matched_tmdb || 0);
+    h += `<dt>原盘分辨率</dt><dd class="${hit ? '' : 'warn'}">路径配上 ${n(em.matched_paths)} · TMDB 配上 ${n(em.matched_tmdb)}${em.yuanpan_paths ? `（原盘条目 ${n(em.yuanpan_paths)}，带 tmdb 编号 ${n(em.yuanpan_tmdb_tagged)}）` : ''}</dd>`;
   }
-  if (r.error_count) h += `<p class="warn">扫描中有 ${r.error_count} 条读取错误：</p><pre>${esc((r.errors || []).join('\n'))}</pre>`;
-  $('#inv-out').innerHTML = h;
-  $('#inv-out').classList.remove('mut');
+  h += '</dl>';
+  if (s.heji_packs && s.heji_packs.length) h += `<details style="margin-top:8px"><summary>合集区大包（前 40）</summary><table>${s.heji_packs.map(p => `<tr><td>${esc(p.name)}</td><td class="num">${n(p.count)}</td><td class="num">${fmtGB(p.gb)}</td></tr>`).join('')}</table></details>`;
+  if (r.error_count) h += `<details open style="margin-top:8px"><summary class="warn">${r.error_count} 条提示</summary><pre>${esc((r.errors || []).join('\n'))}</pre></details>`;
+  $('#inv-out').innerHTML = h; $('#inv-out').classList.remove('mut');
 }
-function fmtTime(t) { return t ? new Date(t * 1000).toLocaleString('zh-CN', {hour12: false}) : '?'; }
 function srcNote(src) {
   if (!src) return '';
-  if (src.kind === 'cache') return `<p class="warn" style="font-size:13px">数据来自 CD2 目录缓存，缓存时间 ${fmtTime(src.time_min)} ~ ${fmtTime(src.time_max)}。结果以缓存时刻为准：CD2 没打开过的目录不在其中，缓存之后新增或删掉的文件也看不到。想更新就先在 CD2 里把相关目录打开刷新一下，再重新筛选。</p>`;
-  if (src.kind === 'scan') return '<p class="mut" style="font-size:13px">数据来自遍历挂载目录（筛选当时的实时状态）。</p>';
-  return '<p class="mut" style="font-size:13px">数据来自现成 CSV 文件。</p>';
+  if (src.kind === 'cache') return `<div class="note warn">数据来自 CD2 目录缓存（${fmtTime(src.time_min)} ~ ${fmtTime(src.time_max)}），结果以缓存时刻为准：CD2 没打开过的目录不在其中，之后新增或删掉的文件也看不到。</div>`;
+  if (src.kind === 'scan') return '<div class="note">数据来自遍历挂载目录（筛选当时的实时状态）。</div>';
+  return '<div class="note">数据来自现成 CSV 文件。</div>';
 }
-function fmtGB(g) { g = +g || 0; return g >= 1024 ? (g / 1024).toFixed(2) + ' TB' : g.toFixed(1) + ' GB'; }
 
-// ---------- 跑筛 ----------
-async function stopJob() {
-  if (!confirm('停止当前任务？这次不会产出结果，之前的结果不受影响。')) return;
-  try { renderJob(await api('api/job/cancel', {method: 'POST'})); } catch (e) { alert(e.message) }
+// ---------- 总览 ----------
+const SIEVES = [
+  {name: 'REMUX 分层', sub: 'REMUX 三分分层', off: true},
+  {name: 'REMUX 与原盘比对', sub: 'REMUX × 原盘交叉', off: true},
+  {name: '原盘完全重复', sub: '原盘精确重复', off: true},
+  {name: '合集去重与低画质', sub: '合集区三刀', stages: ['第一刀', '第二刀', '第三刀'], bucket: '可切'},
+  {name: '对比 Emby 片库', sub: '纵向 × Emby', stages: ['纵向'], bucket: '提醒'},
+  {name: '混入的剧集', sub: '电视剧分流', stages: ['剧集分流'], bucket: '剧集分流'},
+];
+function banners(r) {
+  let h = '';
+  if (!r) return h;
+  if (r.stale) h += '<div class="banner bad"><b>设置已变更，请重跑：</b>这份清单是改设置之前的结果，「可清理」不能导出。</div>';
+  if (r.rejected) h += `<div class="banner bad"><b>整批拒绝：</b>「可清理」里有 ${r.protect_violations.length} 条落在保护区/榜单包里，不能导出。<details><summary>查看</summary><pre>${esc(r.protect_violations.slice(0, 20).join('\n'))}</pre></details></div>`;
+  return h;
 }
+async function loadOverview() {
+  RES = await api('api/result');
+  const r = RES;
+  $('#ov-banners').innerHTML = banners(r);
+  if (!r) {
+    $('#ov-total').textContent = '—';
+    $('#ov-quad').innerHTML = '<div class="mut small" style="grid-column:1/-1;cursor:default">还没有筛选结果。先到「盘点」指定分区，再点右上角「一键跑筛」。</div>';
+    $('#ov-sieves').innerHTML = SIEVES.map(sieveCard).join('');
+    $('#ov-done').textContent = '0/6'; return;
+  }
+  const st = r.stats || {}, gbz = z => (st[z] || {}).gb || 0;
+  const parts = [['原盘', gbz('yuanpan'), 'var(--c-yp)'], ['REMUX', gbz('remux'), 'var(--c-remux)'], ['合集', gbz('heji'), 'var(--c-heji)'], ['保护区', st.protected_gb || 0, 'var(--c-prot)']];
+  const tot = parts.reduce((a, p) => a + p[1], 0);
+  $('#ov-total').textContent = fmtGB(tot);
+  $('#ov-bar').innerHTML = parts.map(p => `<i style="width:${tot ? p[1] / tot * 100 : 0}%;background:${p[2]}" title="${p[0]} ${fmtGB(p[1])}"></i>`).join('');
+  $('#ov-legend').innerHTML = parts.map(p => `<span><b style="background:${p[2]}"></b>${p[0]} ${fmtGB(p[1])}</span>`).join('');
+  const S = b => r.summary[b] || {count: 0, gb: 0};
+  $('#ov-quad').innerHTML = [
+    ['可切', fmtGB(S('可切').gb), n(S('可切').count) + ' 条'],
+    ['待定', n(S('待定').count), fmtGB(S('待定').gb)],
+    ['孤本', n(S('孤本').count), fmtGB(S('孤本').gb)],
+    ['提醒', n(S('提醒').count), '与 Emby 对比'],
+  ].map(([b, big, sub]) => `<div onclick="openBucket('${b}')"><div class="small">${esc(bn(b))}${jg(b)}</div><div class="n ${b === '可切' ? 'ok' : ''}">${big}</div><div class="mut small">${sub}</div></div>`).join('');
+  $('#ov-done').textContent = '3/6';
+  $('#ov-sieves').innerHTML = SIEVES.map(sieveCard).join('');
+  $('#ov-src').innerHTML = srcNote(r.source);
+  $('#ov-detail').innerHTML = '<table><tr><th>分类</th><th>来源</th><th>判定</th><th class="num">条数</th><th class="num">体积</th></tr>' +
+    r.detail.map(d => `<tr><td>${esc(bn(d.bucket))}${jg(d.bucket)}</td><td>${esc(sn(d.stage))}${jg(d.stage)}</td><td>${esc(cn(d.stage, d.cls))}${jg(d.cls)}</td><td class="num">${n(d.count)}</td><td class="num">${fmtGB(d.gb)}</td></tr>`).join('') +
+    `</table><div class="note">另有 ${n(r.held_stage2)} 条疑似剧集的重复组暂不判定${jg('第二刀塌缩守卫')}；小体积检查覆盖 ${n(r.stage3_population)} 条${jg('第三刀人口')}。</div>`;
+}
+function sieveCard(s) {
+  if (s.off || !RES) return `<div class="card fx-spotlight sieve ${s.off ? 'off' : ''}"><div class="t">${esc(s.name)}${jg(s.sub)}</div><div class="mut small">${s.off ? '未接入：内核还没收编这一筛' : '还没跑'}</div><div class="prog"><i style="width:0"></i></div></div>`;
+  const ds = RES.detail.filter(d => s.stages.includes(d.stage));
+  const cnt = ds.reduce((a, d) => a + d.count, 0);
+  const cut = ds.filter(d => d.bucket === '可切').reduce((a, d) => a + d.gb, 0);
+  const base = s.bucket === '剧集分流' ? ds.reduce((a, d) => a + d.gb, 0) : cut;
+  const heji = ((RES.stats || {}).heji || {}).gb || 0;
+  const big = s.bucket === '提醒' ? n(cnt) + ' 条提醒' : s.bucket === '剧集分流' ? fmtGB(base) : fmtGB(cut) + ' 可释放';
+  const pct = s.bucket === '提醒' ? 100 : (heji ? Math.min(100, base / heji * 100) : 0);
+  return `<div class="card fx-spotlight sieve" onclick="openBucket('${s.bucket}')"><div class="t">${esc(s.name)}${jg(s.sub)}</div>
+    <div class="big" style="font-size:22px">${big}</div><div class="prog"><i style="width:${pct}%"></i></div><div class="mut small">${n(cnt)} 条</div></div>`;
+}
+function openBucket(b) { mf.bucket = b; $('#f-stage').value = ''; go('manifest'); }
+
+// ---------- 清单 ----------
+async function renderSeg() {
+  if (!RES) RES = await api('api/result');
+  const sum = (RES && RES.summary) || {};
+  $('#seg').innerHTML = [['', '全部', Object.values(sum).reduce((a, v) => a + v.count, 0)], ...BUCKETS.map(b => [b, bn(b), (sum[b] || {}).count || 0])]
+    .map(([b, name, c]) => `<button class="${mf.bucket === b ? 'on' : ''}" onclick="mf.bucket='${b}';renderSeg();loadRows()">${esc(name)}<em>${n(c)}</em></button>`).join('');
+  $('#mf-banners').innerHTML = banners(RES);
+  const sv = $('#f-stage').value;
+  $('#f-stage').innerHTML = '<option value="">全部来源</option>' + Object.keys(LB.stages).map(s => `<option value="${s}">${esc(sn(s))}</option>`).join('');
+  $('#f-stage').value = sv;
+}
+let qTimer;
+$('#f-q').oninput = () => { clearTimeout(qTimer); qTimer = setTimeout(() => loadRows(), 300); };
+$('#f-stage').onchange = () => loadRows();
+$('#f-sort').onchange = () => loadRows();
+function qs() { return new URLSearchParams({bucket: mf.bucket, stage: $('#f-stage').value, q: $('#f-q').value, sort: $('#f-sort').value}).toString(); }
+async function loadRows(more) {
+  if (!more) { mf.offset = 0; mf.rows = []; mf.cur = null; }
+  const r = await api('api/rows?' + qs() + '&offset=' + mf.offset + '&limit=200');
+  const start = mf.rows.length;
+  mf.rows = mf.rows.concat(r.rows);
+  mf.offset += r.rows.length;
+  const html = r.rows.map((x, i) => itemHtml(x, start + i)).join('');
+  if (more) $('#mf-list').insertAdjacentHTML('beforeend', html);
+  else $('#mf-list').innerHTML = html || '<div class="mut small" style="padding:16px">没有结果</div>';
+  $('#mf-meta').textContent = `共 ${n(r.total)} 条 · ${fmtGB(r.gb)} · 已显示 ${n(mf.offset)}`;
+  $('#more').classList.toggle('hidden', mf.offset >= r.total);
+  updateSel();
+}
+function itemHtml(x, i) {
+  const name = x.path.split('/').pop(), dir = x.path.slice(0, x.path.length - name.length - 1);
+  const cut = x.bucket === '可切';
+  const left = cut ? `<input type="checkbox" ${mf.sel.has(x.path) ? 'checked' : ''} onclick="event.stopPropagation();toggleSel(${i},this.checked)">` : '<span class="lock" title="只有「可清理」能勾选">🔒</span>';
+  const mv = x.move ? `<span class="cap tag">${x.move === '整夹' ? '📦 整夹' : '📄 单文件'}</span>` : '';
+  return `<div class="item" data-i="${i}" onclick="quickLook(${i})">${left}
+    <div style="min-width:0"><div class="nm">${esc(name)}</div><div class="sub">${esc(dir)}</div></div>
+    <div class="rt">${mv}<span class="cap ${cut ? 'go' : ''}">${esc(cn(x.stage, x.cls))}</span><span class="mut">${fmtGB(x.gb)}</span></div></div>`;
+}
+function toggleSel(i, on) { const p = mf.rows[i].path; on ? mf.sel.add(p) : mf.sel.delete(p); updateSel(); }
+function selectVisible() { mf.rows.forEach(x => { if (x.bucket === '可切') mf.sel.add(x.path) }); document.querySelectorAll('#mf-list input[type=checkbox]').forEach(c => c.checked = true); updateSel(); }
+function updateSel() { const b = $('#btn-expsel'); b.disabled = !mf.sel.size; b.textContent = mf.sel.size ? `导出已勾选（${n(mf.sel.size)}）` : '导出已勾选'; }
+function quickLook(i) {
+  mf.cur = i;
+  document.querySelectorAll('#mf-list .item').forEach(el => el.classList.toggle('sel', +el.dataset.i === i));
+  const x = mf.rows[i];
+  const keep = x.keep || '';
+  let h = `<div class="small mut" style="margin-bottom:8px">${esc(bn(x.bucket))} · ${esc(sn(x.stage))} · ${esc(cn(x.stage, x.cls))}${jg(x.bucket + '/' + x.stage + '/' + x.cls)}</div>`;
+  h += `<div class="blk"><div class="lbl">${x.bucket === '可切' ? '要清理的这份' : '这一份'}</div><div style="font-weight:600">${esc(x.path.split('/').pop())}</div>
+        <div class="path mut">${esc(x.path)}</div><div class="row small" style="margin-top:6px"><b>${fmtGB(x.gb)}</b>${x.move ? `<span class="cap tag">${x.move === '整夹' ? '📦 整夹搬' : '📄 只搬这个文件'}</span>` : ''}</div></div>`;
+  if (keep) {
+    h += '<div class="vs">保留 ↓</div>';
+    h += keep.startsWith('/') ? `<div class="blk" style="border-color:color-mix(in srgb,var(--ok) 50%,var(--line))"><div class="lbl">保留的那份</div><div style="font-weight:600">${esc(keep.split('/').pop())}</div>
+        <div class="path mut">${esc(keep)}</div>${x.keep_gb ? `<div class="small" style="margin-top:6px"><b>${fmtGB(x.keep_gb)}</b></div>` : ''}</div>`
+      : `<div class="blk"><div class="lbl">参照</div>${esc(keep)}</div>`;
+  }
+  h += `<div class="blk"><div class="lbl">依据</div>${esc(x.basis || '—')}</div>`;
+  if (x.bucket !== '可切') h += '<div class="mut small">🔒 这一类只看不动，不能被批准搬走。</div>';
+  $('#ql').innerHTML = h;
+}
+async function download(r, fallback) {
+  if (!r.ok) { let m = r.status; try { m = (await r.json()).detail } catch (e) {} alert(m); return; }
+  const cd = r.headers.get('content-disposition') || '';
+  const m = cd.match(/filename\*=UTF-8''([^;]+)/);
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(await r.blob());
+  a.download = m ? decodeURIComponent(m[1]) : fallback;
+  a.click();
+}
+async function exportCurrent(fmt) { await download(await fetch(u('api/export?' + qs() + '&fmt=' + fmt)), 'sieve.' + fmt); }
+async function exportSelected() {
+  await download(await fetch(u('api/export/selected'), {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({paths: [...mf.sel]})}), 'sieve_selected.csv');
+}
+async function exportZip() {
+  try {
+    const c = await api('api/export.check');
+    if (c.withheld && !confirm(c.withheld + '\n\n其余分类仍可导出（包里附原因说明）。继续吗？')) return;
+    location.href = u('api/export.zip');
+  } catch (e) { alert(e.message); }
+}
+
+// ---------- 任务 ----------
 async function runJob(mode) {
   try {
     if (page === 'inventory') await saveCfg();
     await api('api/run/' + mode, {method: 'POST'});
     poll();
-  } catch (e) { alert(e.message) }
+  } catch (e) { alert(e.message); }
+}
+async function stopJob() {
+  if (!confirm('停止当前任务？这次不会产出结果，之前的结果不受影响。')) return;
+  try { renderJob(await api('api/job/cancel', {method: 'POST'})); } catch (e) { alert(e.message); }
 }
 let polling = false;
 async function poll() {
@@ -418,89 +727,34 @@ async function poll() {
     while (true) {
       const j = await api('api/job');
       renderJob(j);
-      if (!j.running) { if (j.run_id) { if (page === 'inventory') loadInventory(); if (page === 'sieve') loadResult(); } break; }
+      if (!j.running) {
+        if (j.run_id && !j.cancelled) { RES = null; mf.sel.clear(); if (page === 'overview') loadOverview(); if (page === 'inventory') loadInventory(); if (page === 'manifest') renderSeg().then(() => loadRows()); }
+        break;
+      }
       await new Promise(r => setTimeout(r, 1200));
     }
-  } finally { polling = false }
+  } finally { polling = false; }
 }
 function renderJob(j) {
-  const icon = j.cancelled ? '■' : (j.exit === 0 ? '✓' : '✗');
-  $('#jobbar').innerHTML = j.running ? `⏳ ${esc(j.msg)} (${j.pct || 0}%) <a href="#" onclick="stopJob();return false">停止</a>` : (j.run_id ? `${icon} ${esc(j.msg)}` : '');
-  $('#btn-run').disabled = !!j.running;
-  $('#btn-inv').disabled = !!j.running;
+  const run = $('#btn-run');
+  run.disabled = !!j.running;
+  run.textContent = j.running ? `⚡ ${j.mode === 'inventory' ? '盘点' : '筛选'}中 ${j.pct || 0}%` : '⚡ 一键跑筛';
   $('#btn-stop').classList.toggle('hidden', !j.running);
-  if (!j.run_id) return;
-  $('#job-detail').innerHTML = `<div class="bar"><i style="width:${j.pct || 0}%"></i></div><p class="${j.exit && j.exit !== 0 && !j.cancelled ? 'bad' : 'mut'}">${esc(j.msg)} <a href="api/log?run_id=${encodeURIComponent(j.run_id)}" target="_blank">日志</a></p>` +
-    (j.exit && j.exit !== 0 && !j.cancelled && j.tail ? `<pre>${esc(j.tail.join('\n'))}</pre>` : '');
-}
-async function loadResult() {
-  const r = await api('api/result');
-  if (!r) { $('#res-out').innerHTML = '<div class="card mut">还没有筛选结果。先在「盘点」页指定分区，再点「开始筛选」。</div>'; return; }
-  let h = '';
-  if (r.rejected) h += `<div class="banner bad"><b>整批拒绝：</b>「可清理」里有 ${r.protect_violations.length} 条落在保护区/榜单包里，整批不能导出。先修正设置再重新筛选。<pre>${esc(r.protect_violations.slice(0, 20).join('\n'))}</pre></div>`;
-  if (r.stale) h += '<div class="banner warn"><b>这份结果已过期：</b>筛选完之后改过设置，「可清理」不能导出，请重新筛选。</div>';
-  h += `<div class="card"><h2>结果总览 <span class="mut" style="font-weight:400">${esc(r.run_id)} · 盘点总量 ${fmtGB(r.total_gb)}</span></h2>${srcNote(r.source)}<div class="tiles">`;
-  BUCKETS.forEach(b => {
-    const v = r.summary[b] || {count: 0, gb: 0}, info = LB.buckets[b] || {};
-    const pct = r.total_gb ? (v.gb / r.total_gb * 100).toFixed(1) + '%' : '';
-    h += `<div class="tile ${b === '可切' ? 'cut' : ''}" onclick="gotoList('${b}')"><div><b>${esc(bn(b))}</b>${jg(b)}</div><div class="n">${v.count}</div><div class="mut">${fmtGB(v.gb)} ${pct}</div>` +
-      `<span class="tag ${b === '可切' ? 'go' : ''}">${esc(info.action || '')}</span><div class="d">${esc(info.desc || '')}</div></div>`;
-  });
-  h += `</div><p class="mut">另有 ${r.held_stage2} 条疑似剧集的重复组暂不判定${jg('第二刀塌缩守卫')}；小体积检查覆盖 ${r.stage3_population} 条${jg('第三刀人口')}。</p></div>`;
-  h += '<div class="card"><h2>明细</h2><table><tr><th>分类</th><th>来源</th><th>判定</th><th class="num">条数</th><th class="num">体积</th></tr>';
-  r.detail.forEach(d => h += `<tr style="cursor:pointer" onclick="gotoList('${d.bucket}','${d.stage}')"><td>${esc(bn(d.bucket))}${jg(d.bucket)}</td><td>${esc(sn(d.stage))}${jg(d.stage)}</td><td>${esc(cn(d.stage, d.cls))}${jg(d.cls)}</td><td class="num">${d.count}</td><td class="num">${fmtGB(d.gb)}</td></tr>`);
-  h += '</table></div>';
-  if (r.error_count) h += `<div class="card"><p class="warn">数据准备阶段有 ${r.error_count} 条警告：</p><pre>${esc(r.errors.join('\n'))}</pre></div>`;
-  $('#res-out').innerHTML = h;
-}
-function gotoList(b, s) { $('#f-bucket').value = b || ''; $('#f-stage').value = s || ''; show('list'); }
-
-// ---------- 清单 ----------
-function fillFilters() {
-  $('#f-bucket').innerHTML = '<option value="">全部分类</option>' + BUCKETS.map(b => `<option value="${b}">${esc(bn(b))}</option>`).join('');
-  $('#f-stage').innerHTML = '<option value="">全部来源</option>' + Object.keys(LB.stages).map(s => `<option value="${s}">${esc(sn(s))}</option>`).join('');
-}
-let qTimer;
-['#f-bucket','#f-stage','#f-sort'].forEach(s => $(s).onchange = () => { listOffset = 0; loadRows(); });
-$('#f-q').oninput = () => { clearTimeout(qTimer); qTimer = setTimeout(() => { listOffset = 0; loadRows(); }, 300); };
-function qs() {
-  return new URLSearchParams({bucket: $('#f-bucket').value, stage: $('#f-stage').value, q: $('#f-q').value, sort: $('#f-sort').value}).toString();
-}
-async function loadRows(more) {
-  if (!more) listOffset = 0;
-  const r = await api('api/rows?' + qs() + '&offset=' + listOffset + '&limit=200');
-  const body = $('#list-body');
-  const html = r.rows.map(x => `<tr><td>${esc(bn(x.bucket))}<br><span class="jg" style="margin:0">${esc(sn(x.stage))}</span></td><td>${esc(cn(x.stage, x.cls))}</td><td class="path">${esc(x.path)}</td><td class="num">${x.gb}</td><td class="path">${esc(x.keep)}</td><td>${esc(x.basis)}</td></tr>`).join('');
-  if (more) body.insertAdjacentHTML('beforeend', html); else body.innerHTML = html || '<tr><td colspan="6" class="mut">没有结果</td></tr>';
-  listOffset += r.rows.length;
-  $('#list-meta').textContent = `共 ${r.total} 条，${fmtGB(r.gb)}，已显示 ${listOffset}`;
-  $('#more').classList.toggle('hidden', listOffset >= r.total);
-}
-async function exportZip() {
-  try {
-    const c = await api('api/export.check');
-    if (c.withheld && !confirm(c.withheld + '\n\n其余分类仍可导出（包里会附一份原因说明）。继续下载吗？')) return;
-    location.href = u('api/export.zip');
-  } catch (e) { alert(e.message) }
-}
-async function exportCsv() {
-  const r = await fetch(u('api/export?' + qs()));
-  if (!r.ok) { try { alert((await r.json()).detail) } catch (e) { alert(r.status) } return; }
-  const blob = await r.blob();
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'sieve_' + ($('#f-bucket').value ? bn($('#f-bucket').value) : '全部') + '.csv';
-  a.click();
+  $('#btn-inv').disabled = !!j.running;
+  $('#ov-engine').classList.toggle('on', !!j.running);
+  if (j.run_id) {
+    $('#ov-msg').innerHTML = `<span class="${j.exit && j.exit !== 0 && !j.cancelled ? 'bad' : ''}">${esc(j.msg)}</span>`;
+    $('#ov-prog').style.width = (j.running ? j.pct || 0 : (j.exit === 0 ? 100 : 0)) + '%';
+    const lg = $('#ov-log'); lg.href = u('api/log?run_id=' + encodeURIComponent(j.run_id)); lg.textContent = '日志';
+  }
 }
 
 // ---------- 启动 ----------
 (async () => {
-  try { LB = await api('api/labels') } catch (e) {}
-  fillFilters();
+  try { LB = await api('api/labels'); } catch (e) {}
   await loadCfg();
-  let p = 'settings';
-  try { p = localStorage.getItem('sieve.page') || p } catch (e) {}
-  show(p);
+  const p = store.get('pc.page');
+  go(TITLES[p] ? p : 'overview');
   const j = await api('api/job');
   renderJob(j);
   if (j.running) poll();

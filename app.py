@@ -266,7 +266,8 @@ def result(run_id: str = ''):
     res, _ = load_run(run_id or None)
     if not res:
         return JSONResponse(None)
-    res.pop('stats', None)
+    st = res.get('stats') or {}
+    st.pop('heji_packs', None)        # 总览只要各区体积，不要大包明细
     return res
 
 
@@ -308,16 +309,38 @@ def _export_guard(res, buckets):
         raise HTTPException(409, '「可清理」里有条目落在保护区/榜单包里，整批不能导出，请先修正设置再重新筛选')
 
 
+def _export_resp(res, rs, label, fmt):
+    _export_guard(res, {r['bucket'] for r in rs})
+    if fmt == 'json':
+        body = json.dumps([dict(r, 分类=L.bucket(r['bucket']), 来源=L.stage(r['stage']), 判定=L.cls(r['stage'], r['cls']))
+                           for r in rs], ensure_ascii=False, indent=1).encode('utf-8')
+        name, mt = 'sieve_%s_%s.json' % (res['run_id'], label), 'application/json; charset=utf-8'
+    else:
+        body, name, mt = _csv_bytes(rs), 'sieve_%s_%s.csv' % (res['run_id'], label), 'text/csv; charset=utf-8'
+    return Response(body, media_type=mt, headers={'Content-Disposition': "attachment; filename*=UTF-8''" + _q(name)})
+
+
 @app.get('/api/export')
-def export(bucket: str = '', stage: str = '', cls: str = '', q: str = '', run_id: str = ''):
+def export(bucket: str = '', stage: str = '', cls: str = '', q: str = '', run_id: str = '', fmt: str = 'csv'):
     res, d = load_run(run_id or None)
     if not res:
         raise HTTPException(404, '还没有筛选结果')
     rs = sorted(filter_rows(load_rows(d), bucket, stage, cls, q), key=lambda r: -r['gb'])
-    _export_guard(res, {r['bucket'] for r in rs})
-    name = 'sieve_%s_%s.csv' % (res['run_id'], L.bucket(bucket) if bucket else '全部')
-    return Response(_csv_bytes(rs), media_type='text/csv; charset=utf-8',
-                    headers={'Content-Disposition': "attachment; filename*=UTF-8''" + _q(name)})
+    return _export_resp(res, rs, L.bucket(bucket) if bucket else '全部', fmt)
+
+
+@app.post('/api/export/selected')
+async def export_selected(request: Request, fmt: str = 'csv'):
+    """清单里勾选的条目单独导出（第一期只导出，不批准、不执行）。"""
+    body = await request.json()
+    res, d = load_run(body.get('run_id') or None)
+    if not res:
+        raise HTTPException(404, '还没有筛选结果')
+    want = set(body.get('paths') or [])
+    rs = sorted([r for r in load_rows(d) if r['path'] in want and r['bucket'] == '可切'], key=lambda r: -r['gb'])
+    if not rs:
+        raise HTTPException(400, '没有勾选任何「可清理」条目')
+    return _export_resp(res, rs, '已勾选', fmt)
 
 
 @app.get('/api/export.zip')

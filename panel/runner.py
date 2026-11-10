@@ -135,6 +135,21 @@ def main(mode, run_dir):
     viol = [r['path'] for r in rows if r['bucket'] == '可切' and sources.protect_hit(r['path'], guard, unit_dirs)]
     result['protect_violations'] = viol[:200]
     result['rejected'] = bool(viol)
+
+    # 清单展示用：可清理条目的搬运方式（单片夹/盘片夹 → 整夹；多片混装夹 → 只动这个文件），保留份体积
+    gb_of, gb_dir = {}, defaultdict(float)
+    for f in files:
+        gb_of[f[1]] = f[2]
+        gb_dir[f[1].rsplit('/', 1)[0]] += f[2]
+    for r in rows:
+        if r['bucket'] == '可切':
+            p = r['path']
+            r['move'] = '整夹' if (not sources.is_video_path(p) or p.rsplit('/', 1)[0] in unit_dirs) else '单文件'
+        k = r.get('keep')
+        if k and k.startswith('/'):
+            kg = gb_of.get(k) or gb_dir.get(k)
+            if kg:
+                r['keep_gb'] = round(kg, 2)
     result['held_stage2'] = held
     result['stage3_population'] = popn
 
