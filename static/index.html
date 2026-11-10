@@ -342,7 +342,7 @@ textarea{min-height:64px;resize:vertical}
         <div><label class="f">榜单包（不筛不拆）</label><textarea id="c-listpack_names"></textarea></div>
         <div><label class="f">排除包（只参与「合集 vs 原盘」）</label><textarea id="c-exclude_names"></textarea></div>
         <div><label class="f">系列电影关键字（剧集识别时提示）</label><textarea id="c-tv_keep_names"></textarea></div>
-        <div><label class="f">原盘重复时优先保留的目录名（与保护目录同属一档，如已刮削大包）</label><textarea id="c-keep_first_names" placeholder="一行一个，如：已刮削"></textarea></div>
+        <div><label class="f">重复时优先保留的目录名（只决定留哪份，不会剔除；内置：系列电影合集、出品公司、原盘已刮削）</label><textarea id="c-keep_first_names" placeholder="一行一个"></textarea></div>
       </div>
       <p class="mut small">只匹配目录名，文件名和单片夹夹名里的简介字样不算。命中的目录整个不参与筛选。内置词删不掉。</p>
       <label class="row small"><input type="checkbox" id="confirm-rm"> 我确认移除保护（删掉已有保护目录名时需要）</label>
@@ -733,7 +733,7 @@ const SIEVES = [
   {name: 'REMUX 分层', sub: 'REMUX 三分分层', off: true},
   {name: 'REMUX 与原盘比对', sub: 'REMUX × 原盘交叉', off: true},
   {name: '合集与 REMUX 比对', sub: '合集 × REMUX', stages: ['合集×REMUX'], bucket: '可切'},
-  {name: '原盘完全重复', sub: '原盘精确重复', stages: ['原盘重复'], bucket: '可切'},
+  {name: '原盘完全重复', sub: '原盘同名同大小 + 改名的同字节', stages: ['原盘重复', '同字节重复'], bucket: '可切'},
   {name: '合集去重与低画质', sub: '合集区三刀', stages: ['第一刀', '第二刀', '第三刀'], bucket: '可切'},
   {name: '对比 Emby 片库', sub: '纵向 × Emby', stages: ['纵向'], bucket: '提醒'},
   {name: '混入的剧集', sub: '电视剧分流', stages: ['剧集分流'], bucket: '剧集分流'},

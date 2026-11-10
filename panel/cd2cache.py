@@ -12,10 +12,13 @@
 产出与挂载遍历（sources.walk_zone）同形同序的条目，后面生成五张 CSV 的代码两种来源共用。
 """
 import os
+import re
 import threading
 from collections import defaultdict
 
 from . import sources as S
+
+_SHA1 = re.compile(r'"sha1"\s*:\s*"([0-9a-fA-F]{40})"', re.I)
 
 
 def find_db(cfg):
@@ -196,6 +199,7 @@ def zone_items(cfg, progress, errors):
     minb = cfg['min_video_mb'] * 1024 * 1024
     api_sql, api_args = _api_where(cfg)
     raw, tmins, tmaxs, rows_read, drops, unlisted = {}, [], [], 0, {}, {}
+    sha1 = {}
     try:
         for zone, label in S.C.ZONES:
             raw[zone], drops[zone] = [], S.Counter()
@@ -215,8 +219,8 @@ def zone_items(cfg, progress, errors):
                 # = CD2 从没打开过它，它下面的文件不在缓存里。有 cached_item 行而没子项的是真空夹，不算
                 listed = {p.rstrip('/') for (p,) in conn.execute(
                     'select path from cached_item ci where ' + _under(), _under_args(root))}
-                for ppath, name, ftype, size in conn.execute(
-                        'select ci.path, f.name, f.file_type, f.size from files f join cached_item ci on ci.id = f.parent_id '
+                for ppath, name, ftype, size, fh in conn.execute(
+                        'select ci.path, f.name, f.file_type, f.size, f.file_hash from files f join cached_item ci on ci.id = f.parent_id '
                         'where ' + api_sql + ' and ' + _under(), api_args + _under_args(root)):
                     rows_read += 1
                     ppath = ppath.rstrip('/')
@@ -232,6 +236,10 @@ def zone_items(cfg, progress, errors):
                             disc_roots.add(ppath)
                     elif ftype == 4:
                         files.append((vp, size or 0))
+                        if fh:
+                            m = _SHA1.search(fh)
+                            if m:
+                                sha1[vp] = m.group(1).upper()
                         for comp_i, comp in enumerate(vp.split('/')[:-1]):
                             if comp.lower() in S.DISC_DIRS:       # 父链里有 BDMV（夹行没被缓存时兜底）
                                 disc_roots.add('/'.join(vp.split('/')[:comp_i]))
@@ -265,5 +273,5 @@ def zone_items(cfg, progress, errors):
                               label, u['count'], '（其中 %d 个在原盘碟内）' % u['in_disc'] if u['in_disc'] else ''))
     meta = {'kind': 'cache', 'db': db, 'open_mode': how, 'rows_read': rows_read, 'drops': drops, 'unlisted': unlisted,
             'time_min': min(tmins) if tmins else None, 'time_max': max(tmaxs) if tmaxs else None,
-            'api_name': api_args[0], 'api_user': cfg.get('cd2_api_user') or ''}
+            'api_name': api_args[0], 'api_user': cfg.get('cd2_api_user') or '', 'sha1': sha1}
     return raw, meta

@@ -151,6 +151,44 @@ def yuanpan_dupes(result):
     return out
 
 
+HIDDEN_STAGE = '同字节重复'
+
+
+def hidden_dupes(cfg, rows, result):
+    """A2 第二层：内容完全相同、名字不同的隐藏重复（缓存模式按 Sha1，否则按字节数）。
+    已被前面各模块判可清理的份视同已搬走（当轮 build16b 也是先扣掉已搬集合）。"""
+    import sieve
+    from . import cross, dupes
+    if not os.path.isfile('hidden_all.csv'):
+        result['hidden'] = {'skipped': '这个数据来源没有全区文件清单（CSV 模式不支持）'}
+        return []
+    use_sha1 = result['stats'].get('hash_mode') == 'sha1'
+    items = []
+    for r in csv.DictReader(open('hidden_all.csv', encoding='utf-8-sig')):
+        items.append({'path': r['path'], 'size': int(r['size']), 'zone': r['zone'], 'root_depth': int(r['root_depth']),
+                      'tier': r['tier'] == '1', 'guard': r['guard'] == '1',
+                      'key': (r['sha1'] if use_sha1 else r['size'])})
+    parked = list(sieve.EXCL) + [x for x in cfg['exclude_names'] if x not in sieve.EXCL]
+
+    def held(x):
+        p = x['path']
+        if '/BDMV/' in p.upper() or '/VIDEO_TS/' in p.upper():
+            return '碟内文件'
+        if any(w in p for w in parked):
+            return '另议包'
+        if sieve.EP.search(p.rsplit('/', 1)[1]):
+            return '剧集标记'
+        return ''
+    cut = {r['path'] for r in rows if r['bucket'] == '可切'}
+    groups = dupes.hidden_groups(items, cross.keyof)
+    moves, st = dupes.plan_hidden(groups, held, gone=lambda p: p in cut)
+    how = 'Sha1 完全一致' if use_sha1 else '字节数完全一致'
+    out = [row(HIDDEN_STAGE, 'A', '可切', x['path'], x['size'] / GIB, keep=k['path'],
+               basis='和保留的那份%s、只是名字不同；留规格标注更全 / 已刮削的那份' % how) for x, k in moves]
+    result['hidden'] = dict(st, key='sha1' if use_sha1 else 'size', moves=len(out))
+    return out
+
+
 def main(mode, run_dir):
     os.makedirs(run_dir, exist_ok=True)
     cfg = C.load()
@@ -209,6 +247,9 @@ def main(mode, run_dir):
 
     emit('dupes', '查找原盘区完全重复', 83)
     rows += yuanpan_dupes(result)
+
+    emit('hidden', '查找改了名的完全重复', 84)
+    rows += hidden_dupes(cfg, rows, result)
 
     emit('tvsplit', '识别混入的剧集', 85)
     # 第一期分流只出清单、不摘刀口行：刀口各桶保持内核原样（已对金标准），两边互斥留到第二期执行时处理

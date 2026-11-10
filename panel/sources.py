@@ -238,9 +238,10 @@ def scan_inputs(cfg, workdir, progress):
         from . import cd2cache
         raw, stats['source'] = cd2cache.zone_items(cfg, progress, errors)
         drops = stats['source'].pop('drops', {})
+        sha1 = stats['source'].pop('sha1', {})
     else:
         # 兜底：遍历 CD2 挂载目录（大库很慢，且每个目录都会经 CD2 向网盘发请求）
-        raw, drops = {}, {}
+        raw, drops, sha1 = {}, {}, {}
         for zone, label in C.ZONES:
             raw[zone], drops[zone] = [], Counter()
             for root in cfg['zones'][zone]:
@@ -250,13 +251,28 @@ def scan_inputs(cfg, workdir, progress):
     stats['dropped'] = {z: dict(c) for z, c in drops.items() if c}
     unit_dirs = film_unit_dirs([it[2] for z in raw for it in raw[z]])
     # 原盘重复（A2）要看到保护区里的那份才能判「保护档留、档外搬」：剔除前先把原盘区全量存一份
-    keep_first = list(cfg['protect_names']) + list(cfg['listpack_names']) + list(cfg.get('keep_first_names') or [])
+    keep_first = list(cfg['protect_names']) + list(cfg['listpack_names']) + list(cfg['keep_first_names'])
     yall = []
     for root, kind, vp, size in raw['yuanpan']:
         rel = vp[len(root):].strip('/').split('/')
         yall.append({'path': vp, 'size': size, 'kind': kind, 'pack': rel[0] if len(rel) > 1 else '',
                      'top': 1 if protect_hit(vp, keep_first, unit_dirs) else 0})
     _write(workdir, 'yuanpan_all.csv', ['path', 'size', 'kind', 'pack', 'top'], yall, 'utf-8-sig')
+    # 同字节重复（A2 第二层）：全区文件（含保护区），缓存模式带 Sha1；保留档 / 守卫命中在这里先标好
+    import sieve
+    tier = list(cfg['protect_names']) + list(cfg['keep_first_names']) + list(sieve.LISTPACK)
+    hall = []
+    for z in raw:
+        zroot_depth = {r: r.rstrip('/').count('/') for r in cfg['zones'][z]}
+        for root, kind, vp, size in raw[z]:
+            if kind != 'file':
+                continue
+            hall.append({'path': vp, 'size': size, 'sha1': sha1.get(vp, ''), 'zone': z,
+                         'root_depth': zroot_depth.get(root, 0),
+                         'tier': 1 if protect_hit(vp, tier, unit_dirs) else 0,
+                         'guard': 1 if protect_hit(vp, blocked_names(cfg), unit_dirs) else 0})
+    _write(workdir, 'hidden_all.csv', ['path', 'size', 'sha1', 'zone', 'root_depth', 'tier', 'guard'], hall, 'utf-8-sig')
+    stats['hash_mode'] = 'sha1' if sha1 else 'size'
     # 提取层只剔保护区。榜单包留在人口里（与金标准同口径），由内核判定层整包不筛，守卫兜底整批拒绝
     blocked = list(cfg['protect_names'])
     skipped = Counter()

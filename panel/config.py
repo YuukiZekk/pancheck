@@ -28,7 +28,7 @@ DEFAULTS = {
     'listpack_names': ['豆瓣', 'IMDB', 'IMDb', '戛纳', 'Top250', 'Top 250'],
     'exclude_names': ['金庸', '动漫', 'ADWEB'],          # 第二/三刀与纵向不碰（内核已内置，这里可追加）
     'tv_keep_names': ['系列', '三部曲', '部曲'],          # 剧集分流时：路径含这些的视为系列电影，不分流
-    'keep_first_names': [],                             # 原盘重复时优先留这里（与保护目录同属一档，如已刮削大包）
+    'keep_first_names': [],                             # 重复时优先留这里（与保护目录同属一档）；只影响 A2，不剔除
     # 第二期用
     'quarantine_dir': '',
     # 首启向导是否走完（老配置：已绑过分区的视为走完）
@@ -40,6 +40,9 @@ ZONES = [('yuanpan', '原盘区'), ('heji', '合集区'), ('remux', 'REMUX 区')
 # 内核写死的保护词，用户配置只能在此基础上加，不能删
 BUILTIN_LISTPACK = ['豆瓣', 'IMDB', 'IMDb', '戛纳', 'Top250', 'Top 250']
 BUILTIN_EXCLUDE = ['金庸', '动漫', 'ADWEB']
+# A2 保留档内置词（用户 2026-11-08 拍板：01/02-系列、11-出品公司、已刮削大包同属一档）。
+# 只决定重复组里留哪份，不从比对人口里剔除——剔除名单另是 protect_names，两者分开，第一刀基线不受影响
+BUILTIN_KEEP_FIRST = ['系列电影合集', '出品公司', '原盘已刮削']
 
 
 def _merge_unique(base, extra):
@@ -63,6 +66,7 @@ def normalize(cfg):
         c[k] = _merge_unique([], c.get(k))
     c['listpack_names'] = _merge_unique(BUILTIN_LISTPACK, c['listpack_names'])
     c['exclude_names'] = _merge_unique(BUILTIN_EXCLUDE, c['exclude_names'])
+    c['keep_first_names'] = _merge_unique(BUILTIN_KEEP_FIRST, c['keep_first_names'])
     c['min_video_mb'] = max(0, int(c.get('min_video_mb') or 0))
     c['setup_done'] = bool((cfg or {}).get('setup_done')) or any(c['zones'].values())
     c['data_source'] = c.get('data_source') if c.get('data_source') in ('cache', 'scan', 'csv') else 'cache'
