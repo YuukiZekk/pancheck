@@ -430,6 +430,19 @@ def main(mode, run_dir):
 
     viol = [r['path'] for r in rows if r['bucket'] == '可切' and sources.guard_hit(cfg, r['path'], unit_dirs)]
     result['protect_violations'] = viol[:200]
+
+    # BDMV 肉酱盘单独标注（用户 2026-11-11）：盘片夹，且路径带「肉酱」或盘片夹名带 REMUX；主体或保留份任一边是就标
+    import re as _re
+    discs = {f[1] for f in files if f[3] in ('BDMV', 'ISO') and not f[1].lower().endswith('.iso')}
+
+    def roujiang(p):
+        return bool(p) and p in discs and ('肉酱' in p or bool(_re.search(r'(?i)remux', p.rsplit('/', 1)[-1])))
+    n_rj = 0
+    for r in rows:
+        if roujiang(r['path']) or roujiang(r.get('keep')):
+            r['flag'] = 'BDMV肉酱盘'
+            n_rj += 1
+    result['stats']['bdmv_roujiang_rows'] = n_rj
     result['rejected'] = bool(viol)
 
     # 清单展示用：可清理条目的搬运方式（单片夹/盘片夹 → 整夹；多片混装夹 → 只动这个文件），保留份体积

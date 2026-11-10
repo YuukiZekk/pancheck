@@ -660,11 +660,11 @@ def write_emby_csvs(cfg, workdir, errors, yuanpan_paths=()):
         if pre and i['movie'] and i['path'].startswith(pre + '/') and i['width']:
             # 内核写死 replace('/CloudNAS/CloudDrive','')，这里统一换成该前缀以对上挂载虚拟路径
             rel = i['path'][len(pre):]
-            # 这张表只管原盘区的实测分辨率：只写电影、且落在原盘区里的（剧集、其他分区的条目不写）
-            if not any(rel.startswith(r + '/') for r in yroots):
-                continue
-            yp.append({'source_path': '/CloudNAS/CloudDrive' + rel, 'width': i['width'], 'height': i['height']})
-            seen.add(rel)
+            # emby_yp 只管原盘区的实测分辨率：只写电影、且落在原盘区里的（剧集、其他分区的条目不写）。
+            # 注意别用 continue：下面的电影清单 / TMDB 表要的是全部电影，不能跟着收紧（fc76a5a 的教训）
+            if any(rel.startswith(r + '/') for r in yroots):
+                yp.append({'source_path': '/CloudNAS/CloudDrive' + rel, 'width': i['width'], 'height': i['height']})
+                seen.add(rel)
         if i['movie'] and (i['tmdb'] or i['name']):
             titles.append({'tmdb': i['tmdb'], 'name': i['name'], 'year': i['year'],
                            'max_vh': nominal_vh(i['width'], i['height'])})

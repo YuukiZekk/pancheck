@@ -179,7 +179,7 @@ def filter_rows(rows, bucket='', stage='', cls='', q=''):
     q = (q or '').strip().lower()
     return [r for r in rows if (not bucket or r['bucket'] == bucket) and (not stage or r['stage'] == stage)
             and (not cls or r['cls'] == cls)
-            and (not q or q in r['path'].lower() or q in (r.get('keep') or '').lower())]
+            and (not q or q in r['path'].lower() or q in (r.get('keep') or '').lower() or q in (r.get('flag') or '').lower())]
 
 
 # ---------------- API ----------------

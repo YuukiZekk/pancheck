@@ -128,6 +128,7 @@ pre{white-space:pre-wrap;word-break:break-all;font-size:12px;background:var(--ch
 .item .rt{display:flex;gap:6px;align-items:center;font-size:12px;white-space:nowrap}
 .lock{text-align:center;opacity:.6}
 .cap{display:inline-block;padding:1px 8px;border-radius:10px;background:var(--chip);font-size:11px;color:var(--mut)}
+.cap.warn{color:var(--warn);background:color-mix(in srgb,var(--warn) 14%,transparent)}
 .cap.go{background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok)}
 .cap.tag{background:color-mix(in srgb,var(--pri) 12%,transparent);color:var(--pri)}
 .ql{position:sticky;top:0}
@@ -924,7 +925,8 @@ function itemHtml(x, i) {
   const left = can ? `<input type="checkbox" ${mf.sel.has(x.path) ? 'checked' : ''} onclick="event.stopPropagation();toggleSel(${i},this.checked)">` : '<span class="lock" title="只有「可清理」和「主库缺口」能勾选">🔒</span>';
   const ap = APPR.items[x.path];
   const apTag = ap ? `<span class="cap go">✓ 已批准${ap.action === 'mainlib' ? '·挪入主库' : ap.action === 'unique' ? '·唯一副本目录' : ''}</span>` : '';
-  const mv = x.move ? `<span class="cap tag">${x.move === '整夹' ? '📦 整夹' : '📄 单文件'}</span>` : '';
+  const mv = (x.flag ? `<span class="cap warn" title="盘片夹结构的 REMUX；搜索框输入「肉酱」可单独筛出">💿 ${esc(x.flag)}</span>` : '')
+    + (x.move ? `<span class="cap tag">${x.move === '整夹' ? '📦 整夹' : '📄 单文件'}</span>` : '');
   return `<div class="item" data-i="${i}" onclick="quickLook(${i})">${left}
     <div style="min-width:0"><div class="nm">${esc(name)}</div><div class="sub">${esc(dir)}</div></div>
     <div class="rt">${apTag}${mv}<span class="cap ${cut ? 'go' : ''}">${esc(cn(x.stage, x.cls))}</span><span class="mut">${fmtGB(x.gb)}</span></div></div>`;
