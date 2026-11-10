@@ -98,7 +98,7 @@ pre{white-space:pre-wrap;font-size:12px;max-height:260px;overflow:auto;backgroun
   </div>
   <div class="card">
     <h2>保护与排除</h2>
-    <p class="mut" style="margin-top:0">一行一个目录名关键字。保护区与榜单包在扫描时整枝剪掉；若可切里仍有命中，整批拒绝。内置词不可删除。</p>
+    <p class="mut" style="margin-top:0">一行一个目录名关键字，只匹配目录名（文件名、单片夹夹名里的简介字样不算）。命中的目录在扫描时整枝剔除；若可切里仍有命中，整批拒绝。内置词不可删除。</p>
     <div class="grid">
       <div><label class="f">保护区目录名（系列合集 / 出品公司 / 已刮削…）</label><textarea id="c-protect_names"></textarea></div>
       <div><label class="f">榜单包（不筛不拆）</label><textarea id="c-listpack_names"></textarea></div>
@@ -317,6 +317,8 @@ async function loadInventory() {
   });
   if (s.emby) h += `<div class="tile"><div class="mut">Emby 电影</div><div class="n">${s.emby.movies}</div><div class="mut">路径对上 ${s.emby.matched_paths}</div></div>`;
   h += '</div>';
+  const sk = Object.entries(s.protected_skipped || {});
+  if (sk.length) h += `<p class="mut" style="margin-top:12px">保护区 / 榜单包已剔除：${sk.map(([k, v]) => esc(k) + ' ' + v + ' 条').join('，')}</p>`;
   if (s.heji_packs && s.heji_packs.length) {
     h += '<h3 style="font-size:14px;margin:16px 0 6px">合集区大包（前 40）</h3><table><tr><th>大包</th><th class="num">片数</th><th class="num">体积</th></tr>';
     s.heji_packs.forEach(p => h += `<tr><td>${esc(p.name)}</td><td class="num">${p.count}</td><td class="num">${fmtGB(p.gb)}</td></tr>`);

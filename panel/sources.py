@@ -35,6 +35,56 @@ def hit_any(text, names):
     return next((n for n in names if n and n in text), None)
 
 
+_NORM = re.compile(r'[\s\.\-_·：:、，,\[\]【】()（）]+')
+
+
+def is_video_path(vp):
+    return os.path.splitext(vp)[1].lower() in VIDEO_EXT
+
+
+def film_unit_dirs(paths):
+    """认出「单片夹」：夹内只有直接放着的视频文件、按内核 keyof1 只成一簇、且夹名里含这部片名。
+    这类夹名里的简介字样（如「豆瓣9.1分」）不当保护词命中；拿不准的一律不算单片夹（偏向保护）。
+    paths：虚拟路径列表；带视频扩展名的是文件，否则是一张盘（BDMV/VIDEO_TS 片夹本身）。"""
+    import sieve                                       # 只借内核的 keyof1，不改内核
+    direct = defaultdict(list)
+    deep = set()                                       # 底下还有子层内容的夹，不算单片夹
+    for vp in paths:
+        parts = vp.rstrip('/').split('/')
+        if is_video_path(vp):
+            direct['/'.join(parts[:-1])].append(parts[-1])
+            anc = parts[:-2]
+        else:
+            anc = parts[:-1]
+        for i in range(2, len(anc) + 1):
+            deep.add('/'.join(anc[:i]))
+    units = set()
+    for folder, names in direct.items():
+        if folder in deep:
+            continue
+        keys = {sieve.keyof1(n) for n in names}
+        if len(keys) != 1:
+            continue
+        title = next(iter(keys))[0]
+        if len(title) >= 2 and title in _NORM.sub('', folder.rsplit('/', 1)[-1]).lower():
+            units.add(folder)
+    return units
+
+
+def protect_hit(vp, names, units):
+    """保护判定（扫描剪枝与可切守卫共用同一口径）：只看路径的目录组件，
+    不看最后一段（文件名 / 盘片夹名），也不看被认作单片夹的那一层。返回命中的保护词。"""
+    parts = vp.rstrip('/').split('/')
+    for i in range(1, len(parts) - 1):
+        comp = parts[i]
+        if not comp or '/'.join(parts[:i + 1]) in units:
+            continue
+        n = hit_any(comp, names)
+        if n:
+            return n
+    return None
+
+
 # ---------------- 目录树（盘点页勾选用） ----------------
 def list_dirs(cfg, vpath='/'):
     if not cfg['cd2_mount'] or not os.path.isdir(cfg['cd2_mount']):
@@ -67,8 +117,7 @@ def dir_size(real):
 
 def walk_zone(cfg, vroot, errors, progress=None):
     """遍历一个分区，产出 ('disc', 虚拟夹路径, 字节) / ('file', 虚拟文件路径, 字节)。
-    保护区 / 榜单包目录整枝剪掉（判定层排除）。"""
-    blocked = blocked_names(cfg)
+    这里不按名字剪枝：保护判定要先认出单片夹，统一在 scan_inputs 里用 protect_hit 过滤。"""
     minb = cfg['min_video_mb'] * 1024 * 1024
     real_root = to_real(cfg, vroot)
     if not os.path.isdir(real_root):
@@ -76,7 +125,7 @@ def walk_zone(cfg, vroot, errors, progress=None):
         return
     n = 0
     for dp, dns, fns in os.walk(real_root, onerror=lambda e: errors.append(str(e))):
-        dns[:] = sorted(d for d in dns if not hit_any(d, blocked))
+        dns[:] = sorted(dns)
         n += 1
         if progress and n % 200 == 0:
             progress('扫描 %s … 已过 %d 个目录' % (vroot, n))
@@ -106,42 +155,57 @@ def scan_inputs(cfg, workdir, progress):
     files = []                     # [(zone, vpath, gb, form)]
     stats = {}
 
+    # 先全量遍历三个分区，再按统一口径剔除保护区 / 榜单包
+    raw = {}
+    for zone, label in (('yuanpan', '原盘区'), ('heji', '合集区'), ('remux', 'REMUX 区')):
+        raw[zone] = []
+        for root in cfg['zones'][zone]:
+            progress('扫描%s %s' % (label, root))
+            raw[zone] += [(root, kind, vp, size) for kind, vp, size in walk_zone(cfg, root, errors, progress)]
+    unit_dirs = film_unit_dirs([it[2] for z in raw for it in raw[z]])
+    blocked = blocked_names(cfg)
+    skipped = Counter()
+    for z in raw:
+        kept = []
+        for it in raw[z]:
+            n = protect_hit(it[2], blocked, unit_dirs)
+            if n:
+                skipped[n] += 1
+            else:
+                kept.append(it)
+        raw[z] = kept
+    stats['protected_skipped'] = dict(skipped)
+
     # 原盘区 → yuanpan_units.csv / yuanpan_files.csv
     units, yfiles = [], []
-    for root in cfg['zones']['yuanpan']:
-        progress('扫描原盘区 ' + root)
-        folder_tot = defaultdict(int)
-        for kind, vp, size in walk_zone(cfg, root, errors, progress):
-            if kind == 'disc':
-                units.append({'path': vp, 'name': vp.rsplit('/', 1)[-1], 'kind': 'BDMV', 'totGB': gb(size)})
-                files.append(('yuanpan', vp, gb(size), 'BDMV'))
-            else:
-                yfiles.append({'path': vp, 'GB': gb(size)})
-                folder_tot[vp.rsplit('/', 1)[0]] += size
-                files.append(('yuanpan', vp, gb(size), os.path.splitext(vp)[1][1:].upper()))
-        for folder, size in folder_tot.items():
-            units.append({'path': folder, 'name': folder.rsplit('/', 1)[-1], 'kind': 'FILES', 'totGB': gb(size)})
+    folder_tot = defaultdict(int)
+    for root, kind, vp, size in raw['yuanpan']:
+        if kind == 'disc':
+            units.append({'path': vp, 'name': vp.rsplit('/', 1)[-1], 'kind': 'BDMV', 'totGB': gb(size)})
+            files.append(('yuanpan', vp, gb(size), 'BDMV'))
+        else:
+            yfiles.append({'path': vp, 'GB': gb(size)})
+            folder_tot[vp.rsplit('/', 1)[0]] += size
+            files.append(('yuanpan', vp, gb(size), os.path.splitext(vp)[1][1:].upper()))
+    for folder, size in folder_tot.items():
+        units.append({'path': folder, 'name': folder.rsplit('/', 1)[-1], 'kind': 'FILES', 'totGB': gb(size)})
     _write(workdir, 'yuanpan_units.csv', ['path', 'name', 'kind', 'totGB'], units, 'utf-8')
     _write(workdir, 'yuanpan_files.csv', ['path', 'GB'], yfiles, 'utf-8')
 
     # 合集区 → heji_films.csv（大包 = 分区根下第一级目录）
     heji = []
-    for root in cfg['zones']['heji']:
-        progress('扫描合集区 ' + root)
-        for kind, vp, size in walk_zone(cfg, root, errors, progress):
-            rel = vp[len(root):].strip('/').split('/')
-            top = rel[0] if len(rel) > 1 else root.rsplit('/', 1)[-1]
-            name = vp.rsplit('/', 1)[-1]
-            form = 'ISO' if kind == 'disc' else os.path.splitext(name)[1][1:].upper()
-            heji.append({'大包': top, '片名(文件名)': name, 'GB': gb(size), '形态': form, '路径': vp})
-            files.append(('heji', vp, gb(size), form))
+    for root, kind, vp, size in raw['heji']:
+        rel = vp[len(root):].strip('/').split('/')
+        top = rel[0] if len(rel) > 1 else root.rsplit('/', 1)[-1]
+        name = vp.rsplit('/', 1)[-1]
+        form = 'ISO' if kind == 'disc' else os.path.splitext(name)[1][1:].upper()
+        heji.append({'大包': top, '片名(文件名)': name, 'GB': gb(size), '形态': form, '路径': vp})
+        files.append(('heji', vp, gb(size), form))
     _write(workdir, 'heji_films.csv', ['大包', '片名(文件名)', 'GB', '形态', '路径'], heji, 'utf-8-sig')
 
     # REMUX 区：第一期只盘点（判定模块未收编）
-    for root in cfg['zones']['remux']:
-        progress('盘点 REMUX 区 ' + root)
-        for kind, vp, size in walk_zone(cfg, root, errors, progress):
-            files.append(('remux', vp, gb(size), 'ISO' if kind == 'disc' else os.path.splitext(vp)[1][1:].upper()))
+    for root, kind, vp, size in raw['remux']:
+        files.append(('remux', vp, gb(size), 'ISO' if kind == 'disc' else os.path.splitext(vp)[1][1:].upper()))
 
     # Emby → emby_yp.csv / emby_titles.csv
     progress('读取 Emby 片库')

@@ -56,20 +56,6 @@ def tv_split(cfg, files):
     return out
 
 
-def dir_parts(path):
-    """路径的目录组件（去掉最后的文件名/片夹名段）。"""
-    return [p for p in path.split('/')[:-1] if p]
-
-
-def guard_hit(path, names):
-    """保护守卫：只在目录组件里找保护词，文件名里的简介字样（如「豆瓣9.1分」）不算。"""
-    for part in dir_parts(path):
-        n = sources.hit_any(part, names)
-        if n:
-            return n
-    return None
-
-
 def main(mode, run_dir):
     os.makedirs(run_dir, exist_ok=True)
     cfg = C.load()
@@ -133,7 +119,9 @@ def main(mode, run_dir):
 
     # 红线：可切里只要有一条落在保护区/榜单包，整批拒绝（不部分放行）
     guard = sources.blocked_names(cfg)
-    viol = [r['path'] for r in rows if r['bucket'] == '可切' and guard_hit(r['path'], guard)]
+    # 与扫描剪枝同一口径：只看目录组件，单片夹夹名与文件名里的简介字样不算
+    unit_dirs = sources.film_unit_dirs([f[1] for f in files])
+    viol = [r['path'] for r in rows if r['bucket'] == '可切' and sources.protect_hit(r['path'], guard, unit_dirs)]
     result['protect_violations'] = viol[:200]
     result['rejected'] = bool(viol)
     result['held_stage2'] = held
