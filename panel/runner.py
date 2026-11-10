@@ -3,6 +3,7 @@ mode = inventory（只盘点）| full（盘点 + 三刀 + 纵向 + 剧集分流�
 进度以 "@@P <json>" 行写 stdout；结果写 run_dir/result.json 与各类 CSV。
 内核 sieve.py 原样 import，读写都在 run_dir 里（内核按相对路径读五张 CSV）。
 """
+import csv
 import json
 import os
 import sys
@@ -66,6 +67,64 @@ def tv_split(cfg, files):
     return out
 
 
+CROSS_STAGE = '合集×REMUX'
+CROSS_BUCKET = {'A': '可切', 'B': '可切', 'C': '版本型', 'D': '待定', 'E': '待定'}
+KIND_NAME = {'D': 'DIY/特效字幕', 'I': '原盘', 'R': 'REMUX', 'O': '普通压制'}
+GIB = 1024 ** 3
+
+
+def _tl(t):
+    return '%s·%s' % (KIND_NAME[t[0]], L.tier(t[1]))
+
+
+def cross_heji_remux(cfg, cut_all, result):
+    """A1 合集 × REMUX（口径 = cross_remux.py TASK 1）。
+    合集侧人口 = heji_films 去榜单包/排除词（内核常量 + 用户追加），再去掉内核三刀已判可清理的
+    （当轮那批已搬走；不重复列）。REMUX 单元只当参照。"""
+    import sieve
+    from . import cross
+    if not os.path.isfile('cross_units.csv'):
+        result['cross'] = {'skipped': '没有 REMUX 区 / 整夹合集单元'}
+        return []
+    units = list(csv.DictReader(open('cross_units.csv', encoding='utf-8-sig')))
+    mk = lambda u: {'pack': u['来源区域'], 'name': u['电影'], 'gb': float(u['单元总GB']), 'form': '',
+                    'path': u['路径'], 'main': u['主视频文件']}
+    rem = [mk(u) for u in units if u['分区'] == 'remux']
+    pk = [mk(u) for u in units if u['分区'] == 'pack']
+    if not rem:
+        result['cross'] = {'skipped': '没有 REMUX 区单元'}
+        return []
+    extra = [x for x in cfg['exclude_names'] if x not in C.BUILTIN_EXCLUDE] + \
+            [x for x in cfg['listpack_names'] if x not in C.BUILTIN_LISTPACK]
+    hj, n_cut = [], 0
+    for r in csv.DictReader(open('heji_films.csv', encoding='utf-8-sig')):
+        p = r['路径']
+        if any(b in p for b in sieve.BANGDAN) or any(e in p for e in sieve.EXCL) or sources.hit_any(p, extra):
+            continue
+        if p in cut_all:
+            n_cut += 1
+            continue
+        hj.append({'pack': r['大包'], 'name': r['片名(文件名)'], 'gb': float(r['GB']), 'form': r['形态'], 'path': p})
+    out = []
+    for cls, src, x, ref in cross.heji_x_remux(hj, pk, rem):
+        xg = x['gb'] if src == '01-电影合集' else x['gb'] * 1e9 / GIB      # 单元体积是 1000 进制，显示换回 115 口径
+        rg = ref['gb'] * 1e9 / GIB
+        xt, rt = _tl(x['tier']), _tl(ref['tier'])
+        if cls == 'D':
+            out.append(row(CROSS_STAGE, cls, '待定', ref['path'], rg, keep=x['path'], side='REMUX',
+                           basis='合集那份更好（%s），REMUX 区这份（%s）待议' % (xt, rt)))
+            continue
+        basis = {'A': '档低于 REMUX 区那份：这份 %s，REMUX 区 %s',
+                 'B': '和 REMUX 区那份同档：这份 %s，REMUX 区 %s',
+                 'C': '一份是 DIY/特效字幕版，两份都留：这份 %s，REMUX 区 %s',
+                 'E': '分辨率推断不出，没法比档：这份 %s，REMUX 区 %s'}[cls] % (xt, rt)
+        out.append(row(CROSS_STAGE, cls, CROSS_BUCKET[cls], x['path'], xg, keep=ref['path'], basis=basis,
+                       side='合集' if src == '01-电影合集' else '整夹合集'))
+    result['cross'] = {'heji': len(hj), 'pack_units': len(pk), 'remux_units': len(rem),
+                       'skipped_cut': n_cut, 'pairs': len(out)}
+    return out
+
+
 def main(mode, run_dir):
     os.makedirs(run_dir, exist_ok=True)
     cfg = C.load()
@@ -118,6 +177,9 @@ def main(mode, run_dir):
     for cls, path, g, note in sieve.vertical(cut_all, emby_tmdb, emby_title):
         # 「库内无此片」单列为正藏缺口（只改面板分类，内核判定与条数不变）
         rows.append(row('纵向', cls, '缺口' if cls == '入库提醒' else '提醒', path, g, basis=L.plain_basis(note)))
+
+    emit('cross', '比对合集与 REMUX', 80)
+    rows += cross_heji_remux(cfg, cut_all, result)
 
     emit('tvsplit', '识别混入的剧集', 85)
     # 第一期分流只出清单、不摘刀口行：刀口各桶保持内核原样（已对金标准），两边互斥留到第二期执行时处理

@@ -21,7 +21,8 @@ DEFAULTS = {
     'csv_dir': str(DATA_DIR / 'csv'),
     'min_video_mb': 100,                                # 小于此体积的视频（样片/预告）不计入
     # 分区映射（虚拟路径，如 /115/01-好康的/01-电影合集）
-    'zones': {'heji': [], 'yuanpan': [], 'remux': []},
+    # pack = 整夹合集区（如 10-合集）：按「单元」只参加跨区比对，不进内核三刀
+    'zones': {'heji': [], 'yuanpan': [], 'remux': [], 'pack': []},
     # 保护（只能加；按目录组件匹配，扫描时剔除，可切里命中则整批拒绝）
     'protect_names': [],                                # 系列合集 / 出品公司 / 已刮削 等目录名
     'listpack_names': ['豆瓣', 'IMDB', 'IMDb', '戛纳', 'Top250', 'Top 250'],
@@ -30,6 +31,8 @@ DEFAULTS = {
     # 第二期用
     'quarantine_dir': '',
 }
+
+ZONES = [('yuanpan', '原盘区'), ('heji', '合集区'), ('remux', 'REMUX 区'), ('pack', '整夹合集区')]
 
 # 内核写死的保护词，用户配置只能在此基础上加，不能删
 BUILTIN_LISTPACK = ['豆瓣', 'IMDB', 'IMDb', '戛纳', 'Top250', 'Top 250']
@@ -52,7 +55,7 @@ def normalize(cfg):
             c[k] = v
     z = c.get('zones') or {}
     c['zones'] = {k: [('/' + p.strip().strip('/')) for p in (z.get(k) or []) if str(p).strip()]
-                  for k in ('heji', 'yuanpan', 'remux')}
+                  for k in ('heji', 'yuanpan', 'remux', 'pack')}
     for k in ('protect_names', 'listpack_names', 'exclude_names', 'tv_keep_names'):
         c[k] = _merge_unique([], c.get(k))
     c['listpack_names'] = _merge_unique(BUILTIN_LISTPACK, c['listpack_names'])

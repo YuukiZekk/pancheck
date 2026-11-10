@@ -8,7 +8,7 @@
 :root{
   --bg:#f5f5f7;--side:#ececef;--card:#ffffff;--fg:#1d1d1f;--mut:#6e6e73;--line:#e3e3e8;--chip:#f0f0f3;
   --pri:#0a84ff;--ok:#28a745;--warn:#c27c0e;--bad:#e5484d;
-  --c-yp:#0a84ff;--c-remux:#a259ff;--c-heji:#30b0c7;--c-prot:#a1a1aa;
+  --c-yp:#0a84ff;--c-remux:#a259ff;--c-pack:#ff9f0a;--c-heji:#30b0c7;--c-prot:#a1a1aa;
   --shadow:0 1px 2px rgba(0,0,0,.04),0 4px 16px rgba(0,0,0,.05);--glow:rgba(10,132,255,.10);
   --r:12px;color-scheme:light;
 }
@@ -468,7 +468,7 @@ function renderProbe(sel) {
 }
 
 // ---------- 盘点 ----------
-const ZN = {heji: '合集区', yuanpan: '原盘区', remux: 'REMUX 区'};
+const ZN = {heji: '合集区', yuanpan: '原盘区', remux: 'REMUX 区', pack: '整夹合集区'};
 function zoneOf(p) { for (const z in ZN) if ((CFG.zones[z] || []).includes(p)) return z; return ''; }
 function renderZones() {
   $('#zones').innerHTML = Object.entries(ZN).map(([z, name]) => `<dt>${name}</dt><dd>${(CFG.zones[z] || []).map((p, i) =>
@@ -580,6 +580,7 @@ function srcNote(src) {
 const SIEVES = [
   {name: 'REMUX 分层', sub: 'REMUX 三分分层', off: true},
   {name: 'REMUX 与原盘比对', sub: 'REMUX × 原盘交叉', off: true},
+  {name: '合集与 REMUX 比对', sub: '合集 × REMUX', stages: ['合集×REMUX'], bucket: '可切'},
   {name: '原盘完全重复', sub: '原盘精确重复', off: true},
   {name: '合集去重与低画质', sub: '合集区三刀', stages: ['第一刀', '第二刀', '第三刀'], bucket: '可切'},
   {name: '对比 Emby 片库', sub: '纵向 × Emby', stages: ['纵向'], bucket: '提醒'},
@@ -600,10 +601,10 @@ async function loadOverview() {
     $('#ov-total').textContent = '—';
     $('#ov-quad').innerHTML = '<div class="mut small" style="grid-column:1/-1;cursor:default">还没有筛选结果。先到「盘点」指定分区，再点右上角「一键跑筛」。</div>';
     $('#ov-sieves').innerHTML = SIEVES.map(sieveCard).join('');
-    $('#ov-done').textContent = '0/6'; return;
+    $('#ov-done').textContent = '0/' + SIEVES.length; return;
   }
   const st = r.stats || {}, gbz = z => (st[z] || {}).gb || 0;
-  const parts = [['原盘', gbz('yuanpan'), 'var(--c-yp)'], ['REMUX', gbz('remux'), 'var(--c-remux)'], ['合集', gbz('heji'), 'var(--c-heji)'], ['保护区', st.protected_gb || 0, 'var(--c-prot)']];
+  const parts = [['原盘', gbz('yuanpan'), 'var(--c-yp)'], ['REMUX', gbz('remux'), 'var(--c-remux)'], ['整夹合集', gbz('pack'), 'var(--c-pack)'], ['合集', gbz('heji'), 'var(--c-heji)'], ['保护区', st.protected_gb || 0, 'var(--c-prot)']];
   const tot = parts.reduce((a, p) => a + p[1], 0);
   $('#ov-total').textContent = fmtGB(tot);
   $('#ov-bar').innerHTML = parts.map(p => `<i style="width:${tot ? p[1] / tot * 100 : 0}%;background:${p[2]}" title="${p[0]} ${fmtGB(p[1])}"></i>`).join('');
@@ -615,7 +616,7 @@ async function loadOverview() {
     ['孤本', n(S('孤本').count), fmtGB(S('孤本').gb)],
     ['缺口', n(S('缺口').count), fmtGB(S('缺口').gb) + ' · Emby 里没有'],
   ].map(([b, big, sub]) => `<div onclick="openBucket('${b}')"><div class="small">${esc(bn(b))}${jg(b)}</div><div class="n ${b === '可切' ? 'ok' : ''}">${big}</div><div class="mut small">${sub}</div></div>`).join('');
-  $('#ov-done').textContent = '3/6';
+  $('#ov-done').textContent = SIEVES.filter(s => !s.off).length + '/' + SIEVES.length;
   $('#ov-sieves').innerHTML = SIEVES.map(sieveCard).join('');
   $('#ov-src').innerHTML = srcNote(r.source);
   $('#ov-detail').innerHTML = '<table><tr><th>分类</th><th>来源</th><th>判定</th><th class="num">条数</th><th class="num">体积</th></tr>' +

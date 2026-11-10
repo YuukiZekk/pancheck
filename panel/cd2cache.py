@@ -164,7 +164,7 @@ def zone_items(cfg, progress, errors):
     api_sql, api_args = _api_where(cfg)
     raw, tmins, tmaxs, rows_read, drops, unlisted = {}, [], [], 0, {}, {}
     try:
-        for zone, label in (('yuanpan', '原盘区'), ('heji', '合集区'), ('remux', 'REMUX 区')):
+        for zone, label in S.C.ZONES:
             raw[zone], drops[zone] = [], S.Counter()
             unl = unlisted[zone] = {'count': 0, 'in_disc': 0, 'samples': []}
             for root in cfg['zones'][zone]:
@@ -224,7 +224,7 @@ def zone_items(cfg, progress, errors):
                 raw[zone] += [(root, kind, vp, size) for _, kind, vp, size in items]
     finally:
         conn.close()
-    for zone, label in (('yuanpan', '原盘区'), ('heji', '合集区'), ('remux', 'REMUX 区')):
+    for zone, label in S.C.ZONES:
         u = unlisted.get(zone) or {}
         if u.get('count'):
             errors.append('%s有 %d 个目录 CD2 从未打开过%s，这些目录下的文件不在缓存里、不参与比对；'

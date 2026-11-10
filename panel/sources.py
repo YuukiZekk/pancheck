@@ -123,6 +123,7 @@ ZONE_HINTS = {
     'heji': ('合集', '电影包', '打包', 'collection', 'pack'),
     'yuanpan': ('原盘', '蓝光', 'bdmv', 'blu-ray', 'bluray', 'iso'),
     'remux': ('remux',),
+    'pack': (),                 # 整夹合集区靠用户手动指定
 }
 PROTECT_TEMPLATES = ['系列合集', '系列电影', '出品公司', '导演合集', '已刮削', '刮削完成',
                      '漫威', 'DC', '皮克斯', '迪士尼', '吉卜力', '宫崎骏', '收藏']
@@ -237,7 +238,7 @@ def scan_inputs(cfg, workdir, progress):
     else:
         # 兜底：遍历 CD2 挂载目录（大库很慢，且每个目录都会经 CD2 向网盘发请求）
         raw, drops = {}, {}
-        for zone, label in (('yuanpan', '原盘区'), ('heji', '合集区'), ('remux', 'REMUX 区')):
+        for zone, label in C.ZONES:
             raw[zone], drops[zone] = [], Counter()
             for root in cfg['zones'][zone]:
                 progress('扫描%s %s' % (label, root))
@@ -301,15 +302,28 @@ def scan_inputs(cfg, workdir, progress):
     stats['heji_episodes'] = {'count': ep_n, 'gb': round(ep_bytes / GB, 1)}
     _write(workdir, 'heji_films.csv', ['大包', '片名(文件名)', 'GB', '形态', '路径'], heji, 'utf-8-sig')
 
-    # REMUX 区：第一期只盘点（判定模块未收编）
-    for root, kind, vp, size in raw['remux']:
-        files.append(('remux', vp, gb(size), 'ISO' if kind == 'disc' else os.path.splitext(vp)[1][1:].upper()))
+    # REMUX 区 / 整夹合集区：按「单元」出 cross_units.csv，给跨区比对模块用（口径同 union_units.csv）
+    from . import cross
+    urows = []
+    for z in ('remux', 'pack'):
+        for root, kind, vp, size in raw[z]:
+            files.append((z, vp, gb(size), 'ISO' if kind == 'disc' else os.path.splitext(vp)[1][1:].upper()))
+        for root in cfg['zones'][z]:
+            items = [(vp, size, kind) for r, kind, vp, size in raw[z] if r == root]
+            for u in cross.build_units(items, VIDEO_EXT):
+                rel = u['path'][len(root):].strip('/').split('/')
+                area = 'REMUX' if z == 'remux' else (rel[0] if len(rel) > 1 else root.rsplit('/', 1)[-1])
+                urows.append({'分区': z, '来源区域': area, '电影': u['name'], '主视频文件': u['main'],
+                              '单元总GB': u['gb'], '路径': u['path']})
+    _write(workdir, 'cross_units.csv', CROSS_UNIT_COLS, urows, 'utf-8-sig')
+    stats['cross_units'] = {'remux': sum(1 for u in urows if u['分区'] == 'remux'),
+                            'pack': sum(1 for u in urows if u['分区'] == 'pack')}
 
     # Emby → emby_yp.csv / emby_titles.csv
     progress('读取 Emby 片库')
     emby_info = write_emby_csvs(cfg, workdir, errors, [u['path'] for u in units] + [f['path'] for f in yfiles])
 
-    for z in ('heji', 'yuanpan', 'remux'):
+    for z, _ in C.ZONES:
         fz = [f for f in files if f[0] == z]
         stats[z] = {'count': len(fz), 'gb': round(sum(f[2] for f in fz), 1)}
     tops = Counter()
@@ -343,7 +357,28 @@ def csv_inputs(cfg, workdir, progress):
     stats = {z: {'count': sum(1 for x in files if x[0] == z),
                  'gb': round(sum(x[2] for x in files if x[0] == z), 1)} for z in ('heji', 'yuanpan')}
     stats['remux'] = {'count': 0, 'gb': 0}
+    stats['pack'] = {'count': 0, 'gb': 0}
+    # 可选：union_units.csv（REMUX 区 + 整夹合集单元）→ 跨区比对；没有就跳过那个模块
+    up = os.path.join(src, 'union_units.csv')
+    if os.path.isfile(up):
+        progress('载入 union_units.csv')
+        urows, seen = [], set()
+        with open(up, encoding='utf-8-sig') as f:
+            for r in csv.DictReader(f):
+                if r['路径'] in seen:
+                    continue
+                seen.add(r['路径'])
+                urows.append({'分区': 'remux' if r['来源区域'] == 'REMUX' else 'pack', '来源区域': r['来源区域'],
+                              '电影': r['电影'], '主视频文件': r['主视频文件'], '单元总GB': r['单元总GB'], '路径': r['路径']})
+        _write(workdir, 'cross_units.csv', CROSS_UNIT_COLS, urows, 'utf-8-sig')
+        for z in ('remux', 'pack'):
+            us = [u for u in urows if u['分区'] == z]
+            stats[z] = {'count': len(us), 'gb': round(sum(float(u['单元总GB']) for u in us) * 1e9 / GB, 1)}
+        stats['cross_units'] = {z: stats[z]['count'] for z in ('remux', 'pack')}
     return stats, files, errors
+
+
+CROSS_UNIT_COLS = ['分区', '来源区域', '电影', '主视频文件', '单元总GB', '路径']
 
 
 def _write(workdir, name, header, rows, enc):
