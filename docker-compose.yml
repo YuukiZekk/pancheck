@@ -24,5 +24,6 @@ services:
       # Emby 数据目录：装 Emby 时映射到它容器里 /config 的那个目录。面板自己在里面找 library.db，只读
       - ${EMBY_DATA_HOST:-/volume1/docker/emby/config}:/emby-data:ro
       # ↑↑↑ 其余都不用改 ↑↑↑
-      # CD2 挂载目录：只有「遍历挂载目录」兜底模式才用；不填就挂一个空目录
+      # CD2 挂载目录：「遍历挂载目录」兜底模式和第二期「执行」才用；不填就挂一个空目录
+      # 要执行搬运：把 :ro 改成 :rw，并在上面 environment 里加 PANEL_ALLOW_MOVE=1（两道开关都开才有执行入口）
       - ${CD2_MOUNT_HOST:-./empty}:/media/cd2:ro,rslave

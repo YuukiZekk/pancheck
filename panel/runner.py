@@ -300,10 +300,10 @@ def main(mode, run_dir):
     emit('vertical', '对比 Emby 片库', 75)
     cut_all = cut1 | {r[1] for r in s2A} | {r[1] for r in s3A}
     for cls, path, g, note in sieve.vertical(cut_all, emby_tmdb, emby_title):
-        # 「库内无此片」单列为正藏缺口（只改面板分类，内核判定与条数不变）
-        # 规则 2（第二期 B1）：正藏（Emby）已有、且不差于这份（TMDB 精确命中、同档或更好）→ 多余；只改面板分类，内核判定不变
+        # 「库内无此片」单列为主库缺口（只改面板分类，内核判定与条数不变）
+        # 规则 2（第二期 B1）：主库（Emby）已有、且不差于这份（TMDB 精确命中、同档或更好）→ 多余；只改面板分类，内核判定不变
         if cls == '库内已有同档+':
-            rows.append(row('纵向', cls, '可切', path, g, keep='Emby 正藏', basis=L.plain_basis(note) + '，这份不比库里的好'))
+            rows.append(row('纵向', cls, '可切', path, g, keep='Emby 主库', basis=L.plain_basis(note) + '，这份不比库里的好'))
         else:
             rows.append(row('纵向', cls, '缺口' if cls == '入库提醒' else '提醒', path, g, basis=L.plain_basis(note)))
 

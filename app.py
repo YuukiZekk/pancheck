@@ -1,7 +1,8 @@
 """sieve 面板（第一期：设置 + 盘点 + 跑筛 + 清单导出，只读）。
 
 红线（写进代码）：
-- 本服务没有任何删除/移动/改名接口；第一期也没有执行入口。
+- 本服务没有任何删除接口。移动只有一条路：第二期执行（panel/execute.py，只用改名），
+  要 PANEL_ALLOW_MOVE=1 且 CD2 挂载可写两道开关都开才有入口；只执行用户批准过的条目。
 - CD2 缓存、Emby 库只读打开（见 panel/sources.py）。
 - 配置变了旧清单自动作废（指纹不符的结果不允许导出可切类）。
 - 可切里命中保护区/榜单包 → 整批拒绝。
@@ -52,6 +53,21 @@ class Job:
         self.lock = threading.Lock()
         self.proc = None
         self.state = {'running': False}
+
+    def start_exec(self, kind, bdir):
+        """执行 / 回滚一个批次（同样一次只跑一个任务）。"""
+        with self.lock:
+            if self.proc and self.proc.poll() is None:
+                raise HTTPException(409, '已有任务在跑')
+            log = open(bdir / ('%s.log' % kind), 'a', encoding='utf-8')
+            env = dict(os.environ, PYTHONIOENCODING='utf-8', PYTHONUNBUFFERED='1', SIEVE_DATA=str(C.DATA_DIR))
+            self.proc = subprocess.Popen([sys.executable, '-m', 'panel.execute', kind, str(bdir)],
+                                         cwd=str(C.APP_DIR), env=env, stdout=subprocess.PIPE,
+                                         stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace')
+            self.state = {'running': True, 'run_id': bdir.name, 'mode': kind, 'pct': 0, 'msg': '启动中',
+                          'started': time.time(), 'tail': []}
+            threading.Thread(target=self._pump, args=(self.proc, log), daemon=True).start()
+            return self.state
 
     def start(self, mode):
         with self.lock:
@@ -224,6 +240,165 @@ async def setup_step(step: str, request: Request):
 def probe():
     c = C.load()
     return {'cd2': sources.probe_cd2(c), 'emby': sources.probe_emby(c)}
+
+
+# ---------------- 第二期：批准 / 预演 / 执行 / 回滚 ----------------
+from panel import execute as X
+
+
+def _latest_full():
+    res, d = load_run(None)
+    if not res:
+        raise HTTPException(404, '还没有筛选结果')
+    return res, d
+
+
+def _batch_dir(bid):
+    b = X.BATCHES / bid
+    if not bid.startswith('B') or '/' in bid or '\\' in bid or '..' in bid or not (b / 'plan.json').exists():
+        raise HTTPException(404, '没有这个批次')
+    return b
+
+
+@app.get('/api/exec/status')
+def exec_status():
+    c = C.load()
+    res, d = load_run(None)
+    n = len(X.load_approvals(d, res['fingerprint'])) if res and not res['stale'] else 0
+    return {'allowed': X.allowed(), 'mount_writable': X.mount_writable(c), 'trial_ok': X.state().get('trial_ok', False),
+            'trial_max': X.TRIAL_MAX,
+            'dirs': {'quarantine': c['quarantine_dir'], 'mainlib': c['main_lib_dir'], 'unique': c['unique_dir']},
+            'run_id': res and res['run_id'], 'stale': bool(res and res['stale']),
+            'rejected': bool(res and res.get('rejected')), 'approvals': n}
+
+
+@app.get('/api/approvals')
+def approvals_get():
+    res, d = _latest_full()
+    b = {}
+    for r in load_rows(d):
+        b.setdefault(r['path'], set()).add(r['bucket'])
+    overlap = [p for p, s in b.items() if {'缺口', '孤本'} <= s]       # 去处要用户选的
+    return {'run_id': res['run_id'], 'items': X.load_approvals(d, res['fingerprint']) if not res['stale'] else {},
+            'overlap': overlap}
+
+
+@app.put('/api/approvals')
+async def approvals_put(request: Request):
+    """add: [{path, dest?}]，remove: [path]。只认最新一份、没过期、没被整批拒绝的结果。"""
+    body = await request.json()
+    res, d = _latest_full()
+    if res['stale']:
+        raise HTTPException(409, '设置改过，这份清单已过期：重新跑筛后再批准')
+    if res.get('rejected'):
+        raise HTTPException(409, '这份清单被保护守卫整批拒绝，不能批准')
+    rows_by_path = {}
+    for r in load_rows(d):
+        rows_by_path.setdefault(r['path'], []).append(r)
+    items = X.load_approvals(d, res['fingerprint'])
+    errors = []
+    for a in body.get('add') or []:
+        action, err = X.approvable(rows_by_path, a.get('path'), a.get('dest'))
+        if err:
+            errors.append({'path': a.get('path'), 'reason': err})
+        else:
+            items[a['path']] = {'action': action, 'dest': a.get('dest') or action, 'at': time.time()}
+    for p in body.get('remove') or []:
+        items.pop(p, None)
+    X.save_approvals(d, res['fingerprint'], items)
+    return {'count': len(items), 'errors': errors}
+
+
+def _new_batch_id():
+    base, n = time.strftime('B%Y%m%d-%H%M%S'), 1
+    bid = base
+    while (X.BATCHES / bid).exists():
+        n += 1
+        bid = '%s-%d' % (base, n)
+    return bid
+
+
+@app.post('/api/exec/plan')
+def exec_plan():
+    """预演：按批准生成搬运计划（实时列一次被批准的目录），不动任何文件。"""
+    res, d = _latest_full()
+    if res['stale'] or res.get('rejected'):
+        raise HTTPException(409, '清单已过期或被整批拒绝')
+    c = C.load()
+    if not c['cd2_mount'] or not os.path.isdir(c['cd2_mount']):
+        raise HTTPException(400, '执行要用 CD2 挂载目录：设置 → 高级里填「CD2 挂载根」，compose 里把挂载那行打开')
+    items = X.load_approvals(d, res['fingerprint'])
+    if not items:
+        raise HTTPException(400, '还没有批准任何条目')
+    return X.plan(c, load_rows(d), items, _new_batch_id())
+
+
+@app.post('/api/exec/run')
+def exec_run():
+    if not X.allowed():
+        raise HTTPException(403, '执行开关没开：compose 里设 PANEL_ALLOW_MOVE=1 并把 CD2 挂载改成可写，重启后才有执行入口')
+    c = C.load()
+    if not X.mount_writable(c):
+        raise HTTPException(403, 'CD2 挂载是只读的：compose 里把挂载那行的 :ro 改成 :rw')
+    res, d = _latest_full()
+    if res['stale'] or res.get('rejected'):
+        raise HTTPException(409, '清单已过期或被整批拒绝')
+    items = X.load_approvals(d, res['fingerprint'])
+    if not items:
+        raise HTTPException(400, '还没有批准任何条目')
+    if not X.state().get('trial_ok') and len(items) > X.TRIAL_MAX:
+        raise HTTPException(409, '第一次执行只许 ≤%d 条的小批量试跑，对账无误后才放开（现在批准了 %d 条）'
+                            % (X.TRIAL_MAX, len(items)))
+    bid = _new_batch_id()
+    p = X.plan(c, load_rows(d), items, bid)
+    if not p['ops']:
+        raise HTTPException(400, '预演后没有可执行的搬运（都被拒绝或源已不在）')
+    bdir = X.BATCHES / bid
+    bdir.mkdir(parents=True)
+    p.update(run_id=res['run_id'], created=time.time())
+    (bdir / 'plan.json').write_text(json.dumps(p, ensure_ascii=False, indent=1), encoding='utf-8')
+    X.save_approvals(d, res['fingerprint'], {})          # 批准随批次带走，不留在清单上重复执行
+    return JOB.start_exec('run', bdir)
+
+
+@app.get('/api/exec/batches')
+def exec_batches():
+    out = []
+    if X.BATCHES.exists():
+        for b in sorted(X.BATCHES.iterdir(), reverse=True):
+            item = {'batch_id': b.name}
+            for f in ('plan', 'reconcile', 'rollback'):
+                try:
+                    item[f] = json.loads((b / (f + '.json')).read_text(encoding='utf-8'))
+                except (OSError, ValueError):
+                    pass
+            if 'plan' in item:
+                pl = item.pop('plan')
+                item.update(ops=len(pl['ops']), rows=pl['rows'], gb=pl['gb'], created=pl.get('created'))
+            out.append(item)
+    return out
+
+
+@app.get('/api/exec/batch/{bid}')
+def exec_batch(bid: str):
+    b = _batch_dir(bid)
+    return {f: json.loads((b / (f + '.json')).read_text(encoding='utf-8'))
+            for f in ('plan', 'reconcile', 'rollback') if (b / (f + '.json')).exists()}
+
+
+@app.post('/api/exec/resume/{bid}')
+def exec_resume(bid: str):
+    """中途崩了 / 停了：按日志续跑同一个批次。"""
+    if not X.allowed():
+        raise HTTPException(403, '执行开关没开')
+    return JOB.start_exec('run', _batch_dir(bid))
+
+
+@app.post('/api/exec/rollback/{bid}')
+def exec_rollback(bid: str):
+    if not X.allowed():
+        raise HTTPException(403, '执行开关没开')
+    return JOB.start_exec('rollback', _batch_dir(bid))
 
 
 @app.get('/api/tree')

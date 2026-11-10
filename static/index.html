@@ -180,10 +180,11 @@ textarea{min-height:64px;resize:vertical}
     <button class="nav" data-p="overview"><span class="ic">◎</span>总览</button>
     <button class="nav" data-p="inventory"><span class="ic">▤</span>盘点</button>
     <button class="nav" data-p="manifest"><span class="ic">☰</span>清单</button>
+    <button class="nav" data-p="exec"><span class="ic">⇢</span>执行</button>
     <button class="nav" data-p="settings"><span class="ic">⚙</span>设置</button>
     <div class="foot">
       <div id="authpill" class="pill bad hidden">⚠<span>未设访问口令：局域网里谁都能打开。在 .env 设 PANEL_PASSWORD 后重启</span></div>
-      <div class="pill ok">🔒<span>只读：只出清单，不会移动、改名或删除你的文件</span></div>
+      <div class="pill ok" id="ropill">🔒<span>只读：只出清单，不会移动、改名或删除你的文件</span></div>
       <div id="srcpill" class="pill mut small"></div>
     </div>
   </aside>
@@ -242,6 +243,17 @@ textarea{min-height:64px;resize:vertical}
   </div>
 </section>
 
+<!-- ================= 执行 ================= -->
+<section class="page hidden" id="p-exec">
+  <div class="grid2">
+    <div class="card"><h3>开关与去处</h3><div id="ex-status" class="small mut">读取中…</div></div>
+    <div class="card"><h3>本次批准</h3><div id="ex-appr" class="small mut">读取中…</div>
+      <div class="row" style="margin-top:12px;gap:8px"><button class="btn" onclick="execPlan()">预演（不动文件）</button><button class="btn pri" id="ex-run" onclick="execRun()" disabled>执行</button></div></div>
+  </div>
+  <div class="card" style="margin-top:14px"><h3>预演结果</h3><div id="ex-plan" class="small mut">点「预演」：按批准生成搬运计划，实时检查整夹纯度、目标冲突、是否同盘，不动任何文件。</div></div>
+  <div class="card" style="margin-top:14px"><h3>批次（对账 / 续跑 / 回滚）</h3><div id="ex-batches" class="small mut">还没有批次。</div></div>
+</section>
+
 <!-- ================= 首启向导 ================= -->
 <section class="page hidden" id="p-wizard">
   <div class="steps" id="wz-steps"></div>
@@ -292,7 +304,8 @@ textarea{min-height:64px;resize:vertical}
     <select class="in" id="f-stage" style="width:auto"></select>
     <select class="in" id="f-sort" style="width:auto"><option value="gb">体积 ↓</option><option value="path">路径</option></select>
     <button class="btn" onclick="selectVisible()">勾选本页可清理</button>
-    <button class="btn pri" id="btn-expsel" onclick="exportSelected()" disabled>导出已勾选</button>
+    <button class="btn" id="btn-expsel" onclick="exportSelected()" disabled>导出已勾选</button>
+    <button class="btn pri" id="btn-appr" onclick="approveSelected()" disabled>批准已勾选</button>
   </div>
   <div class="mut small" id="mf-meta" style="margin-top:8px"></div>
   <div class="manifest">
@@ -333,7 +346,12 @@ textarea{min-height:64px;resize:vertical}
     </div>
     <div class="card">
       <h3>排查区</h3>
-      <div class="form"><div><label class="f">搬运目标目录（第二期用：同盘 rename，只搬不删）</label><input type="text" id="c-quarantine_dir" placeholder="/115/99-排查区"></div></div>
+      <div class="form">
+        <div><label class="f">排查区（「可清理」搬到这里；按批次建子目录、保留原路径）</label><input type="text" id="c-quarantine_dir" placeholder="/115/99-排查区"></div>
+        <div><label class="f">主库目录（「主库缺口」挪入这里）</label><input type="text" id="c-main_lib_dir" placeholder="/115/00-主库"></div>
+        <div><label class="f">唯一副本目录（缺口同时是唯一副本时可选的去处）</label><input type="text" id="c-unique_dir" placeholder="/115/98-唯一副本"></div>
+      </div>
+      <p class="mut small">三个目录都要和片子在同一个网盘里：同盘改名是秒搬，不复制、不删除。</p>
     </div>
     <div class="card">
       <h3>保护区与榜单包目录名</h3>
@@ -370,7 +388,7 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const u = p => new URL(p, location.origin + location.pathname).href;   // 地址栏带 user:pw@ 时 fetch 不认相对路径
 const BUCKETS = ['可切','待定','版本型','不动','孤本','缺口','提醒','剧集分流'];
-const TITLES = {overview: ['总览', 'Overview'], inventory: ['盘点', 'Inventory'], manifest: ['清单', 'Manifest'], settings: ['设置', 'Settings'], wizard: ['首次设置', 'Setup']};
+const TITLES = {overview: ['总览', 'Overview'], inventory: ['盘点', 'Inventory'], manifest: ['清单', 'Manifest'], settings: ['设置', 'Settings'], wizard: ['首次设置', 'Setup'], exec: ['执行', 'Execute']};
 let CFG = null, LB = {buckets: {}, stages: {}, classes: {}}, RES = null, PROBE = null, page = 'overview';
 let mf = {bucket: '', offset: 0, rows: [], sel: new Set(), cur: null};
 const bn = b => (LB.buckets[b] || {}).name || b;
@@ -416,9 +434,10 @@ function go(p) {
   $('#title').innerHTML = TITLES[p][0] + `<span>${TITLES[p][1]}</span>`;
   if (p === 'overview') loadOverview();
   if (p === 'inventory') { renderZones(); loadTree(); loadInventory(); probe(false); }
-  if (p === 'manifest') { renderSeg().then(() => loadRows()); }
+  if (p === 'manifest') { loadAppr().then(renderSeg).then(() => loadRows()); }
   if (p === 'settings') { renderProbe('#set-probe'); probe(false).then(renderIdCards); }
   if (p === 'wizard') renderWizard();
+  if (p === 'exec') loadExec();
 }
 document.querySelectorAll('.nav').forEach(b => b.onclick = () => go(b.dataset.p));
 function toggleMenu(e) { e.stopPropagation(); $('#expmenu').classList.toggle('hidden'); }
@@ -438,7 +457,7 @@ $('#search-in').addEventListener('keydown', e => {
 
 // ---------- 设置 ----------
 const LISTS = ['protect_names','listpack_names','exclude_names','tv_keep_names','keep_first_names'];
-const SCALARS = ['data_source','cd2_mount','cd2_config','cd2_api_name','cd2_api_user','emby_data','emby_prefix','csv_dir','min_video_mb','quarantine_dir'];
+const SCALARS = ['data_source','cd2_mount','cd2_config','cd2_api_name','cd2_api_user','emby_data','emby_prefix','csv_dir','min_video_mb','quarantine_dir','main_lib_dir','unique_dir'];
 async function loadCfg() {
   const r = await api('api/config');
   CFG = r.config;
@@ -446,6 +465,10 @@ async function loadCfg() {
   LISTS.forEach(k => $('#c-' + k).value = (CFG[k] || []).join('\n'));
   $('#authpill').classList.toggle('hidden', !!r.auth_enabled);
   $('#srcpill').textContent = '数据来源：' + {cache: 'CD2 目录缓存', scan: '遍历挂载目录', csv: 'CSV 文件'}[CFG.data_source];
+  try {
+    const xs = await api('api/exec/status');
+    if (xs.allowed) $('#ropill').innerHTML = '⇢<span>执行已开：只搬你批准过的，只改名、不删除，每批可回滚</span>';
+  } catch (e) {}
 }
 function readForm() {
   const c = JSON.parse(JSON.stringify(CFG));
@@ -465,6 +488,72 @@ async function saveCfg() {
   } catch (e) { flash(e.message, 'bad'); alert(e.message); throw e; }
 }
 function flash(m, cls) { const el = $('#cfg-msg'); el.className = 'small ' + cls; el.textContent = m; setTimeout(() => { if (el.textContent === m) el.textContent = '' }, 5000); }
+
+// ---------- 执行 ----------
+let EXS = null;
+const ACT = {quarantine: '排查区', mainlib: '主库', unique: '唯一副本目录'};
+async function loadExec() {
+  try { EXS = await api('api/exec/status'); } catch (e) { $('#ex-status').innerHTML = `<span class="bad">${esc(e.message)}</span>`; return; }
+  const s = EXS, d = s.dirs;
+  $('#ex-status').innerHTML = `<dl class="kv">
+    <dt>执行开关</dt><dd class="${s.allowed ? 'ok' : 'warn'}">${s.allowed ? '✓ 已开（PANEL_ALLOW_MOVE=1）' : '关：compose 里设 PANEL_ALLOW_MOVE=1 才有执行入口（预演不受影响）'}</dd>
+    <dt>挂载</dt><dd class="${s.mount_writable ? 'ok' : 'warn'}">${s.mount_writable ? '✓ 可写' : '只读或没挂：compose 里 CD2 挂载那行改成 :rw'}</dd>
+    <dt>排查区</dt><dd>${esc(d.quarantine || '（没填）')}</dd><dt>主库目录</dt><dd>${esc(d.mainlib || '（没填）')}</dd><dt>唯一副本目录</dt><dd>${esc(d.unique || '（没填）')}</dd>
+    <dt>试跑</dt><dd class="${s.trial_ok ? 'ok' : 'warn'}">${s.trial_ok ? '✓ 小批量试跑已对账无误，放开批量' : `还没试跑：第一次只许 ≤${s.trial_max} 条`}</dd></dl>`;
+  $('#ex-appr').innerHTML = s.stale ? '<span class="warn">设置改过，清单已过期：重新跑筛后再批准。</span>'
+    : s.rejected ? '<span class="bad">清单被保护守卫整批拒绝，不能执行。</span>'
+    : `<div class="big" style="font-size:26px">${n(s.approvals)} 条</div><div class="mut">在「清单」里勾选后点「批准」，或在右侧逐条批准。</div>`;
+  $('#ex-run').disabled = !(s.allowed && s.mount_writable && s.approvals && !s.stale && !s.rejected);
+  loadBatches();
+}
+async function execPlan() {
+  $('#ex-plan').innerHTML = '<span class="mut">预演中（实时列一次被批准的目录）…</span>';
+  try { renderPlan(await api('api/exec/plan', {method: 'POST'})); } catch (e) { $('#ex-plan').innerHTML = `<span class="bad">${esc(e.message)}</span>`; }
+}
+function renderPlan(p) {
+  let h = `<div class="row" style="gap:16px"><b>${n(p.ops.length)} 处搬运</b><span>覆盖 ${n(p.ops.reduce((a, o) => a + o.covers.length, 0))} / ${n(p.rows)} 条批准</span><span>${fmtGB(p.gb)}</span>${p.refused.length ? `<span class="warn">${n(p.refused.length)} 条不搬</span>` : ''}</div>`;
+  h += '<table style="margin-top:8px"><tr><th></th><th>从</th><th>到</th><th class="num">体积</th></tr>' + p.ops.slice(0, 300).map(o =>
+    `<tr><td>${o.kind === 'folder' ? `📦 整夹（${o.videos} 个视频）` : '📄 单文件'}</td><td class="path">${esc(o.src)}</td><td class="path">${esc(o.dst)}</td><td class="num">${fmtGB(o.size / 1073741824)}</td></tr>`).join('') + '</table>';
+  if (p.refused.length) h += `<details open style="margin-top:8px"><summary class="warn">不搬的 ${n(p.refused.length)} 条和原因</summary><table>${p.refused.map(r => `<tr><td class="path">${esc(r.path)}</td><td>${esc(r.reason)}</td></tr>`).join('')}</table></details>`;
+  $('#ex-plan').innerHTML = h;
+}
+async function execRun() {
+  let p;
+  try { p = await api('api/exec/plan', {method: 'POST'}); } catch (e) { alert(e.message); return; }
+  renderPlan(p);
+  const k = p.ops.length;
+  const typed = prompt(`将执行 ${k} 处搬运（${fmtGB(p.gb)}），只改名、不删除；每处先写日志，可回滚。\n\n确认请输入搬运处数 ${k}：`);
+  if (typed === null) return;
+  if (String(typed).trim() !== String(k)) { alert('输入的数字不对，没有执行。'); return; }
+  try { await api('api/exec/run', {method: 'POST'}); poll(); } catch (e) { alert(e.message); }
+}
+async function loadBatches() {
+  let bs = [];
+  try { bs = await api('api/exec/batches'); } catch (e) {}
+  if (!bs.length) { $('#ex-batches').innerHTML = '还没有批次。'; return; }
+  $('#ex-batches').innerHTML = '<table><tr><th>批次</th><th class="num">批准</th><th class="num">搬运处</th><th>对账</th><th></th></tr>' + bs.map(b => {
+    const r = b.reconcile, rb = b.rollback;
+    const rec = !r ? '<span class="warn">未完成</span>' : r.ok ? `<span class="ok">✓ 平</span> 搬成 ${n(r.moved_rows)} · 跳过 ${n(r.skipped_rows)} · 拒绝 ${n(r.refused_rows)}`
+      : `<span class="bad">✗ 不平</span> 搬成 ${n(r.moved_rows)} · 失败 ${n(r.failed_rows)}`;
+    const roll = rb ? `<br><span class="mut">已回滚 ${n(rb.rolled_back)} 处${rb.problems.length ? `，问题 ${rb.problems.length}` : ''}</span>` : '';
+    const id = esc(b.batch_id);
+    return `<tr><td>${id}<br><span class="mut">${b.created ? fmtTime(b.created) : ''}</span></td><td class="num">${n(b.rows)}</td><td class="num">${n(b.ops)}</td><td>${rec}${roll}</td>
+      <td><button class="btn" onclick="batchDetail('${id}')">详情</button> ${r && !r.ok ? `<button class="btn" onclick="batchAct('resume','${id}')">续跑</button>` : ''} <button class="btn" onclick="batchAct('rollback','${id}')">回滚</button></td></tr>`;
+  }).join('') + '</table><div id="ex-detail" style="margin-top:10px"></div>';
+}
+async function batchDetail(id) {
+  const b = await api('api/exec/batch/' + id);
+  const r = b.reconcile || {}, pl = b.plan;
+  let h = `<b>${esc(id)}</b> 批准 ${n(pl.rows)} 条 = 搬成 ${n(r.moved_rows)} + 跳过 ${n(r.skipped_rows)} + 失败 ${n(r.failed_rows)} + 预演拒绝 ${n(r.refused_rows)} ${r.balanced ? '<span class="ok">✓ 平</span>' : '<span class="bad">✗ 不平</span>'}`;
+  if ((r.failures || []).length) h += '<table>' + r.failures.map(f => `<tr><td class="path">${esc(f.src)}</td><td class="bad">${esc(f.reason)}</td></tr>`).join('') + '</table>';
+  if (b.rollback && b.rollback.problems.length) h += '<div class="warn">回滚问题：</div><table>' + b.rollback.problems.map(f => `<tr><td>#${f.op}</td><td>${esc(f.reason)}</td></tr>`).join('') + '</table>';
+  $('#ex-detail').innerHTML = h;
+}
+async function batchAct(kind, id) {
+  const msg = kind === 'rollback' ? `把批次 ${id} 搬走的东西按日志搬回原位？（体积对不上的不覆盖、报出来）` : `按日志续跑批次 ${id}？`;
+  if (!confirm(msg)) return;
+  try { await api(`api/exec/${kind}/${id}`, {method: 'POST'}); poll(); } catch (e) { alert(e.message); }
+}
 
 // ---------- 首启向导：填一页、验一页、过一页 ----------
 let WZ = {step: 0};
@@ -513,7 +602,7 @@ async function wzCheck() {
   const nextLbl = WZ.mode === 'edit' ? '保存' : (st === 3 ? '完成，去盘点' : '下一步');
   if (!r.ok) {
     res.innerHTML = wzErr(r);
-    nav.innerHTML = back + cancel + (st === 2 ? `<button class="btn" onclick="wzSkipEmby()">暂不连 Emby</button><span class="mut small">不连也能用，只是少了「对比 Emby」和「正藏缺口」</span>` : '');
+    nav.innerHTML = back + cancel + (st === 2 ? `<button class="btn" onclick="wzSkipEmby()">暂不连 Emby</button><span class="mut small">不连也能用，只是少了「对比 Emby」和「主库缺口」</span>` : '');
     return;
   }
   let h = '<dl class="kv idcard">';
@@ -579,7 +668,7 @@ function renderIdCards() {
     : `<div class="bad">没连上：${esc(CFG.cd2_config || '还没填目录')}</div><div class="mut">点「更换目录」重新识别。</div>`;
   $('#set-emby').innerHTML = e.ok ? `<dl class="kv idcard"><dt>状态</dt><dd class="ok">✓ 已识别</dd><dt>目录</dt><dd>${esc(CFG.emby_data)}</dd>
     <dt>电影</dt><dd><b>${n(e.movies)}</b> 部（带 TMDB ${n(e.movies_tmdb)}）</dd></dl>`
-    : `<div class="warn">没连上：${esc(CFG.emby_data || '还没填目录')}</div><div class="mut">不连也能用，只是少了「对比 Emby」和「正藏缺口」。</div>`;
+    : `<div class="warn">没连上：${esc(CFG.emby_data || '还没填目录')}</div><div class="mut">不连也能用，只是少了「对比 Emby」和「主库缺口」。</div>`;
   $('#set-cd2').classList.remove('mut'); $('#set-emby').classList.remove('mut');
 }
 
@@ -831,16 +920,39 @@ async function loadRows(more) {
 }
 function itemHtml(x, i) {
   const name = x.path.split('/').pop(), dir = x.path.slice(0, x.path.length - name.length - 1);
-  const cut = x.bucket === '可切';
-  const left = cut ? `<input type="checkbox" ${mf.sel.has(x.path) ? 'checked' : ''} onclick="event.stopPropagation();toggleSel(${i},this.checked)">` : '<span class="lock" title="只有「可清理」能勾选">🔒</span>';
+  const cut = x.bucket === '可切', can = cut || x.bucket === '缺口';
+  const left = can ? `<input type="checkbox" ${mf.sel.has(x.path) ? 'checked' : ''} onclick="event.stopPropagation();toggleSel(${i},this.checked)">` : '<span class="lock" title="只有「可清理」和「主库缺口」能勾选">🔒</span>';
+  const ap = APPR.items[x.path];
+  const apTag = ap ? `<span class="cap go">✓ 已批准${ap.action === 'mainlib' ? '·挪入主库' : ap.action === 'unique' ? '·唯一副本目录' : ''}</span>` : '';
   const mv = x.move ? `<span class="cap tag">${x.move === '整夹' ? '📦 整夹' : '📄 单文件'}</span>` : '';
   return `<div class="item" data-i="${i}" onclick="quickLook(${i})">${left}
     <div style="min-width:0"><div class="nm">${esc(name)}</div><div class="sub">${esc(dir)}</div></div>
-    <div class="rt">${mv}<span class="cap ${cut ? 'go' : ''}">${esc(cn(x.stage, x.cls))}</span><span class="mut">${fmtGB(x.gb)}</span></div></div>`;
+    <div class="rt">${apTag}${mv}<span class="cap ${cut ? 'go' : ''}">${esc(cn(x.stage, x.cls))}</span><span class="mut">${fmtGB(x.gb)}</span></div></div>`;
 }
 function toggleSel(i, on) { const p = mf.rows[i].path; on ? mf.sel.add(p) : mf.sel.delete(p); updateSel(); }
-function selectVisible() { mf.rows.forEach(x => { if (x.bucket === '可切') mf.sel.add(x.path) }); document.querySelectorAll('#mf-list input[type=checkbox]').forEach(c => c.checked = true); updateSel(); }
-function updateSel() { const b = $('#btn-expsel'); b.disabled = !mf.sel.size; b.textContent = mf.sel.size ? `导出已勾选（${n(mf.sel.size)}）` : '导出已勾选'; }
+function selectVisible() { mf.rows.forEach(x => { if (x.bucket === '可切' || x.bucket === '缺口') mf.sel.add(x.path) }); document.querySelectorAll('#mf-list input[type=checkbox]').forEach(c => c.checked = true); updateSel(); }
+function updateSel() {
+  const b = $('#btn-expsel'); b.disabled = !mf.sel.size; b.textContent = mf.sel.size ? `导出已勾选（${n(mf.sel.size)}）` : '导出已勾选';
+  const a = $('#btn-appr'); a.disabled = !mf.sel.size; a.textContent = mf.sel.size ? `批准已勾选（${n(mf.sel.size)}）` : '批准已勾选';
+}
+let APPR = {items: {}, overlap: []};
+async function loadAppr() { try { APPR = await api('api/approvals'); } catch (e) { APPR = {items: {}, overlap: []}; } }
+async function approve(add, remove) {
+  try {
+    const r = await api('api/approvals', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({add: add || [], remove: remove || []})});
+    await loadAppr();
+    if (r.errors.length) alert(`${r.errors.length} 条没批准：\n` + r.errors.slice(0, 8).map(e => '· ' + e.path.split('/').pop() + '：' + e.reason).join('\n'));
+    return r;
+  } catch (e) { alert(e.message); }
+}
+async function approveSelected() {
+  const paths = [...mf.sel];
+  const r = await approve(paths.map(p => ({path: p})));
+  if (!r) return;
+  mf.sel.clear(); await loadRows(); if (mf.cur != null) quickLook(mf.cur);
+}
+async function approveOne(path, dest) { await approve([{path, dest}]); await loadRows(); }
+async function unapprove(path) { await approve([], [path]); await loadRows(); }
 function quickLook(i) {
   mf.cur = i;
   document.querySelectorAll('#mf-list .item').forEach(el => el.classList.toggle('sel', +el.dataset.i === i));
@@ -856,7 +968,16 @@ function quickLook(i) {
       : `<div class="blk"><div class="lbl">参照</div>${esc(keep)}</div>`;
   }
   h += `<div class="blk"><div class="lbl">依据</div>${esc(x.basis || '—')}</div>`;
-  if (x.bucket !== '可切') h += '<div class="mut small">🔒 这一类只看不动，不能被批准搬走。</div>';
+  const ap = APPR.items[x.path];
+  if (x.bucket === '可切' || x.bucket === '缺口') {
+    const pe = esc(JSON.stringify(x.path));
+    let btns = '';
+    if (ap) btns = `<span class="ok">✓ 已批准：${ap.action === 'quarantine' ? '搬到排查区' : ap.action === 'mainlib' ? '挪入主库' : '移到唯一副本目录'}</span><button class="btn" onclick='unapprove(${pe})'>撤销批准</button>`;
+    else if (x.bucket === '可切') btns = `<button class="btn pri" onclick='approveOne(${pe})'>批准：搬到排查区</button>`;
+    else if ((APPR.overlap || []).includes(x.path)) btns = `<span class="warn small">它同时是「唯一副本」，去处由你选：</span><button class="btn pri" onclick='approveOne(${pe}, "mainlib")'>挪入主库</button><button class="btn" onclick='approveOne(${pe}, "unique")'>移到唯一副本目录</button>`;
+    else btns = `<button class="btn pri" onclick='approveOne(${pe}, "mainlib")'>批准：挪入主库</button>`;
+    h += `<div class="row" style="margin-top:6px;gap:8px;flex-wrap:wrap">${btns}</div><div class="mut small" style="margin-top:6px">批准只是记下来，真正搬要到「执行」页预演、确认后才动；只改名、不删除。</div>`;
+  } else h += '<div class="mut small">🔒 这一类只看不动，不能被批准搬走。</div>';
   $('#ql').innerHTML = h;
 }
 async function download(r, fallback) {
@@ -901,7 +1022,8 @@ async function poll() {
       const j = await api('api/job');
       renderJob(j);
       if (!j.running) {
-        if (j.run_id && !j.cancelled) { RES = null; mf.sel.clear(); if (page === 'overview') loadOverview(); if (page === 'inventory') loadInventory(); if (page === 'manifest') renderSeg().then(() => loadRows()); }
+        if (page === 'exec') loadExec();
+        if (j.run_id && !j.cancelled && (j.mode === 'inventory' || j.mode === 'full')) { RES = null; mf.sel.clear(); if (page === 'overview') loadOverview(); if (page === 'inventory') loadInventory(); if (page === 'manifest') renderSeg().then(() => loadRows()); }
         break;
       }
       await new Promise(r => setTimeout(r, 1200));
@@ -911,7 +1033,7 @@ async function poll() {
 function renderJob(j) {
   const run = $('#btn-run');
   run.disabled = !!j.running;
-  run.textContent = j.running ? `⚡ ${j.mode === 'inventory' ? '盘点' : '筛选'}中 ${j.pct || 0}%` : '⚡ 一键跑筛';
+  run.textContent = j.running ? `⚡ ${{inventory: '盘点', full: '筛选', run: '执行', rollback: '回滚'}[j.mode] || '任务'}中 ${j.pct || 0}%` : '⚡ 一键跑筛';
   $('#btn-stop').classList.toggle('hidden', !j.running);
   $('#btn-inv').disabled = !!j.running;
   $('#ov-engine').classList.toggle('on', !!j.running);
