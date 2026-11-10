@@ -10,6 +10,7 @@ import time
 from collections import defaultdict
 
 from . import config as C
+from . import labels as L
 from . import sources
 
 sys.path.insert(0, str(C.APP_DIR))
@@ -17,8 +18,8 @@ sys.path.insert(0, str(C.APP_DIR))
 # 分类 → 面板桶。只有「可切」将来能被批准；待定/孤本永远没有执行入口。
 BUCKETS = ['可切', '待定', '版本型', '不动', '孤本', '提醒', '剧集分流']
 S1 = {'A': '可切', 'B': '可切', 'C': '版本型', 'D1': '待定', 'D2': '待定', 'E': '不动'}
-S1_DESC = {'A': '合集档低于原盘', 'B': '与原盘同档', 'C': 'DIY×普通 两边留', 'D1': '原盘档未知',
-           'D2': '合集档未知', 'E': '合集档高于原盘'}
+S1_DESC = {'A': '画质低于原盘区那份', 'B': '和原盘区那份画质相同', 'C': '一份是 DIY/特效字幕版，两份都留',
+           'D1': '原盘区那份画质未知', 'D2': '这份画质未知', 'E': '这份比原盘区那份画质更高'}
 
 
 def emit(step, msg, pct=None):
@@ -51,7 +52,7 @@ def tv_split(cfg, files):
         if keep:
             continue
         out.append(row('剧集分流', '剧集夹', '剧集分流', folder, sum(f[1] for f in fs),
-                       basis='%d 个文件中 %d 个带集号；夹内条目若也在刀口清单里，优先按分流处理'
+                       basis='%d 个文件里 %d 个带集号；夹里的文件若也出现在其他分类，优先按剧集处理'
                              % (len(fs), len(eps)), zone=zone))
     return out
 
@@ -77,37 +78,37 @@ def main(mode, run_dir):
 
     import sieve
     rows = []
-    emit('stage1', '第一刀：合集 × 原盘', 20)
+    emit('stage1', '比对合集与原盘', 20)
     s1 = sieve.stage1()
     for cls, path, g, ypath, ygb, pt, yt in s1:
         rows.append(row('第一刀', cls, S1[cls], path, g, keep=ypath,
-                        basis='%s：合集 %s / 原盘 %s（%sGB）' % (S1_DESC[cls], pt, yt, ygb)))
+                        basis='%s：这份 %s，原盘区 %s（%sGB）' % (S1_DESC[cls], L.tier(pt), L.tier(yt), ygb)))
     cut1 = {r[1] for r in s1 if r[0] in ('A', 'B')}
 
-    emit('stage2', '第二刀：合集区内互重', 40)
+    emit('stage2', '查找合集内重复', 40)
     s2A, s2B, held = sieve.stage2(cut1)
     for cls, path, g, keep in s2A:
-        rows.append(row('第二刀', cls, '可切', path, g, keep=keep, basis='区内同片，保留更优份'))
+        rows.append(row('第二刀', cls, '可切', path, g, keep=keep, basis='合集里同一部片有更好的一份，保留那份'))
     for cls, path, g, keep in s2B:
-        rows.append(row('第二刀', cls, '版本型', path, g, keep=keep, basis='DIY/普通 或 剪辑版本不同'))
+        rows.append(row('第二刀', cls, '版本型', path, g, keep=keep, basis='DIY/特效字幕版与普通版，或剪辑版本不同'))
     all2 = s2A + s2B
 
-    emit('stage3', '第三刀：小文件层', 60)
+    emit('stage3', '检查小体积低画质文件', 60)
     emby_tmdb, emby_title = sieve.load_emby()
     s3A, s3B, lone, popn = sieve.stage3(s1, all2, emby_tmdb)
     for cls, path, g, basis, keep in s3A:
-        rows.append(row('第三刀', cls, '可切', path, g, keep=keep, basis=basis))
+        rows.append(row('第三刀', cls, '可切', path, g, keep=keep, basis=L.plain_basis(basis)))
     for cls, path, g, basis, keep in s3B:
-        rows.append(row('第三刀', cls, '待定', path, g, keep=keep, basis=basis))
+        rows.append(row('第三刀', cls, '待定', path, g, keep=keep, basis=L.plain_basis(basis)))
     for x in lone:
-        rows.append(row('第三刀', '孤本', '孤本', x['path'], x['gb'], basis='无原盘份/区内锚点/库内份，永不可切'))
+        rows.append(row('第三刀', '孤本', '孤本', x['path'], x['gb'], basis='原盘区、合集、Emby 片库里都没有别的副本'))
 
-    emit('vertical', '纵向轴：合集剩余片 × Emby', 75)
+    emit('vertical', '对比 Emby 片库', 75)
     cut_all = cut1 | {r[1] for r in s2A} | {r[1] for r in s3A}
     for cls, path, g, note in sieve.vertical(cut_all, emby_tmdb, emby_title):
-        rows.append(row('纵向', cls, '提醒', path, g, basis=note))
+        rows.append(row('纵向', cls, '提醒', path, g, basis=L.plain_basis(note)))
 
-    emit('tvsplit', '剧集分流', 85)
+    emit('tvsplit', '识别混入的剧集', 85)
     # 第一期分流只出清单、不摘刀口行：刀口各桶保持内核原样（已对金标准），两边互斥留到第二期执行时处理
     rows += tv_split(cfg, files)
 

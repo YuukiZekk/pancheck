@@ -103,6 +103,45 @@ def list_dirs(cfg, vpath='/'):
     return [{'name': n, 'path': base + '/' + n} for n in out]
 
 
+# ---------------- 首次引导：按目录名建议分区 + 保护名模板 ----------------
+ZONE_HINTS = {
+    'heji': ('合集', '电影包', '打包', 'collection', 'pack'),
+    'yuanpan': ('原盘', '蓝光', 'bdmv', 'blu-ray', 'bluray', 'iso'),
+    'remux': ('remux',),
+}
+PROTECT_TEMPLATES = ['系列合集', '系列电影', '出品公司', '导演合集', '已刮削', '刮削完成',
+                     '漫威', 'DC', '皮克斯', '迪士尼', '吉卜力', '宫崎骏', '收藏']
+
+
+def suggest(cfg, max_depth=3, max_dirs=600):
+    """只按目录名猜，只列目录（不 stat 文件），层数和数量都设上限，避免向网盘发大量请求。"""
+    seen, queue, out = 0, [('/', 0)], []
+    while queue and seen < max_dirs:
+        path, depth = queue.pop(0)
+        try:
+            dirs = list_dirs(cfg, path)
+        except OSError:
+            continue
+        for d in dirs:
+            seen += 1
+            out.append(d)
+            if depth + 1 < max_depth:
+                queue.append((d['path'], depth + 1))
+    zones = {z: [] for z in ZONE_HINTS}
+    for d in out:
+        low = d['name'].lower()
+        for z in ('remux', 'yuanpan', 'heji'):          # REMUX 优先，免得「REMUX 合集」被当成合集区
+            if any(h in low for h in ZONE_HINTS[z]):
+                # 父目录已被建议为同一分区的，不再重复建议子目录
+                if not any(d['path'].startswith(p + '/') for p in zones[z]):
+                    zones[z].append(d['path'])
+                break
+    names = [d['name'] for d in out]
+    found = [t for t in PROTECT_TEMPLATES if any(t in n for n in names)]
+    return {'zones': zones, 'protect_templates': PROTECT_TEMPLATES, 'protect_found': found,
+            'scanned_dirs': seen, 'truncated': seen >= max_dirs}
+
+
 # ---------------- 扫描 ----------------
 def dir_size(real):
     tot = 0

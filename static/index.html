@@ -51,6 +51,11 @@ pre{white-space:pre-wrap;font-size:12px;max-height:260px;overflow:auto;backgroun
 .banner.bad{background:rgba(214,69,69,.1);border:1px solid var(--bad)}
 .banner.warn{background:rgba(194,124,14,.1);border:1px solid var(--warn)}
 .hidden{display:none}
+.jg{font-size:11px;color:var(--mut);margin-left:4px;font-weight:400}
+.tile .d{font-size:12px;color:var(--mut);margin-top:6px;line-height:1.4}
+.tag{display:inline-block;font-size:11px;padding:0 6px;border-radius:8px;background:var(--chip);color:var(--mut);margin-top:4px}
+.tag.go{background:rgba(31,157,85,.12);color:var(--ok)}
+button.stop{border-color:var(--bad);color:var(--bad)}
 #probe-out,#inv-out pre,.banner pre{word-break:break-all;overflow-wrap:anywhere}
 .grid>div{min-width:0}
 @media (max-width:640px){main{padding:10px}th:nth-child(5),td:nth-child(5){display:none}}
@@ -68,6 +73,9 @@ pre{white-space:pre-wrap;font-size:12px;max-height:260px;overflow:auto;backgroun
   </nav>
   <div id="jobbar"></div>
 </header>
+<div id="authwarn" class="hidden" style="background:rgba(194,124,14,.12);border-bottom:1px solid var(--warn);padding:8px 20px;font-size:13px">
+  <b class="warn">当前未设访问口令：</b>同一局域网里任何人都能打开这个面板、看到你的片库清单。在 <code>.env</code> 里设置 <code>PANEL_PASSWORD</code> 后执行 <code>docker compose up -d</code> 即可。
+</div>
 <main>
 
 <!-- 设置 -->
@@ -98,11 +106,11 @@ pre{white-space:pre-wrap;font-size:12px;max-height:260px;overflow:auto;backgroun
   </div>
   <div class="card">
     <h2>保护与排除</h2>
-    <p class="mut" style="margin-top:0">一行一个目录名关键字，只匹配目录名（文件名、单片夹夹名里的简介字样不算）。命中的目录在扫描时整枝剔除；若可切里仍有命中，整批拒绝。内置词不可删除。</p>
+    <p class="mut" style="margin-top:0">一行一个目录名关键字，只匹配目录名（文件名、单片夹夹名里的简介字样不算）。命中的目录在扫描时整枝剔除；若「可清理」里仍有命中，整批拒绝。内置词不可删除。</p>
     <div class="grid">
       <div><label class="f">保护区目录名（系列合集 / 出品公司 / 已刮削…）</label><textarea id="c-protect_names"></textarea></div>
       <div><label class="f">榜单包（不筛不拆）</label><textarea id="c-listpack_names"></textarea></div>
-      <div><label class="f">排除包（第二/三刀与纵向不碰）</label><textarea id="c-exclude_names"></textarea></div>
+      <div><label class="f">排除包（只参与「合集 vs 原盘」，其余比对不碰）</label><textarea id="c-exclude_names"></textarea></div>
       <div><label class="f">剧集分流时视为系列电影的关键字</label><textarea id="c-tv_keep_names"></textarea></div>
     </div>
     <label class="row" style="margin-top:8px"><input type="checkbox" id="confirm-rm"> 我确认移除保护（仅在删掉已有保护目录名时需要）</label>
@@ -125,9 +133,15 @@ pre{white-space:pre-wrap;font-size:12px;max-height:260px;overflow:auto;backgroun
     </div>
     <div class="row" style="margin-top:12px">
       <button class="b p" onclick="saveCfg()">保存映射</button>
-      <button class="b" onclick="runJob('inventory')">盘点</button>
+      <button class="b" id="btn-inv" onclick="runJob('inventory')">盘点</button>
       <span class="mut">在下方目录树点按钮把目录加入分区，点「保护」把目录名加入保护区。</span>
     </div>
+  </div>
+  <div class="card" id="suggest-card">
+    <h2>不知道怎么填？按目录名给你建议</h2>
+    <p class="mut" style="margin-top:0">只看目录名（最多 3 层），不读文件。建议勾选后点「采用」，再点「保存映射」。</p>
+    <button class="b" onclick="loadSuggest()">生成建议</button>
+    <div id="suggest-out"></div>
   </div>
   <div class="card">
     <h2>目录树 <span class="mut" style="font-weight:400">（CD2 挂载）</span></h2>
@@ -142,9 +156,11 @@ pre{white-space:pre-wrap;font-size:12px;max-height:260px;overflow:auto;backgroun
 <!-- 筛选 -->
 <section id="p-sieve" class="hidden">
   <div class="card">
+    <p class="ok" style="margin:0 0 10px;font-size:13px">🔒 本工具只读：只出清单，不会移动、改名或删除你的任何文件。</p>
     <div class="row">
-      <button class="b p" id="btn-run" onclick="runJob('full')">一键跑筛</button>
-      <span class="mut">三刀 + 纵向 + 剧集分流。REMUX 三分分层 / REMUX×原盘交叉 / 原盘精确重复 尚未收编进内核。</span>
+      <button class="b p" id="btn-run" onclick="runJob('full')">开始筛选</button>
+      <button class="b stop hidden" id="btn-stop" onclick="stopJob()">停止</button>
+      <span class="mut">依次比对：合集 vs 原盘、合集内重复、小体积低画质、对比 Emby 片库、识别混入的剧集。REMUX 区目前只盘点，暂不参与比对。</span>
     </div>
     <div id="job-detail" style="margin-top:12px"></div>
   </div>
@@ -154,21 +170,21 @@ pre{white-space:pre-wrap;font-size:12px;max-height:260px;overflow:auto;backgroun
 <!-- 清单 -->
 <section id="p-list" class="hidden">
   <div class="card">
+    <p class="ok" style="margin:0 0 10px;font-size:13px">🔒 本工具只读：只出清单，不会移动、改名或删除你的任何文件。</p>
     <div class="row">
       <select id="f-bucket" style="width:auto"></select>
       <select id="f-stage" style="width:auto">
-        <option value="">全部来源</option><option>第一刀</option><option>第二刀</option><option>第三刀</option><option>纵向</option><option>剧集分流</option>
       </select>
-      <input type="text" id="f-q" placeholder="搜索路径 / 保留份" style="flex:1;min-width:180px">
+      <input type="text" id="f-q" placeholder="搜索路径 / 保留的那份" style="flex:1;min-width:180px">
       <select id="f-sort" style="width:auto"><option value="gb">按体积</option><option value="path">按路径</option></select>
       <button class="b" onclick="exportCsv()">导出当前筛选 CSV</button>
-      <button class="b" onclick="location.href='api/export.zip'">导出全部（zip）</button>
+      <button class="b" onclick="exportZip()">导出全部（zip）</button>
     </div>
     <div id="list-meta" class="mut" style="margin-top:8px"></div>
   </div>
   <div class="card" style="padding:0;overflow:auto">
     <table>
-      <thead><tr><th>来源</th><th>判定</th><th>候选路径</th><th class="num">GB</th><th>保留份 / 参照</th><th>依据</th></tr></thead>
+      <thead><tr><th>分类</th><th>判定</th><th>路径</th><th class="num">GB</th><th>保留的那份 / 参照</th><th>依据</th></tr></thead>
       <tbody id="list-body"></tbody>
     </table>
   </div>
@@ -179,8 +195,8 @@ pre{white-space:pre-wrap;font-size:12px;max-height:260px;overflow:auto;backgroun
 <section id="p-exec" class="hidden">
   <div class="card">
     <h2>执行（第二期）</h2>
-    <p>第一期只读：不批准、不搬运、不删除。第二期上线后流程为：清单里勾选「可切」→ 批准 → 同盘搬进排查区 → 自动对账 → 可凭日志回滚。</p>
-    <p class="mut">删除永远由你自己在网盘里做；待定与孤本没有执行入口。</p>
+    <p>当前版本只读：不批准、不搬运、不删除。后续版本的流程是：在清单里勾选「可清理」的条目 → 批准 → 同盘搬进排查区 → 自动对账 → 可凭日志一键搬回。</p>
+    <p class="mut">删除永远由你自己在网盘里做；「需人工确认」和「唯一副本」永远不能被批准搬走。</p>
   </div>
 </section>
 </main>
@@ -190,6 +206,12 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const BUCKETS = ['可切','待定','版本型','不动','孤本','提醒','剧集分流'];
 let CFG = null, page = 'settings', listOffset = 0;
+// 白话名（来自 /api/labels）；内部叫法只做小字副标题
+let LB = {buckets: {}, stages: {}, classes: {}};
+const bn = b => (LB.buckets[b] || {}).name || b;
+const sn = s => (LB.stages[s] || {}).name || s;
+const cn = (s, c) => LB.classes[s + '|' + c] || c;
+const jg = t => `<span class="jg">${esc(t)}</span>`;
 // 相对路径 → 不带账号口令的绝对地址（地址栏里带 user:pw@ 时 fetch 会拒绝相对路径）；保留子路径以兼容反代
 const u = p => new URL(p, location.origin + location.pathname).href;
 
@@ -209,7 +231,10 @@ function show(p) {
   try { localStorage.setItem('sieve.page', p) } catch (e) {}
   document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.dataset.p === p));
   document.querySelectorAll('main > section').forEach(s => s.classList.toggle('hidden', s.id !== 'p-' + p));
-  if (p === 'inventory') { renderZones(); loadTree(); loadInventory(); }
+  if (p === 'inventory') {
+    renderZones(); loadTree(); loadInventory();
+    if (!['heji','yuanpan','remux'].some(z => CFG.zones[z].length) && !$('#suggest-out').innerHTML) loadSuggest();
+  }
   if (p === 'sieve') loadResult();
   if (p === 'list') { listOffset = 0; loadRows(); }
 }
@@ -221,6 +246,7 @@ const SCALARS = ['data_source','cd2_mount','cd2_config','emby_data','emby_prefix
 async function loadCfg() {
   const r = await api('api/config');
   CFG = r.config;
+  $('#authwarn').classList.toggle('hidden', !!r.auth_enabled);
   SCALARS.forEach(k => $('#c-' + k).value = CFG[k] ?? '');
   LISTS.forEach(k => $('#c-' + k).value = (CFG[k] || []).join('\n'));
 }
@@ -259,7 +285,7 @@ async function probe() {
       h += `<br><span class="mut">样例路径：${esc((e.sample_paths || []).join(' ｜ '))}</span>`;
       if (!e.type_is_str) h += '<br><span class="warn">库里 type 列不是文本，电影按「非剧集、非文件夹」推断，请核对数量。</span>';
     } else h += `<span class="bad">${esc(e.error)}</span>`;
-    h += '</div></div><p class="mut">核对规模和电影数是否和你的库对得上，再去「盘点」页指定分区。</p>';
+    h += '</div></div><p class="mut">核对规模和电影数是否和你的库对得上，然后去「盘点」页——可以点「生成建议」让它按目录名帮你填分区。</p>';
     $('#probe-out').innerHTML = h;
   } catch (e) { $('#probe-out').innerHTML = `<p class="bad">${esc(e.message)}</p>` }
 }
@@ -279,6 +305,37 @@ function addProtect(name) {
   if (!CFG.protect_names.includes(name)) CFG.protect_names.push(name);
   $('#c-protect_names').value = CFG.protect_names.join('\n');
   alert('已把「' + name + '」加入保护区目录名，记得点保存。');
+}
+const ZN = {heji: '合集区', yuanpan: '原盘区', remux: 'REMUX 区'};
+async function loadSuggest() {
+  const out = $('#suggest-out');
+  out.innerHTML = '<p class="mut">正在看目录名…</p>';
+  try {
+    const r = await api('api/suggest');
+    let h = '<div class="grid" style="margin-top:10px">';
+    ['heji','yuanpan','remux'].forEach(z => {
+      h += `<div><b>${ZN[z]}</b>`;
+      const ps = r.zones[z].filter(p => !CFG.zones[z].includes(p));
+      h += ps.length ? ps.map(p => `<label class="row" style="gap:6px"><input type="checkbox" data-z="${z}" value="${esc(p)}" checked> ${esc(p)}</label>`).join('')
+        : `<div class="mut">${r.zones[z].length ? '建议的目录已经在分区里了' : '没找到像的目录，请在下方目录树里手动点选'}</div>`;
+      h += '</div>';
+    });
+    h += `<div><b>保护区（常见目录名）</b><div class="mut" style="font-size:12px">打勾的会加入保护，这些目录整个不参与筛选</div>`;
+    h += r.protect_templates.map(t => {
+      const found = r.protect_found.includes(t), on = found && !CFG.protect_names.includes(t);
+      return `<label class="row" style="gap:6px"><input type="checkbox" data-p="1" value="${esc(t)}" ${on ? 'checked' : ''} ${CFG.protect_names.includes(t) ? 'disabled checked' : ''}> ${esc(t)}${found ? ' <span class="tag go">你的目录里有</span>' : ''}</label>`;
+    }).join('');
+    h += '</div></div>';
+    h += `<div class="row" style="margin-top:10px"><button class="b p" onclick="applySuggest()">采用勾选项</button><span class="mut">看了 ${r.scanned_dirs} 个目录${r.truncated ? '（目录太多，只看了前面一部分）' : ''}</span></div>`;
+    out.innerHTML = h;
+  } catch (e) { out.innerHTML = `<p class="bad">${esc(e.message)}（先在设置页填好 CD2 挂载目录并保存）</p>` }
+}
+function applySuggest() {
+  document.querySelectorAll('#suggest-out input[data-z]:checked').forEach(i => { if (!CFG.zones[i.dataset.z].includes(i.value)) CFG.zones[i.dataset.z].push(i.value); });
+  document.querySelectorAll('#suggest-out input[data-p]:checked:not(:disabled)').forEach(i => { if (!CFG.protect_names.includes(i.value)) CFG.protect_names.push(i.value); });
+  $('#c-protect_names').value = CFG.protect_names.join('\n');
+  renderZones();
+  $('#suggest-out').innerHTML = '<p class="ok">已填入，请检查上面的分区映射，然后点「保存映射」。</p>';
 }
 async function loadTree() {
   const root = $('#tree');
@@ -331,6 +388,10 @@ async function loadInventory() {
 function fmtGB(g) { g = +g || 0; return g >= 1024 ? (g / 1024).toFixed(2) + ' TB' : g.toFixed(1) + ' GB'; }
 
 // ---------- 跑筛 ----------
+async function stopJob() {
+  if (!confirm('停止当前任务？这次不会产出结果，之前的结果不受影响。')) return;
+  try { renderJob(await api('api/job/cancel', {method: 'POST'})); } catch (e) { alert(e.message) }
+}
 async function runJob(mode) {
   try {
     if (page === 'inventory') await saveCfg();
@@ -351,27 +412,31 @@ async function poll() {
   } finally { polling = false }
 }
 function renderJob(j) {
-  $('#jobbar').innerHTML = j.running ? `⏳ ${esc(j.msg)} (${j.pct || 0}%)` : (j.run_id ? `${j.exit === 0 ? '✓' : '✗'} ${esc(j.msg)}` : '');
+  const icon = j.cancelled ? '■' : (j.exit === 0 ? '✓' : '✗');
+  $('#jobbar').innerHTML = j.running ? `⏳ ${esc(j.msg)} (${j.pct || 0}%) <a href="#" onclick="stopJob();return false">停止</a>` : (j.run_id ? `${icon} ${esc(j.msg)}` : '');
   $('#btn-run').disabled = !!j.running;
+  $('#btn-inv').disabled = !!j.running;
+  $('#btn-stop').classList.toggle('hidden', !j.running);
   if (!j.run_id) return;
-  $('#job-detail').innerHTML = `<div class="bar"><i style="width:${j.pct || 0}%"></i></div><p class="${j.exit && j.exit !== 0 ? 'bad' : 'mut'}">${esc(j.msg)} <a href="api/log?run_id=${encodeURIComponent(j.run_id)}" target="_blank">日志</a></p>` +
-    (j.exit && j.exit !== 0 && j.tail ? `<pre>${esc(j.tail.join('\n'))}</pre>` : '');
+  $('#job-detail').innerHTML = `<div class="bar"><i style="width:${j.pct || 0}%"></i></div><p class="${j.exit && j.exit !== 0 && !j.cancelled ? 'bad' : 'mut'}">${esc(j.msg)} <a href="api/log?run_id=${encodeURIComponent(j.run_id)}" target="_blank">日志</a></p>` +
+    (j.exit && j.exit !== 0 && !j.cancelled && j.tail ? `<pre>${esc(j.tail.join('\n'))}</pre>` : '');
 }
 async function loadResult() {
   const r = await api('api/result');
-  if (!r) { $('#res-out').innerHTML = '<div class="card mut">还没有跑筛结果。</div>'; return; }
+  if (!r) { $('#res-out').innerHTML = '<div class="card mut">还没有筛选结果。先在「盘点」页指定分区，再点「开始筛选」。</div>'; return; }
   let h = '';
-  if (r.rejected) h += `<div class="banner bad"><b>整批拒绝：</b>可切里有 ${r.protect_violations.length} 条落在保护区/榜单包，可切类不可导出。先修正配置再重跑。<pre>${esc(r.protect_violations.slice(0, 20).join('\n'))}</pre></div>`;
-  if (r.stale) h += '<div class="banner warn"><b>这份清单已作废：</b>跑完之后配置改过了，可切类不可导出，请重跑。</div>';
+  if (r.rejected) h += `<div class="banner bad"><b>整批拒绝：</b>「可清理」里有 ${r.protect_violations.length} 条落在保护区/榜单包里，整批不能导出。先修正设置再重新筛选。<pre>${esc(r.protect_violations.slice(0, 20).join('\n'))}</pre></div>`;
+  if (r.stale) h += '<div class="banner warn"><b>这份结果已过期：</b>筛选完之后改过设置，「可清理」不能导出，请重新筛选。</div>';
   h += `<div class="card"><h2>结果总览 <span class="mut" style="font-weight:400">${esc(r.run_id)} · 盘点总量 ${fmtGB(r.total_gb)}</span></h2><div class="tiles">`;
   BUCKETS.forEach(b => {
-    const v = r.summary[b] || {count: 0, gb: 0};
+    const v = r.summary[b] || {count: 0, gb: 0}, info = LB.buckets[b] || {};
     const pct = r.total_gb ? (v.gb / r.total_gb * 100).toFixed(1) + '%' : '';
-    h += `<div class="tile ${b === '可切' ? 'cut' : ''}" onclick="gotoList('${b}')"><div class="mut">${b}</div><div class="n">${v.count}</div><div class="mut">${fmtGB(v.gb)} ${pct}</div></div>`;
+    h += `<div class="tile ${b === '可切' ? 'cut' : ''}" onclick="gotoList('${b}')"><div><b>${esc(bn(b))}</b>${jg(b)}</div><div class="n">${v.count}</div><div class="mut">${fmtGB(v.gb)} ${pct}</div>` +
+      `<span class="tag ${b === '可切' ? 'go' : ''}">${esc(info.action || '')}</span><div class="d">${esc(info.desc || '')}</div></div>`;
   });
-  h += `</div><p class="mut">第二刀剧集塌缩守卫挂起 ${r.held_stage2} 条；第三刀人口 ${r.stage3_population}。</p></div>`;
-  h += '<div class="card"><h2>分刀明细</h2><table><tr><th>分类</th><th>来源</th><th>判定</th><th class="num">条数</th><th class="num">体积</th></tr>';
-  r.detail.forEach(d => h += `<tr style="cursor:pointer" onclick="gotoList('${d.bucket}','${d.stage}')"><td>${d.bucket}</td><td>${d.stage}</td><td>${esc(d.cls)}</td><td class="num">${d.count}</td><td class="num">${fmtGB(d.gb)}</td></tr>`);
+  h += `</div><p class="mut">另有 ${r.held_stage2} 条疑似剧集的重复组暂不判定${jg('第二刀塌缩守卫')}；小体积检查覆盖 ${r.stage3_population} 条${jg('第三刀人口')}。</p></div>`;
+  h += '<div class="card"><h2>明细</h2><table><tr><th>分类</th><th>来源</th><th>判定</th><th class="num">条数</th><th class="num">体积</th></tr>';
+  r.detail.forEach(d => h += `<tr style="cursor:pointer" onclick="gotoList('${d.bucket}','${d.stage}')"><td>${esc(bn(d.bucket))}${jg(d.bucket)}</td><td>${esc(sn(d.stage))}${jg(d.stage)}</td><td>${esc(cn(d.stage, d.cls))}${jg(d.cls)}</td><td class="num">${d.count}</td><td class="num">${fmtGB(d.gb)}</td></tr>`);
   h += '</table></div>';
   if (r.error_count) h += `<div class="card"><p class="warn">数据准备阶段有 ${r.error_count} 条警告：</p><pre>${esc(r.errors.join('\n'))}</pre></div>`;
   $('#res-out').innerHTML = h;
@@ -379,7 +444,10 @@ async function loadResult() {
 function gotoList(b, s) { $('#f-bucket').value = b || ''; $('#f-stage').value = s || ''; show('list'); }
 
 // ---------- 清单 ----------
-$('#f-bucket').innerHTML = '<option value="">全部分类</option>' + BUCKETS.map(b => `<option>${b}</option>`).join('');
+function fillFilters() {
+  $('#f-bucket').innerHTML = '<option value="">全部分类</option>' + BUCKETS.map(b => `<option value="${b}">${esc(bn(b))}</option>`).join('');
+  $('#f-stage').innerHTML = '<option value="">全部来源</option>' + Object.keys(LB.stages).map(s => `<option value="${s}">${esc(sn(s))}</option>`).join('');
+}
 let qTimer;
 ['#f-bucket','#f-stage','#f-sort'].forEach(s => $(s).onchange = () => { listOffset = 0; loadRows(); });
 $('#f-q').oninput = () => { clearTimeout(qTimer); qTimer = setTimeout(() => { listOffset = 0; loadRows(); }, 300); };
@@ -390,11 +458,18 @@ async function loadRows(more) {
   if (!more) listOffset = 0;
   const r = await api('api/rows?' + qs() + '&offset=' + listOffset + '&limit=200');
   const body = $('#list-body');
-  const html = r.rows.map(x => `<tr><td>${esc(x.stage)}</td><td>${esc(x.bucket)}·${esc(x.cls)}</td><td class="path">${esc(x.path)}</td><td class="num">${x.gb}</td><td class="path">${esc(x.keep)}</td><td>${esc(x.basis)}</td></tr>`).join('');
+  const html = r.rows.map(x => `<tr><td>${esc(bn(x.bucket))}<br><span class="jg" style="margin:0">${esc(sn(x.stage))}</span></td><td>${esc(cn(x.stage, x.cls))}</td><td class="path">${esc(x.path)}</td><td class="num">${x.gb}</td><td class="path">${esc(x.keep)}</td><td>${esc(x.basis)}</td></tr>`).join('');
   if (more) body.insertAdjacentHTML('beforeend', html); else body.innerHTML = html || '<tr><td colspan="6" class="mut">没有结果</td></tr>';
   listOffset += r.rows.length;
   $('#list-meta').textContent = `共 ${r.total} 条，${fmtGB(r.gb)}，已显示 ${listOffset}`;
   $('#more').classList.toggle('hidden', listOffset >= r.total);
+}
+async function exportZip() {
+  try {
+    const c = await api('api/export.check');
+    if (c.withheld && !confirm(c.withheld + '\n\n其余分类仍可导出（包里会附一份原因说明）。继续下载吗？')) return;
+    location.href = u('api/export.zip');
+  } catch (e) { alert(e.message) }
 }
 async function exportCsv() {
   const r = await fetch(u('api/export?' + qs()));
@@ -402,12 +477,14 @@ async function exportCsv() {
   const blob = await r.blob();
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'sieve_' + ($('#f-bucket').value || 'all') + '.csv';
+  a.download = 'sieve_' + ($('#f-bucket').value ? bn($('#f-bucket').value) : '全部') + '.csv';
   a.click();
 }
 
 // ---------- 启动 ----------
 (async () => {
+  try { LB = await api('api/labels') } catch (e) {}
+  fillFilters();
   await loadCfg();
   let p = 'settings';
   try { p = localStorage.getItem('sieve.page') || p } catch (e) {}

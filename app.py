@@ -22,6 +22,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
 from panel import config as C
+from panel import labels as L
 from panel import sources
 
 app = FastAPI(title='sieve 面板', docs_url=None, redoc_url=None)
@@ -92,8 +93,25 @@ class Job:
         code = proc.wait()
         log.close()
         self.state.update(running=False, exit=code, finished=time.time())
-        if code != 0 and not self.state['msg'].startswith('失败'):
+        if self.state.get('cancelled'):
+            # 结果文件只在跑完时原子写入，停掉的任务不会留下半份结果
+            self.state['msg'] = '已停止（这次没有产出结果，之前的结果不受影响）'
+        elif code != 0 and not self.state['msg'].startswith('失败'):
             self.state['msg'] = '失败（退出码 %s），见日志' % code
+
+    def cancel(self):
+        with self.lock:
+            proc = self.proc
+            if not proc or proc.poll() is not None:
+                raise HTTPException(409, '当前没有在跑的任务')
+            self.state['cancelled'] = True
+            self.state['msg'] = '正在停止…'
+            proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        return self.state
 
 
 JOB = Job()
@@ -162,8 +180,16 @@ def index():
 @app.get('/api/config')
 def get_config():
     c = C.load()
-    return {'config': c, 'fingerprint': C.fingerprint(c), 'builtin': {
+    return {'config': c, 'fingerprint': C.fingerprint(c), 'auth_enabled': bool(PASSWORD), 'builtin': {
         'listpack': C.BUILTIN_LISTPACK, 'exclude': C.BUILTIN_EXCLUDE}}
+
+
+@app.get('/api/suggest')
+def suggest():
+    try:
+        return sources.suggest(C.load())
+    except OSError as e:
+        raise HTTPException(400, str(e))
 
 
 @app.put('/api/config')
@@ -207,6 +233,16 @@ def job():
     return JOB.state
 
 
+@app.post('/api/job/cancel')
+def job_cancel():
+    return JOB.cancel()
+
+
+@app.get('/api/labels')
+def labels():
+    return L.as_json()
+
+
 @app.get('/api/runs')
 def runs():
     return list_runs()
@@ -248,34 +284,37 @@ def rows(bucket: str = '', stage: str = '', cls: str = '', q: str = '', offset: 
     return {'total': len(rs), 'gb': round(sum(r['gb'] for r in rs), 1), 'rows': rs[offset:offset + limit]}
 
 
-COLS = [('bucket', '分类'), ('stage', '来源'), ('cls', '判定'), ('path', '候选路径'), ('gb', 'GB'),
-        ('keep', '保留份/参照'), ('basis', '依据')]
+# 导出给人看：分类/来源/判定用白话名，最后一列保留内部叫法便于对账
+COLS = [('分类', lambda r: L.bucket(r['bucket'])), ('能不能动', lambda r: L.BUCKETS.get(r['bucket'], ('', '', ''))[2]),
+        ('来源', lambda r: L.stage(r['stage'])), ('判定', lambda r: L.cls(r['stage'], r['cls'])),
+        ('候选路径', lambda r: r['path']), ('GB', lambda r: r['gb']), ('保留的那份 / 参照', lambda r: r.get('keep', '')),
+        ('依据', lambda r: r.get('basis', '')), ('内部分类', lambda r: '%s/%s/%s' % (r['bucket'], r['stage'], r['cls']))]
 
 
 def _csv_bytes(rs):
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow([c[1] for c in COLS])
+    w.writerow([c[0] for c in COLS])
     for r in rs:
-        w.writerow([r.get(c[0], '') for c in COLS])
+        w.writerow([c[1](r) for c in COLS])
     return ('﻿' + buf.getvalue()).encode('utf-8')
 
 
 def _export_guard(res, buckets):
     if '可切' in buckets and res.get('stale'):
-        raise HTTPException(409, '配置已改动，这份清单已作废，请重跑后再导出可切类')
+        raise HTTPException(409, '筛选完之后改过设置，这份结果已过期，请重新筛选后再导出「可清理」')
     if '可切' in buckets and res.get('rejected'):
-        raise HTTPException(409, '可切里有条目落在保护区/榜单包，整批拒绝，先修正配置再重跑')
+        raise HTTPException(409, '「可清理」里有条目落在保护区/榜单包里，整批不能导出，请先修正设置再重新筛选')
 
 
 @app.get('/api/export')
 def export(bucket: str = '', stage: str = '', cls: str = '', q: str = '', run_id: str = ''):
     res, d = load_run(run_id or None)
     if not res:
-        raise HTTPException(404, '还没有跑筛结果')
-    rs = filter_rows(load_rows(d), bucket, stage, cls, q)
+        raise HTTPException(404, '还没有筛选结果')
+    rs = sorted(filter_rows(load_rows(d), bucket, stage, cls, q), key=lambda r: -r['gb'])
     _export_guard(res, {r['bucket'] for r in rs})
-    name = 'sieve_%s_%s.csv' % (res['run_id'], bucket or 'all')
+    name = 'sieve_%s_%s.csv' % (res['run_id'], L.bucket(bucket) if bucket else '全部')
     return Response(_csv_bytes(rs), media_type='text/csv; charset=utf-8',
                     headers={'Content-Disposition': "attachment; filename*=UTF-8''" + _q(name)})
 
@@ -284,26 +323,43 @@ def export(bucket: str = '', stage: str = '', cls: str = '', q: str = '', run_id
 def export_zip(run_id: str = ''):
     res, d = load_run(run_id or None)
     if not res:
-        raise HTTPException(404, '还没有跑筛结果')
-    allrows = load_rows(d)
+        raise HTTPException(404, '还没有筛选结果')
+    allrows = sorted(load_rows(d), key=lambda r: -r['gb'])
     buckets = sorted({r['bucket'] for r in allrows})
-    skip_cut = False
-    try:
-        _export_guard(res, {'可切'})
-    except HTTPException:
-        skip_cut = True
+    skip_reason = zip_withheld_reason(res)
+    skip_cut = bool(skip_reason)
     mem = io.BytesIO()
     with zipfile.ZipFile(mem, 'w', zipfile.ZIP_DEFLATED) as z:
         for b in buckets:
             if b == '可切' and skip_cut:
                 continue
-            z.writestr('%s.csv' % b, _csv_bytes([r for r in allrows if r['bucket'] == b]))
+            z.writestr('%s.csv' % L.bucket(b), _csv_bytes([r for r in allrows if r['bucket'] == b]))
+        if skip_cut:
+            # 不静默扣下：包里放一份说明，和页面上弹出的原因一致
+            z.writestr('_未包含「可清理」的原因.txt', ('\ufeff' + skip_reason + '\r\n').encode('utf-8'))
         z.writestr('summary.json', json.dumps({k: res.get(k) for k in (
             'run_id', 'fingerprint', 'stale', 'rejected', 'summary', 'detail', 'held_stage2',
             'stage3_population', 'protect_violations')}, ensure_ascii=False, indent=2))
     mem.seek(0)
     return StreamingResponse(mem, media_type='application/zip', headers={
         'Content-Disposition': "attachment; filename*=UTF-8''" + _q('sieve_%s.zip' % res['run_id'])})
+
+
+def zip_withheld_reason(res):
+    try:
+        _export_guard(res, {'可切'})
+        return ''
+    except HTTPException as e:
+        return '这个压缩包里没有「可清理」清单：' + e.detail
+
+
+@app.get('/api/export.check')
+def export_check(run_id: str = ''):
+    """导出全部之前先问一句：会不会扣下「可清理」、为什么。"""
+    res, _ = load_run(run_id or None)
+    if not res:
+        raise HTTPException(404, '还没有筛选结果')
+    return {'withheld': zip_withheld_reason(res)}
 
 
 @app.get('/api/log')
