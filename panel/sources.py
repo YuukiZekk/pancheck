@@ -655,10 +655,14 @@ def write_emby_csvs(cfg, workdir, errors, yuanpan_paths=()):
         items, meta = [], {}
     yp, titles, seen = [], [], set()
     by_tmdb = {}
+    yroots = [r.rstrip('/') for r in cfg['zones'].get('yuanpan', [])]
     for i in items:
-        if pre and i['path'].startswith(pre + '/') and i['width']:
+        if pre and i['movie'] and i['path'].startswith(pre + '/') and i['width']:
             # 内核写死 replace('/CloudNAS/CloudDrive','')，这里统一换成该前缀以对上挂载虚拟路径
             rel = i['path'][len(pre):]
+            # 这张表只管原盘区的实测分辨率：只写电影、且落在原盘区里的（剧集、其他分区的条目不写）
+            if not any(rel.startswith(r + '/') for r in yroots):
+                continue
             yp.append({'source_path': '/CloudNAS/CloudDrive' + rel, 'width': i['width'], 'height': i['height']})
             seen.add(rel)
         if i['movie'] and (i['tmdb'] or i['name']):
