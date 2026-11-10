@@ -196,7 +196,7 @@ def remux_x_yuanpan(cfg, rows, result):
             if p.startswith(r.rstrip('/') + '/'):
                 return p[len(r.rstrip('/')) + 1:].split('/')[0]
         return ''
-    best = cross.yuanpan_films(units, files, meas, sub_of)
+    best = cross.yuanpan_films(units, files, meas, sub_of, mode='v2')
     out, cnt = [], {}
     for cls, u, y in cross.remux_x_yuanpan(rem, best):
         cnt[cls] = cnt.get(cls, 0) + 1

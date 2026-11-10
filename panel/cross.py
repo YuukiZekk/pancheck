@@ -190,6 +190,30 @@ def _tier_s(name, vh=None):
 
 
 TIER_RANK_S = {'U': 3, 'H': 2, 'S': 1, '?': 0}
+U_NAME = re.compile(r'(?i)2160p|uhd|ultra hd|(?<![a-z0-9])4k(?![a-z0-9])')
+
+
+def tier_v2(main_name, kind, gb, vh=None):
+    """原盘判档新口径（2026-11-11 用户定）：实测优先；其次看主文件自己的全名（4K/2160p/1080p 算数）；
+    名字没写的，ISO / 盘片夹按体积推断（≥55 GB 为 4K，否则 1080p），带星号 = 推断、非实测（同内核 tier2）。
+    文件夹名不用——筐名不算证据。"""
+    if vh:
+        return 'U' if vh >= 1600 else ('H' if vh >= 900 else 'S')
+    s = main_name or ''
+    if U_NAME.search(s):
+        return 'U'
+    if re.search(r'(?i)1080[pi]', s):
+        return 'H'
+    if re.search(r'(?i)720p|480p', s):
+        return 'S'
+    if kind in ('ISO', 'BDMV'):
+        return 'U*' if gb >= 55 else 'H*'
+    return '?'
+
+
+def _rank_s(m):
+    t = m['tier']
+    return (TIER_RANK_S[t.rstrip('*')], 0 if t.endswith('*') else 1, m['GB'])
 
 
 def remux_tier(u):
@@ -203,8 +227,11 @@ def remux_tier(u):
     return '?'
 
 
-def yuanpan_films(units, files, meas, sub_of):
-    """units: [{path,name,kind,totGB}]；files: [{path,GB}]；meas: {原盘路径: 实测短边}。返回 {keyof_s: 原盘最佳份}。"""
+def yuanpan_films(units, files, meas, sub_of, mode='legacy'):
+    """units: [{path,name,kind,totGB}]；files: [{path,GB}]；meas: {原盘路径: 实测短边}。返回 {keyof_s: 原盘最佳份}。
+    mode='legacy'：cross_screen.py 当轮口径（按片名 = 文件夹名判档），数据包对差用；
+    mode='v2'：新口径（主文件全名 + ISO 体积推断带星号，文件夹名不用），面板用。"""
+    gb_of = {f['path']: f['GB'] for f in files}
     movies = []
     un_by_path = {u['path']: u for u in units}
     byfolder = defaultdict(list)
@@ -214,7 +241,8 @@ def yuanpan_films(units, files, meas, sub_of):
         byfolder[f['path'].rsplit('/', 1)[0]].append(f)
     for u in units:
         if u['kind'] == 'BDMV':
-            movies.append(dict(name=u['name'], sub=sub_of(u['path']), kind='BDMV', GB=u['totGB'], path=u['path'], main=u['path']))
+            movies.append(dict(name=u['name'], sub=sub_of(u['path']), kind='BDMV', GB=u['totGB'], path=u['path'], main=u['path'],
+                               mgb=u['totGB']))
     for folder, fs in byfolder.items():
         fu = un_by_path.get(folder)
         clusters = defaultdict(list)
@@ -225,21 +253,29 @@ def yuanpan_films(units, files, meas, sub_of):
             main = max(fs, key=lambda x: x['GB'])
             kind = 'ISO' if main['path'].lower().endswith('.iso') else 'FILE'
             movies.append(dict(name=folder.rsplit('/', 1)[-1], sub=sub, kind=kind,
-                               GB=fu['totGB'] if fu else sum(x['GB'] for x in fs), path=folder, main=main['path']))
+                               GB=fu['totGB'] if fu else sum(x['GB'] for x in fs), path=folder, main=main['path'],
+                               mgb=main['GB']))
         else:
             for ck, cfs in clusters.items():
                 for f in cfs:
                     kind = 'ISO' if f['path'].lower().endswith('.iso') else 'FILE'
                     movies.append(dict(name=f['path'].rsplit('/', 1)[-1].rsplit('.', 1)[0], sub=sub, kind=kind,
-                                       GB=f['GB'], path=f['path'], main=f['path']))
+                                       GB=f['GB'], path=f['path'], main=f['path'], mgb=f['GB']))
     best = {}
     for m in movies:
-        m['tier'] = _tier_s(m['name'], meas.get(m['main']))
+        if mode == 'v2':
+            mname = m['name'] if m['kind'] == 'BDMV' else m['main'].rsplit('/', 1)[-1]   # 盘片夹本身就是那一份
+            m['tier'] = tier_v2(mname, m['kind'], m['mgb'], meas.get(m['main']))
+        else:
+            m['tier'] = _tier_s(m['name'], meas.get(m['main']))
         k = keyof_s(m['name'])
         if not k[0] or len(k[0]) < 2:
             continue
         cur = best.get(k)
-        if cur is None or TIER_RANK_S[m['tier']] > TIER_RANK_S[cur['tier']] or (m['tier'] == cur['tier'] and m['GB'] > cur['GB']):
+        if mode == 'v2':
+            if cur is None or _rank_s(m) > _rank_s(cur):
+                best[k] = m
+        elif cur is None or TIER_RANK_S[m['tier']] > TIER_RANK_S[cur['tier']] or (m['tier'] == cur['tier'] and m['GB'] > cur['GB']):
             best[k] = m
     return best
 
@@ -256,7 +292,7 @@ def remux_x_yuanpan(remux_units, best):
         yp_m = best.get(keyof_s(u['title']))
         if yp_m is None:
             continue
-        rt, yt = remux_tier(u), yp_m['tier']
+        rt, yt = remux_tier(u), yp_m['tier'].rstrip('*')     # 推断档（带星号）按同档参与分类，显示时注明
         if yt == 'U' and rt in ('H', 'S'):
             cls = 'A'
         elif yt == 'U' and rt == 'U':
