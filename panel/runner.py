@@ -210,6 +210,92 @@ def remux_x_yuanpan(cfg, rows, result):
     return out
 
 
+B7_STAGE = 'REMUX×主库'
+B7_BUCKET = {'A': '可切', 'D1': '待定', 'D2': '待定', 'W': '提醒'}
+TR = {'U': 3, 'H': 2, 'S': 1}
+
+
+def remux_vs_mainlib(cfg, rows, result):
+    """B7 纵向扩展到 REMUX 区（规则 2：主库已有、且不差于这份 → 多余）。用当下的 Emby 与缓存判。
+    「主库里的原盘版」= Emby 电影条目，路径去掉主库挂载前缀后落在原盘区（strm 镜像保留目录结构）。
+    配对：TMDB 编号相同，或片名 + 年份都相同 → 确认是同一部；只有片名相同 → 疑似。"""
+    from . import cross
+    if not os.path.isfile('cross_units.csv'):
+        result['b7'] = {'skipped': '没有 REMUX 单元清单'}
+        return []
+    try:
+        items, _ = sources.emby_items(cfg)
+    except Exception as e:
+        result['b7'] = {'skipped': 'Emby 读不了：%s' % e}
+        return []
+    pre = (cfg.get('emby_prefix') or '').rstrip('/')
+    yroots = [r.rstrip('/') for r in cfg['zones']['yuanpan']]
+    by_tm, by_key, by_title = {}, {}, {}
+    n_lib = 0
+    for it in items:
+        if not it['movie'] or not pre or not it['path'].startswith(pre + '/'):
+            continue
+        folder = it['path'][len(pre):].rsplit('/', 1)[0]
+        if not any(folder == r or folder.startswith(r + '/') for r in yroots):
+            continue
+        vh = sources.nominal_vh(it['width'], it['height'])
+        e = {'folder': folder, 'tier': 'U' if vh >= 1600 else 'H' if vh >= 900 else 'S' if vh > 0 else '?',
+             'vh': vh, 'name': it['name'], 'year': it['year']}
+        n_lib += 1
+        _, k = cross.keyof('%s %s' % (it['name'], it['year']))
+        title, year = k.split('|')
+        for d, key in ((by_tm, it['tmdb']), (by_key, k if title and year else ''), (by_title, title)):
+            if key:
+                cur = d.get(key)
+                if cur is None or TR.get(e['tier'], 0) > TR.get(cur['tier'], 0):
+                    d[key] = e
+    if not n_lib:
+        result['b7'] = {'skipped': 'Emby 里没有落在原盘区的电影（检查「Emby 里看到的 CD2 挂载根」）', 'prefix': pre}
+        return []
+    cut = {r['path'] for r in rows if r['bucket'] == '可切'}
+    touched = set(cut)
+    for c in cut:
+        while '/' in c.strip('/'):
+            c = c.rsplit('/', 1)[0]
+            touched.add(c)
+    out, cnt, skipped = [], {}, 0
+    for u in csv.DictReader(open('cross_units.csv', encoding='utf-8-sig')):
+        p = u['路径']
+        if p in touched or sources.guard_hit(cfg, p, set()):
+            skipped += 1
+            continue
+        tm, k = cross.keyof(u['电影'] + ' ' + u['主视频文件'])
+        title = k.split('|')[0]
+        lib, how = None, ''
+        if tm and tm[1:] in by_tm:
+            lib, how = by_tm[tm[1:]], 'TMDB 编号相同'
+        elif k in by_key and k.split('|')[1]:
+            lib, how = by_key[k], '片名、年份都相同'
+        elif title and title in by_title:
+            lib, how = by_title[title], '只有片名相同（年份不同或缺）'
+        if lib is None:
+            continue
+        rt = cross.remux_tier({'main': u['主视频文件'], 'title': u['电影']})
+        if how.startswith('只有'):
+            cls = 'D2'
+        elif rt == '?' or lib['tier'] == '?':
+            cls = 'D1'
+        elif TR[lib['tier']] >= TR.get(rt, 0):
+            cls = 'A'
+        else:
+            cls = 'W'
+        cnt[cls] = cnt.get(cls, 0) + 1
+        desc = {'A': '主库里已有原盘版、画质不比这份差', 'W': '这份 REMUX 比主库里的原盘版档位高，可拿去给主库洗版',
+                'D1': '主库里有这部片的原盘版，但有一边画质看不出', 'D2': '主库里疑似有这部片的原盘版'}[cls]
+        out.append(row(B7_STAGE, cls, B7_BUCKET[cls], p, float(u['单元总GB']) * 1e9 / GIB, keep=lib['folder'],
+                       basis='%s（%s）：这份 %s，主库 %s%s' % (desc, how, L.tier(rt), L.tier(lib['tier']),
+                                                         ' %dp' % lib['vh'] if lib['vh'] else '')))
+    result['b7'] = {'mainlib_yuanpan_movies': n_lib, 'skipped_cut_or_protected': skipped,
+                    'pairs': sum(cnt.values()), 'classes': cnt}
+    result['stats']['b7'] = result['b7']
+    return out
+
+
 HIDDEN_STAGE = '同字节重复'
 
 
@@ -318,6 +404,9 @@ def main(mode, run_dir):
 
     emit('a3', '比对 REMUX 与原盘', 85)
     rows += remux_x_yuanpan(cfg, rows, result)
+
+    emit('b7', '比对 REMUX 与主库', 86)
+    rows += remux_vs_mainlib(cfg, rows, result)
 
     emit('tvsplit', '识别混入的剧集', 85)
     # 第一期分流只出清单、不摘刀口行：刀口各桶保持内核原样（已对金标准），两边互斥留到第二期执行时处理
