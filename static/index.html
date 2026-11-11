@@ -714,7 +714,12 @@
       @media (max-width:900px){ .exec-grid{grid-template-columns:1fr} }
 
       /* ============ 执行独立成页（五页分工） ============ */
-      body:not(.exec-on) .exec-nav{display:none!important}
+      /* 只读态：执行页签留着但灰掉，点进去只有一句话（反馈 8） */
+      body:not(.exec-on) .exec-nav{opacity:.5}
+      body:not(.exec-on) .exec-nav.active{opacity:.75}
+      body.exec-closed [data-view="execute"] > :not(.page-head):not(#exOff){display:none!important}
+      body.exec-closed [data-view="execute"] .head-actions{display:none!important}
+      .ready-list .kv-row .k{width:auto;flex:1}
       .exec-off-note{display:none}
       body:not(.exec-on) .exec-off-note{display:flex}
       /* 清单页：批准条（只做决定，唯一出口动作） */
@@ -837,7 +842,7 @@
         <a class="nav-item" href="#/overview" data-nav="overview"><i data-ic="overview"></i>总览</a>
         <a class="nav-item" href="#/inventory" data-nav="inventory"><i data-ic="inventory"></i>盘点</a>
         <a class="nav-item" href="#/list" data-nav="list"><i data-ic="list"></i>清单<span class="count" id="navListCount" hidden></span></a>
-        <a class="nav-item exec-nav" href="#/execute" data-nav="execute" hidden><i data-ic="play"></i>执行<span class="count" id="navExecCount" hidden></span></a>
+        <a class="nav-item exec-nav" href="#/execute" data-nav="execute"><i data-ic="play"></i>执行<span class="count" id="navExecCount" hidden></span></a>
         <a class="nav-item" href="#/settings" data-nav="settings"><i data-ic="settings"></i>设置</a>
         <div class="side-foot">
           <div class="readonly-card warn" id="sidePw" hidden><i data-ic="alert"></i><div><b>未设访问口令</b><span>局域网里谁都能打开：.env 设 PANEL_PASSWORD 后重启</span></div></div>
@@ -1046,9 +1051,9 @@
                   <div class="field-row">
                     <div class="field"><label>CD2 配置目录</label><input type="text" class="mono" id="c-cd2_config"></div>
                     <div class="field"><label>Emby 数据目录</label><input type="text" class="mono" id="c-emby_data"></div>
-                    <div class="field"><label>缓存里的网盘标识</label><input type="text" class="mono" id="c-cd2_api_name"></div>
+                    <div class="field"><label>网盘在缓存里的名字（自动识别，一般不用改）</label><input type="text" class="mono" id="c-cd2_api_name"></div>
                     <div class="field"><label>网盘账号标识（多账号才填）</label><input type="text" class="mono" id="c-cd2_api_user"></div>
-                    <div class="field"><label>Emby 里看到的 CD2 挂载根</label><input type="text" class="mono" id="c-emby_prefix"></div>
+                    <div class="field"><label>Emby 里 strm 指向的挂载路径（一般是默认值，不用改）</label><input type="text" class="mono" id="c-emby_prefix"></div>
                     <div class="field"><label>CD2 挂载根（遍历 / 挂载改名用）</label><input type="text" class="mono" id="c-cd2_mount"></div>
                     <div class="field"><label>CSV 目录（CSV 模式）</label><input type="text" class="mono" id="c-csv_dir"></div>
                   </div></details>
@@ -1071,7 +1076,8 @@
               </section>
               <section class="card set-card" aria-label="执行">
                 <h2><i data-ic="play"></i>执行（只搬不删）</h2>
-                <div class="switch-row"><div class="sw-text"><b>服务端执行开关</b><span id="setExecSwitch">—</span></div></div>
+                <div class="switch-row"><div class="sw-text"><b>开执行还差哪一步</b><span>全是绿点才能执行；照 README「执行」一节逐项补。</span></div></div>
+                <div class="kv ready-list" id="setExecSwitch"></div>
                 <div class="switch-row"><div class="sw-text"><b>界面只读锁定</b><span>开了就在这台浏览器上隐藏批准与执行入口；它只能收紧，不能单独打开执行（服务端开关优先）。</span></div>
                   <button type="button" class="switch" role="switch" aria-checked="false" id="swLock" aria-label="界面只读锁定"></button></div>
                 <div class="field-row">
@@ -1105,7 +1111,7 @@
       <a href="#/overview" data-nav="overview"><i data-ic="overview" class="lg"></i>总览</a>
       <a href="#/inventory" data-nav="inventory"><i data-ic="inventory" class="lg"></i>盘点</a>
       <a href="#/list" data-nav="list"><i data-ic="list" class="lg"></i>清单</a>
-      <a href="#/execute" class="exec-nav" data-nav="execute" hidden><i data-ic="play" class="lg"></i>执行</a>
+      <a href="#/execute" class="exec-nav" data-nav="execute"><i data-ic="play" class="lg"></i>执行</a>
       <a href="#/settings" data-nav="settings"><i data-ic="settings" class="lg"></i>设置</a>
     </nav>
 
@@ -1197,7 +1203,8 @@ function uiLock() { return store.get('pc.uilock') === '1'; }
 function setExecOn() {
   execOn = !!(EXS && EXS.allowed) && !uiLock();
   document.body.classList.toggle('exec-on', execOn);
-  $$('.exec-nav').forEach(a => a.hidden = !execOn);
+  document.body.classList.toggle('exec-closed', !(EXS && EXS.allowed));
+  $$('.exec-nav').forEach(a => a.title = execOn ? '' : (EXS && EXS.allowed ? '这台浏览器开了界面只读锁定' : '执行未开启'));
   const m = $('#sideMode');
   m.classList.toggle('exec', execOn);
   m.querySelector('b').textContent = execOn ? '执行已开' : '只读默认态';
@@ -1503,7 +1510,7 @@ async function renderList(params) {
   $('#q').value = LIST.q; $('#sortSel').value = LIST.sort;
   await Promise.all([loadResult(), loadExec(), loadAppr()]);
   const r = RES;
-  $('#listBanners').innerHTML = banners(r) + (r ? `<div class="alert">${ic('info')}<div>结果以 CD2 缓存时刻为准${execOn ? ' · 勾选后「批准，送入执行」，到执行页预演、执行' : ' · 本期入口为清单导出'}</div></div>` : '');
+  $('#listBanners').innerHTML = banners(r) + (r ? `<div class="alert">${ic('info')}<div>结果以 CD2 缓存时刻为准${execOn ? ' · 勾选后「批准，送入执行」，到执行页预演、执行' : ' · 现在是只读模式：可以筛选和导出清单。开启执行后，这里会出现批准按钮。'}</div></div>` : '');
   $('#listSub').innerHTML = r ? `${esc(r.run_id)}<span class="dot-sep">·</span>${fmtTime(r.finished)}` : '还没有筛查结果';
   await loadRows();
 }
@@ -1726,19 +1733,29 @@ $('#kOverlay').onclick = e => { if (e.target.id === 'kOverlay') $('#kOverlay').h
 $('#kInput').onkeydown = e => { if (e.key === 'Enter') { $('#kOverlay').hidden = true; LIST.q = e.target.value.trim(); LIST.page = 0; const p = filterParams(); go('list', p); } };
 
 /* ============================== 执行 ============================== */
+/* 开执行还差哪一步：设置页和执行页共用 */
+function readyRows(s, withTrial) {
+  const kv = (k, v, dot) => `<div class="kv-row"><span class="k">${k}</span>${dot ? `<span class="status-dot dot-${dot}"></span>` : ''}<span class="v">${v}</span></div>`;
+  const direct = s.direct || {}, dirs = s.dirs || {};
+  let h = kv('执行开关', s.allowed ? '已开' : '没开：docker-compose.yml 里加 PANEL_ALLOW_MOVE=1，重启面板', s.allowed ? 'green' : 'amber');
+  if (s.backend === 'cd2') h += kv('执行方式', 'CD2 直连（面板直接跟 CloudDrive 说话搬文件，快）')
+    + kv('直连', direct.ok ? `可用 · 令牌「${esc(direct.name || '未命名')}」` : esc(direct.error || '不可用') + '（检查设置页「执行」卡片里的 CD2 接口地址和令牌权限）', direct.ok ? 'green' : 'amber');
+  else h += kv('执行方式', s.exec_mode === 'mount' ? '挂载改名（经过系统文件夹改名，慢）' : '挂载改名（没找到 CloudDrive 令牌，兜底；慢）', s.exec_mode === 'mount' ? '' : 'amber')
+    + kv('挂载', s.mount_writable ? '可写' : '只读或没挂：compose 里挂载那行 :ro 改成 :rw', s.mount_writable ? 'green' : 'amber');
+  h += kv('排查区目录', dirs.quarantine ? esc(dirs.quarantine) : '没填（设置页「执行」卡片里填）', dirs.quarantine ? 'green' : 'amber')
+    + kv('主库目录', dirs.mainlib ? esc(dirs.mainlib) : '没填（设置页「执行」卡片里填）', dirs.mainlib ? 'green' : 'amber');
+  if (withTrial) h += kv('试跑', s.trial_ok ? '小批量试跑已对账无误，放开批量' : `第一次只许 ≤${s.trial_max || 10} 条`, s.trial_ok ? 'green' : 'amber');
+  return h;
+}
 let EXSEL = '', PREVIEW = {};
 async function renderExecute() {
   await Promise.all([loadExec(), loadAppr()]);
   const s = EXS || {};
-  const off = !s.allowed ? '执行开关没开：在 compose 里设 PANEL_ALLOW_MOVE=1 并重启后才有执行入口。现在只能看历史批次。'
+  const off = !s.allowed ? '执行未开启。开启方法见 README『执行』一节，设置页可查看当前还差哪一步。'
     : uiLock() ? '这台浏览器开了「界面只读锁定」（设置里关），执行入口已隐藏。' : '';
   $('#exOff').hidden = !off; $('#exOffText').textContent = off;
-  const kv = (k, v, dot) => `<div class="kv-row"><span class="k">${k}</span>${dot ? `<span class="status-dot dot-${dot}"></span>` : ''}<span class="v">${v}</span></div>`;
-  const direct = s.direct || {};
-  $('#exStatus').innerHTML = kv('执行方式', s.backend === 'cd2' ? 'CD2 直连（服务端改名）' : '挂载改名（慢，只适合小批量）')
-    + (s.backend === 'cd2' ? kv('直连', direct.ok ? `可用 · 令牌「${esc(direct.name || '未命名')}」` : esc(direct.error || '不可用'), direct.ok ? 'green' : 'amber')
-      : kv('挂载', s.mount_writable ? '可写' : '只读或没挂', s.mount_writable ? 'green' : 'amber'))
-    + kv('试跑', s.trial_ok ? '小批量试跑已对账无误，放开批量' : `第一次只许 ≤${s.trial_max || 10} 条`, s.trial_ok ? 'green' : 'amber');
+  if (!s.allowed) return;
+  $('#exStatus').innerHTML = readyRows(s, true);
   const items = APPR.items || {}, byAct = {};
   Object.entries(items).forEach(([p, a]) => (byAct[a.action] = byAct[a.action] || []).push(p));
   try { BATCHES = await api('api/exec/batches'); } catch (e) { BATCHES = []; }
@@ -1847,7 +1864,7 @@ async function renderSettings() {
   LISTS.forEach(k => $('#c-' + k).value = (CFG[k] || []).join('\n'));
   SRC = CFG.data_source; renderSeg();
   const s = EXS || {};
-  $('#setExecSwitch').textContent = s.allowed ? '已开（PANEL_ALLOW_MOVE=1）。执行页可用。' : '关：compose 里设 PANEL_ALLOW_MOVE=1 并重启后才有执行入口。';
+  $('#setExecSwitch').innerHTML = readyRows(s, false);
   $('#swLock').setAttribute('aria-checked', uiLock());
   $('#setSecurity').innerHTML = AUTH ? '<div class="recog"><div class="r-row"><b>已设访问口令</b>（浏览器弹窗用户名随便填）</div></div>'
     : `<div class="alert red" style="margin-top:0">${ic('alert')}<div><b>当前未设访问口令：</b>局域网里谁都能打开。在 .env 里设 PANEL_PASSWORD，然后 docker compose up -d。</div></div>`;
