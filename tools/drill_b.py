@@ -83,7 +83,9 @@ def fake_cd2(perms='list,mkdir,move', die_after=0):
 
 
 if CD2:
-    json.dump({'tokens': [{'token': TOKEN, 'rootDir': '/', 'friendly_name': 'drill'}]},
+    # CD2 真实格式：{ 令牌本体: {元数据} }；前面放一个 CD2 已不认的令牌，要能跳过它试下一个
+    json.dump({'stale-token-0000000000': {'friendly_name': 'old', 'root_dir': '/', 'permissions': {'allow_list': True}},
+               TOKEN: {'friendly_name': 'drill', 'root_dir': '/', 'permissions': {'allow_list': True, 'allow_create_folder': True, 'allow_move': True}}},
               open(os.path.join(conf, 'api_tokens.json'), 'w', encoding='utf-8'))
     c = json.load(open(os.path.join(DATA, 'config.json'), encoding='utf-8'))
     c.update(exec_mode='cd2', cd2_api_addr='127.0.0.1:8790')
@@ -250,6 +252,10 @@ if CD2:
                         if json.loads(l)['state'] in ('done',))
     check('直连：搬移全走 CD2 MoveFile（含回滚搬回），固定不覆盖、不跨云',
           len(mv) >= done_ops and all(c['policy'] == 2 and c['across'] == 0 for c in mv), (len(mv), done_ops))
+    from collections import Counter as _C
+    cc = _C(c['m'] for c in calls)
+    report['cd2_calls'] = dict(cc)
+    check('直连：认出真实格式的令牌（跳过 CD2 不认的那个）', any(c['m'] == 'GetApiTokenInfo' for c in calls) and cc.get('MoveFile', 0) > 0, dict(cc))
     check('直连：批次计划记的后端是 cd2', json.load(open(os.path.join(DATA, 'batches', b1, 'plan.json'), encoding='utf-8'))['backend'] == 'cd2')
     check('直连：令牌没写进计划和日志', all(TOKEN not in open(os.path.join(DATA, 'batches', b, f), encoding='utf-8').read()
                                     for b in (b1, b2) for f in ('plan.json', 'journal.jsonl')))

@@ -115,21 +115,31 @@ def _token_candidates(cd2_config):
         data = json.load(open(f, encoding='utf-8'))
     except (OSError, ValueError):
         return []
-    out = []
+    out = []          # [(令牌, 元数据或 None)]
+    META = ('friendly_name', 'permissions', 'root_dir', 'rootDir', 'expires_in')
 
     def walk(x):
         if isinstance(x, dict):
             t = x.get('token') or x.get('Token')
             if isinstance(t, str) and t:
-                out.append(t)
-            for v in x.values():
+                out.append((t, x))
+            for k, v in x.items():
+                # CD2 真实格式：{ 令牌本体: {friendly_name, root_dir, permissions, ...} }（反馈 7 实测）
+                if isinstance(k, str) and len(k) >= 8 and isinstance(v, dict) and any(m in v for m in META):
+                    out.append((k, v))
                 if isinstance(v, (dict, list)):
                     walk(v)
         elif isinstance(x, list):
             for v in x:
                 walk(v)
     walk(data)
-    return list(dict.fromkeys(out))
+
+    def can_move(meta):
+        perm = (meta or {}).get('permissions') or {}
+        return bool(isinstance(perm, dict) and (perm.get('allow_move') or perm.get('allowMove')))
+    # 元数据里写明能「移动」的排前面；最终以 connect() 里向 CD2 实查的权限为准
+    out.sort(key=lambda t: not can_move(t[1]))
+    return list(dict.fromkeys(t for t, _ in out))
 
 
 # ---------------- 客户端 ----------------
@@ -141,6 +151,7 @@ class Client:
         self.md = [('authorization', 'Bearer ' + token)]
         self.timeout = timeout
         self.root = '/'
+        self._dirs = set()          # 本客户端（一个批次）里确认存在 / 已建的目录，免得每次搬移都逐级查一遍
 
     def _call(self, method, payload, stream=False):
         g = self.grpc
@@ -216,11 +227,15 @@ class Client:
         cur = ''
         for name in parts:
             nxt = cur + '/' + name
+            if nxt in self._dirs:
+                cur = nxt
+                continue
             if not self.exists(nxt):
                 d = dec(self._call('CreateFolder', enc([(1, self.p(cur or '/')), (2, name)])))
                 r = dec(d[2][0]) if d.get(2) else {}
                 if r and not _i(r, 1) and not self.exists(nxt):
                     raise CD2Error('建目录失败：%s %s' % (nxt, _s(r, 2)))
+            self._dirs.add(nxt)
             cur = nxt
 
     def move(self, src, dst):
@@ -245,11 +260,14 @@ def connect(cfg):
     if not toks:
         raise CD2Error('没找到 CD2 API 令牌：CD2 配置目录里没有 api_tokens.json（或没设 CD2_API_TOKEN）。'
                        '在 CD2 里建一个令牌，权限勾选「列目录 / 建文件夹 / 移动」')
-    last = None
+    last = perm_err = None
     for t in toks:
         c = Client(addr, t)
         try:
             info = c.token_info(t)
+        except FileNotFoundError:
+            last = CD2Error('CD2 不认这个令牌（可能已删除或过期）')      # 换下一个试
+            continue
         except CD2Error as e:
             last = e
             continue
@@ -257,8 +275,9 @@ def connect(cfg):
             c.root = info['rootDir']
             c.name = info.get('friendly_name') or ''
             return c
-        last = CD2Error('令牌「%s」权限不够：需要 列目录 + 建文件夹 + 移动' % (info.get('friendly_name') or '未命名'))
-    raise last or CD2Error('CD2 令牌不可用')
+        perm_err = CD2Error('令牌「%s」权限不够：需要 列目录 + 建文件夹 + 移动' % (info.get('friendly_name') or '未命名'))
+    # 多个令牌都不行时，优先报「权限不够」（用户能直接去 CD2 里改），其次才是连不上 / 不认
+    raise perm_err or last or CD2Error('CD2 令牌不可用')
 
 
 def mode_status(cfg):
