@@ -1013,6 +1013,7 @@
               <div class="head-actions"><a class="btn" href="#/list"><i data-ic="list" class="sm"></i>回清单批准</a></div>
             </div>
             <div class="alert amber" id="exOff" hidden><i data-ic="info"></i><div id="exOffText"></div></div>
+            <div id="exCarry"></div>
             <div class="exec-flow" style="margin-top:20px" aria-label="批次生命周期">
               <span class="exec-step" id="stApproved">1 已批准</span><span class="exec-arrow">→</span>
               <span class="exec-step" id="stPreview">2 预演过</span><span class="exec-arrow">→</span>
@@ -1235,6 +1236,14 @@ async function loadCfg() {
   $('#sideSrc').textContent = '数据来源：' + ({cache: 'CD2 目录缓存', scan: '遍历挂载目录', csv: 'CSV 文件'}[CFG.data_source] || '');
 }
 async function loadExec() { try { EXS = await api('api/exec/status'); } catch (e) { EXS = null; } setExecOn(); }
+/* 重跑后上轮批准带过来的报数（反馈 9 进阶） */
+function carryNote() {
+  const c = APPR && APPR.carry;
+  if (!execOn || !c || !c.prev) return '';
+  const d = c.dropped || [];
+  return `<div class="alert ${d.length ? 'amber' : ''}">${ic(d.length ? 'alert' : 'check')}<div>上轮批准 <b>${n(c.prev)}</b> 条：带过来 <b>${n(c.carried)}</b> 条、已失效 <b>${n(d.length)}</b> 条${c.note ? '（' + esc(c.note) + '）' : ''}。${c.carried ? '带过来的照样要先预演复核。' : ''}
+    ${d.length && !c.note ? `<details style="margin-top:6px"><summary style="cursor:pointer">看失效的 ${n(d.length)} 条</summary><ul class="refused-list" style="margin-top:6px">${d.slice(0, 50).map(x => `<li><span class="mono" title="${esc(x.path)}">${esc(baseName(x.path))}</span>：${esc(x.reason)}</li>`).join('')}${d.length > 50 ? `<li>…还有 ${n(d.length - 50)} 条</li>` : ''}</ul></details>` : ''}</div></div>`;
+}
 async function loadAppr() { try { APPR = await api('api/approvals'); } catch (e) { APPR = {items: {}, overlap: []}; } updateApprBar(); }
 async function loadResult() { try { RES = await api('api/result'); } catch (e) { RES = null; } updateNavCounts(); }
 function updateNavCounts() {
@@ -1294,7 +1303,7 @@ function renderJobBar() {
 async function runJob(mode) {
   if (mode === 'full') {
     let k = 0; try { k = (await api('api/exec/status')).approvals || 0; } catch (e) {}
-    if (k && !confirm(`当前有 ${n(k)} 条已批准，重跑后批准会清空，确定重跑？`)) return;
+    if (k && !confirm(`当前有 ${n(k)} 条已批准。重跑后，判定没变的批准会自动带到新结果，判定变了或已不在的会作废（跑完会报数）。确定重跑？`)) return;
   }
   try { await api('api/run/' + mode, {method: 'POST'}); poll(); } catch (e) { toast(e.message); }
 }
@@ -1531,7 +1540,7 @@ async function renderList(params) {
   $('#q').value = LIST.q; $('#sortSel').value = LIST.sort;
   await Promise.all([loadResult(), loadExec(), loadAppr()]);
   const r = RES;
-  $('#listBanners').innerHTML = banners(r) + (r ? `<div class="alert">${ic('info')}<div>结果以 CD2 缓存时刻为准${execOn ? ' · 勾选后「批准，送入执行」，到执行页预演、执行' : ' · 现在是只读模式：可以筛选和导出清单。开启执行后，这里会出现批准按钮。'}</div></div>` : '');
+  $('#listBanners').innerHTML = banners(r) + carryNote() + (r ? `<div class="alert">${ic('info')}<div>结果以 CD2 缓存时刻为准${execOn ? ' · 勾选后「批准，送入执行」，到执行页预演、执行' : ' · 现在是只读模式：可以筛选和导出清单。开启执行后，这里会出现批准按钮。'}</div></div>` : '');
   $('#listSub').innerHTML = r ? `${esc(r.run_id)}<span class="dot-sep">·</span>${fmtTime(r.finished)}` : '还没有筛查结果';
   await loadRows();
 }
@@ -1804,6 +1813,7 @@ async function renderExecute() {
     : uiLock() ? '这台浏览器开了「界面只读锁定」（设置里关），执行入口已隐藏。' : '';
   $('#exOff').hidden = !off; $('#exOffText').textContent = off;
   if (!s.allowed) return;
+  $('#exCarry').innerHTML = carryNote();
   $('#exStatus').innerHTML = readyRows(s, true);
   const items = APPR.items || {}, byAct = {};
   Object.entries(items).forEach(([p, a]) => (byAct[a.action] = byAct[a.action] || []).push(p));

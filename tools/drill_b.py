@@ -236,6 +236,12 @@ cl.post('/api/run/full'); wait_job()
 rows = cl.get('/api/rows', params={'limit': 1000}).json()['rows']
 back = [r['path'] for r in rows if r['bucket'] == '可切']
 approve([(p, None) for p in back])
+# 重跑：判定没变的批准自动带到新结果，并报数（带过来的照样要过预演复核）
+cl.post('/api/run/full'); j = wait_job()
+a = cl.get('/api/approvals').json()
+check('重跑：判定没变的批准带到新结果并报数', len(a['items']) == len(back) and (a.get('carry') or {}).get('carried') == len(back)
+      and not a['carry']['dropped'] and ('带过来 %d 条' % len(back)) in j['msg'], (a.get('carry'), j['msg']))
+check('重跑：带过来的批准照样过预演复核', cl.post('/api/exec/plan').status_code == 200)
 cfg = cl.get('/api/config').json()['config']
 cfg['min_video_mb'] = 50
 cl.put('/api/config', json=cfg)
@@ -262,6 +268,8 @@ if CD2:
     # 令牌缺「移动」权限 → 预演就拒，说清楚
     cfg = cl.get('/api/config').json()['config']; cfg['min_video_mb'] = 100; cl.put('/api/config', json=cfg)
     cl.post('/api/run/full'); wait_job()
+    # 设置改回去后上一轮的批准又生效、会被带过来；这里只要一条，先清空
+    approve([], remove=list(cl.get('/api/approvals').json()['items']))
     rows = cl.get('/api/rows', params={'limit': 1000}).json()['rows']
     todo = [r['path'] for r in rows if r['bucket'] == '可切' and exists(r['path'])][:1]
     approve([(p, None) for p in todo])

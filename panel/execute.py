@@ -82,6 +82,69 @@ def approvable(rows_by_path, path, dest):
     return None, '只有「可清理」和「主库缺口」能批准'
 
 
+# ---------------- 重跑后把上轮批准带过来 ----------------
+CARRY_BUCKETS = ('可切', '缺口', '孤本')
+
+
+def _verdict(rs):
+    """一条路径的判定指纹：可批准相关各桶的（分类, 模块, 判定, 保留份）。任何一项变了都算「判定变了」。"""
+    return sorted({(r['bucket'], r['stage'], r['cls'], r.get('keep') or '') for r in rs if r['bucket'] in CARRY_BUCKETS})
+
+
+def _by_path(rows):
+    out = {}
+    for r in rows:
+        out.setdefault(r['path'], []).append(r)
+    return out
+
+
+def carry_file(run_dir):
+    return run_dir / 'carry.json'
+
+
+def carry_over(old_dir, old_fp, old_rows, new_dir, new_fp, new_rows, new_rejected=False):
+    """上轮批准里：新结果里仍在、判定没变、去处不变的自动带过来；其余作废并逐条说原因。
+    带过来的批准在预演阶段照样复核（存在性、纯度、目标冲突），这里不放松任何检查。
+    写新一轮的 approvals.json 和 carry.json，返回报告。"""
+    try:
+        raw = json.loads(approvals_file(old_dir).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        raw = {}
+    # 上轮批准若早已因改设置作废，用户界面上本就看不到，不算「上轮批准」
+    old_items = (raw.get('items') or {}) if raw.get('fingerprint') == old_fp else {}
+    rep = {'from_run': old_dir.name, 'prev': len(old_items), 'carried': 0, 'dropped': [], 'note': '', 'at': time.time()}
+    if not old_items:
+        return rep                                   # 上轮没批准：什么都不写
+    carried = {}
+    if new_fp != old_fp:
+        rep['note'] = '两轮之间改过设置，批准一律不带过来'
+    elif new_rejected:
+        rep['note'] = '新结果被保护守卫整批拒绝，批准不带过来'
+    if rep['note']:
+        rep['dropped'] = [{'path': p, 'reason': rep['note']} for p in old_items]
+    else:
+        ob, nb = _by_path(old_rows), _by_path(new_rows)
+        for p, it in old_items.items():
+            if p not in nb:
+                rep['dropped'].append({'path': p, 'reason': '新结果里没有这条（可能已搬走、改名或不再入清单）'})
+                continue
+            if _verdict(ob.get(p, [])) != _verdict(nb[p]):
+                rep['dropped'].append({'path': p, 'reason': '判定变了，请重新看过再批准'})
+                continue
+            action, err = approvable(nb, p, it.get('dest'))
+            if err or action != it.get('action'):
+                rep['dropped'].append({'path': p, 'reason': err or '去处变了，请重新批准'})
+                continue
+            carried[p] = dict(it, carried_from=old_dir.name)
+    rep['carried'] = len(carried)
+    if carried:
+        save_approvals(new_dir, new_fp, carried)
+    tmp = carry_file(new_dir).with_suffix('.tmp')
+    tmp.write_text(json.dumps(rep, ensure_ascii=False), encoding='utf-8')
+    os.replace(tmp, carry_file(new_dir))
+    return rep
+
+
 # ---------------- 预演（生成搬运计划，不动文件） ----------------
 def _is_video(name):
     return os.path.splitext(name)[1].lower() in S.VIDEO_EXT

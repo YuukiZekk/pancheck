@@ -117,6 +117,14 @@ class Job:
             self.state['msg'] = '已停止（这次没有产出结果，之前的结果不受影响）'
         elif code != 0 and not self.state['msg'].startswith('失败'):
             self.state['msg'] = '失败（退出码 %s），见日志' % code
+        elif self.state.get('mode') == 'full':
+            try:
+                rep = carry_after_run(self.state['run_id'])
+                if rep and rep['prev']:
+                    self.state['msg'] += '；上轮批准 %d 条：带过来 %d 条、已失效 %d 条' % (
+                        rep['prev'], rep['carried'], len(rep['dropped']))
+            except Exception as e:              # 带不过来不影响结果本身；批准照旧清空，用户重新勾
+                self.state['msg'] += '；上轮批准没能带过来（%s），请重新批准' % e
 
     def cancel(self):
         with self.lock:
@@ -299,6 +307,27 @@ def probe():
 from panel import execute as X
 
 
+def carry_after_run(run_id):
+    """全量跑完：把紧挨着的上一轮全量结果里的批准带到这一轮（只做一次；规则见 execute.carry_over）。"""
+    ids = [r['run_id'] for r in list_runs() if r['mode'] == 'full']
+    if not ids or ids[0] != run_id or len(ids) < 2:
+        return None
+    new, old = C.RUNS_DIR / run_id, C.RUNS_DIR / ids[1]
+    if X.approvals_file(new).exists() or X.carry_file(new).exists():
+        return None
+    rd = lambda d, f: json.loads((d / f).read_text(encoding='utf-8'))
+    old_res, new_res = rd(old, 'result.json'), rd(new, 'result.json')
+    return X.carry_over(old, old_res.get('fingerprint'), rd(old, 'rows.json'), new, new_res.get('fingerprint'),
+                        rd(new, 'rows.json'), bool(new_res.get('rejected')))
+
+
+def _carry_report(d):
+    try:
+        return json.loads(X.carry_file(d).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+
+
 def _latest_full():
     res, d = load_run(None)
     if not res:
@@ -339,7 +368,7 @@ def approvals_get():
         b.setdefault(r['path'], set()).add(r['bucket'])
     overlap = [p for p, s in b.items() if {'缺口', '孤本'} <= s]       # 去处要用户选的
     return {'run_id': res['run_id'], 'items': X.load_approvals(d, res['fingerprint']) if not res['stale'] else {},
-            'overlap': overlap}
+            'overlap': overlap, 'carry': _carry_report(d)}
 
 
 @app.put('/api/approvals')
