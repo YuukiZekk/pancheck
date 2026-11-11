@@ -4,6 +4,7 @@
 不把原始报错丢给用户。全部只读。
 """
 import os
+import re
 import sqlite3
 from collections import Counter
 
@@ -107,6 +108,7 @@ def guess_emby_prefix(cfg, movies):
     except Exception:
         tops = set()
     votes, hits = Counter(), Counter()
+    example = {}                                   # 每个前缀第一条对得上的路径，界面上当佐证
     checked = 0
     for m in movies:
         p = m['path'] or ''
@@ -120,12 +122,13 @@ def guess_emby_prefix(cfg, movies):
                 checked += 1
                 if cd2cache.dir_exists(cfg, rest.rsplit('/', 1)[0]):
                     hits[pre] += 1
+                    example.setdefault(pre, p)
             break
     out = {'sample': sample, 'current': cfg.get('emby_prefix') or ''}
     if hits:
         pre, h = hits.most_common(1)[0]
         n = min(votes[pre], checked)
-        out.update(ok=True, prefix=pre, hits=h, checked=n,
+        out.update(ok=True, prefix=pre, hits=h, checked=n, example=example.get(pre, ''),
                    say='你的 Emby 路径长这样：%s。去掉开头的 %s 就是网盘里的路径（抽查 %d 部，%d 部对得上），对吗？'
                        % (sample[0] if sample else '', pre or '（无）', n, h))
     else:
@@ -135,35 +138,141 @@ def guess_emby_prefix(cfg, movies):
     return out
 
 
+# ---------------- 第 3 步：分区候选（分组勾选） ----------------
+# 只列「装着电影的目录」，不列「本身就是一部电影的目录」；只有高置信的名字才预勾，含糊的放「未归类」等用户自己勾。
+# 改的只是向导的呈现和预填；判定内核、配置结构（zones 仍是四组路径列表）不动。
+_NUM = re.compile(r'^\s*\d+\s*[-_.、·\s]\s*')
+JUNK = ('删除', '回收', 'recycle', 'trash', '@eadir')                 # 别的工具的工作区 / 回收站：本身和下面都不列
+NOT_ZONE = ('未整理', '待整理', '下载', '临时', 'incoming', 'download', 'temp', 'tmp')   # 本身不当分区，下面的放「未归类」
+QUALIFIERS = ('动漫', '动画', 'uhd', '测试', '样片', 'bdmv', '未整理', '待整理', '下载', '临时', '剧', '纪录', '演唱会')
+_TOKEN_Q = re.compile(r'(^|[^a-z])(pt|mv)([^a-z]|$)')
+STRONG = (('remux', ('remux',)), ('yuanpan', ('原盘',)), ('heji', ('电影合集', '电影包')))   # REMUX 优先
+MIN_UNITS = 5                       # 子树里影片单元少于这个数的，当成「一部片 / 一季剧」的夹，不进候选
+
+
+def _core(name):
+    return _NUM.sub('', name or '').strip().lower()
+
+
+def _has(core, words):
+    return any(w in core for w in words)
+
+
+def _qualified(core):
+    return _has(core, QUALIFIERS) or bool(_TOKEN_Q.search(core))
+
+
+def zone_guess(path):
+    """→ (高置信分区或 None, 名字里的提示词或 '')。高置信：名字（去掉序号）含原盘 / REMUX / 电影合集，
+    且自己和上层目录都不带「动漫 / UHD / 测试 / PT / 未整理…」这类限定词。"""
+    parts = [x for x in path.strip('/').split('/') if x]
+    core = _core(parts[-1]) if parts else ''
+    up = [_core(x) for x in parts[1:-1]]          # 第一段是网盘名（如 115），不算
+    strong = None
+    if not _qualified(core) and not any(_qualified(u) or _has(u, NOT_ZONE) for u in up):
+        for z, words in STRONG:
+            if _has(core, words):
+                strong = z
+                break
+    hint = ''
+    for z in ('remux', 'yuanpan', 'heji'):
+        w = next((h for h in S.ZONE_HINTS[z] if h in core), '')
+        if w:
+            hint = w
+            break
+    return strong, hint
+
+
+def _tree(cfg, max_depth=4, max_dirs=3000):
+    """→ ({路径: 下层文件夹名列表}, 是否截断)。缓存模式整棵树现成（零请求）；挂载模式只列到 max_depth 层。"""
+    if cfg.get('data_source') == 'cache':
+        from . import cd2cache
+        ch = cd2cache._children_map(cfg)
+        return {k: sorted(v) for k, v in ch.items()}, False
+    lister, kids, queue, seen = S.dir_lister(cfg), {}, [('/', 0)], 0
+    while queue and seen < max_dirs:
+        path, depth = queue.pop(0)
+        try:
+            ds = lister(cfg, path)
+        except OSError:
+            continue
+        kids[path] = [d['name'] for d in ds]
+        for d in ds:
+            seen += 1
+            if depth + 1 < max_depth:
+                queue.append((d['path'], depth + 1))
+    return kids, seen >= max_dirs
+
+
+def zone_candidates(cfg, max_depth=3):
+    kids, truncated = _tree(cfg)
+    cache = cfg.get('data_source') == 'cache'
+    units, tops = None, None
+    if cache:
+        from . import cd2cache
+        units = cd2cache.unit_dirs(cfg)
+        tops = cd2cache.api_tops(cfg)
+    current = {p: z for z, ps in cfg['zones'].items() for p in ps}
+    # 面板自己的去处（排查区 / 主库 / 唯一副本目录）绝不能当分区：本身和下面都不列
+    own = ['/' + d.strip('/') for d in (cfg.get('quarantine_dir'), cfg.get('main_lib_dir'), cfg.get('unique_dir')) if d and d.strip('/')]
+    out, queue = [], [('/', 0)]
+    while queue:
+        path, depth = queue.pop(0)
+        for name in kids.get(path, ()):
+            vp = ('' if path == '/' else path) + '/' + name
+            core = _core(name)
+            if _has(core, JUNK) or any(vp == d or vp.startswith(d + '/') for d in own):
+                continue                                      # 连同下面整棵都不列
+            if depth + 1 < max_depth:
+                queue.append((vp, depth + 1))
+            if depth == 0 and (tops is None or name in tops):
+                continue                                      # 网盘根（/115）本身不当分区
+            if tops is not None and vp.strip('/').split('/', 1)[0] not in tops:
+                continue                                      # 缓存里别的网盘
+            if _has(core, NOT_ZONE) and vp not in current:
+                continue
+            sub = len(kids.get(vp, ()))
+            n_units = cd2cache.count_units(units, vp) if units is not None else None
+            if vp not in current and (sub == 0 if vp in kids or cache else False):
+                continue                                      # 没有下层文件夹：一部片 / 一季剧
+            if vp not in current and n_units is not None and n_units < MIN_UNITS:
+                continue
+            strong, hint = zone_guess(vp)
+            out.append({'path': vp, 'subdirs': sub, 'units': n_units, 'strong': strong, 'hint': hint,
+                        'current': current.get(vp)})
+    # 已绑定、但不在前三层里的分区也要列出来（向导「完成」时按勾选结果整组覆盖，不能把它们丢了）
+    listed = {c['path'] for c in out}
+    for vp, z in current.items():
+        if vp not in listed:
+            strong, hint = zone_guess(vp)
+            out.append({'path': vp, 'subdirs': len(kids.get(vp, ())), 'strong': strong, 'hint': hint, 'current': z,
+                        'units': cd2cache.count_units(units, vp) if units is not None else None})
+    # 高置信的父目录已预勾时，子目录不再预勾（同一片区不重复绑）
+    picked = []
+    for c in sorted(out, key=lambda c: c['path']):
+        if c['strong'] and not c['current'] and any(c['path'].startswith(p + '/') for p in picked):
+            c['strong'] = None
+        elif c['strong'] or c['current']:
+            picked.append(c['path'])
+    out.sort(key=lambda c: (-(c['units'] or 0), c['path']))
+    return out, truncated
+
+
 def check_zones(cfg=None):
-    """第 3 步：按目录名建议分区 + 保护/榜单包模板预勾 + 缓存覆盖。"""
+    """第 3 步：分区候选（分组勾选）+ 保护/榜单包模板预勾 + 缓存覆盖。"""
     cfg = cfg or C.load()
     try:
-        sg = S.suggest(cfg)
+        cands, truncated = zone_candidates(cfg)
+        sg = S.suggest(cfg)                                   # 保护 / 榜单包模板沿用原来的按名识别
     except Exception:
         return {'ok': False, 'error': '读不出网盘目录树。', 'hint': '回到第 1 步重新识别 CD2。'}
-    if cfg.get('data_source') == 'cache':
-        # 真分区一般是大目录、「未整理」里名字带合集/原盘的杂夹一般很小：按下层文件夹数从大到小排
-        from . import cd2cache
-        try:
-            ch = cd2cache._children_map(cfg)
-
-            def size(p, depth=0):
-                kids = ch.get(p, ())
-                return len(kids) + (sum(size(p + '/' + k, depth + 1) for k in kids) if depth < 6 else 0)
-            sg['sizes'] = {}
-            for z, ps in sg['zones'].items():
-                for p in ps:
-                    sg['sizes'][p] = size(p)
-                ps.sort(key=lambda p: -sg['sizes'][p])
-        except Exception:
-            pass
-    roots = [p for z in sg['zones'].values() for p in z]
     cov = {}
-    if cfg.get('data_source') == 'cache' and roots:
+    if cfg.get('data_source') == 'cache' and cands:
         from . import cd2cache
         try:
-            cov = cd2cache.coverage(cfg, roots)
+            cov = cd2cache.coverage(cfg, [c['path'] for c in cands])
         except Exception:
             cov = {}
-    return dict(sg, ok=True, coverage=cov)
+    return {'ok': True, 'candidates': cands, 'truncated': truncated, 'coverage': cov,
+            'protect_templates': sg['protect_templates'], 'protect_found': sg['protect_found'],
+            'listpack_found': sg['listpack_found'], 'exclude_found': sg['exclude_found']}

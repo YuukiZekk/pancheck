@@ -827,6 +827,38 @@
       .err-box{margin-top:12px;border:1px solid var(--red-border);background:var(--red-bg);color:var(--red-text);border-radius:10px;padding:12px 14px;font-size:13px;line-height:1.6}
       .warn-box{margin-top:12px;border:1px solid var(--amber-border);background:var(--amber-bg);color:var(--amber-text);border-radius:10px;padding:12px 14px;font-size:13px;line-height:1.6}
       .opt-box{margin-top:12px;border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:13px}
+      /* 向导 · 连 Emby：前缀确认（反馈 10） */
+      .pf-card{margin-top:14px;border:1px solid var(--border);border-radius:12px;padding:14px 16px;background:var(--card)}
+      .pf-label{font-size:12px;font-weight:600;color:var(--muted-foreground)}
+      .pf-main{font-size:20px;font-weight:700;letter-spacing:-.01em;margin-top:4px;word-break:break-all}
+      .pf-sample{margin-top:8px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted-foreground)}
+      .pf-sample b{color:var(--foreground);background:var(--green-bg);border-radius:4px;padding:1px 3px;font-weight:600}
+      .pf-sample span{opacity:.7}
+      .choice-cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+      button.choice-card{display:block;text-align:left;border:1px solid var(--border);border-radius:10px;padding:11px 14px;background:var(--card);color:var(--foreground);cursor:pointer;font:inherit;min-height:0}
+      button.choice-card b{display:block;font-size:13.5px}
+      button.choice-card span{display:block;font-size:12px;color:var(--muted-foreground);margin-top:2px}
+      button.choice-card.on{border-color:var(--primary);box-shadow:0 0 0 1px var(--primary);background:var(--muted)}
+      @media (max-width:560px){ .choice-cards{grid-template-columns:1fr} }
+      /* 向导 · 分区：分组勾选（反馈 10） */
+      .zgroup{border:1px solid var(--border);border-radius:10px;margin-top:12px;overflow:hidden}
+      .zgroup-head{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;padding:9px 12px;background:var(--muted);border-bottom:1px solid var(--border)}
+      .zgroup-head b{font-size:13px}
+      .zgroup-head span{font-size:12px;color:var(--muted-foreground)}
+      .zgroup-head .zcount{margin-left:auto;font-weight:600}
+      .zrow{display:flex;gap:10px;align-items:flex-start;padding:9px 12px;border-bottom:1px dashed var(--border);font-size:12.5px}
+      .zrow:last-child{border-bottom:none}
+      label.zrow{cursor:pointer}
+      .zrow input{margin-top:2px;flex:none}
+      .zrow .zmain{min-width:0;flex:1}
+      .zrow .mono{word-break:break-all}
+      .zrow.off .mono{color:var(--muted-foreground)}
+      .zmeta{font-size:11.5px;color:var(--muted-foreground);margin-top:2px}
+      .zassign{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
+      .zassign button,.zmove{font-size:11.5px;padding:2px 9px;border:1px solid var(--border);border-radius:999px;background:var(--card);color:var(--foreground);cursor:pointer;min-height:0;font-family:inherit}
+      .zmove{margin-left:auto;flex:none;color:var(--muted-foreground)}
+      .zempty{padding:10px 12px;font-size:12px;color:var(--muted-foreground)}
+      .zmore{display:block;width:100%;padding:8px 12px;border:none;border-top:1px dashed var(--border);background:var(--card);color:var(--muted-foreground);font:inherit;font-size:12px;cursor:pointer;min-height:0}
       .search-overlay{position:fixed;inset:0;background:rgb(0 0 0 / .35);z-index:70;display:flex;justify-content:center;padding-top:14vh}
       .search-overlay input{width:min(560px,calc(100vw - 32px));height:46px;border-radius:12px;border:1px solid var(--border);background:var(--popover);color:var(--foreground);padding:0 16px;font:inherit;font-size:15px;box-shadow:var(--shadow-lg)}
       .detail-tbl{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px}
@@ -1981,7 +2013,7 @@ function renderWizard() {
       <div class="wz-in"><input type="text" id="wzPath" class="mono" value="${esc(CFG.cd2_config)}" placeholder="/cd2-config"><button class="btn" type="button" id="wzCheck">识别</button></div><div id="wzRes"></div><div class="sec-foot" id="wzNav"></div>`;
   else if (st === 2) b.innerHTML = `<h2>${ic('db')}连 Emby</h2><p class="sec-sub">只填 Emby 的数据目录（Emby 后台「关于」页能看到原样路径）。Docker 部署时就是 compose 里挂进来的 /emby-data。</p>
       <div class="wz-in"><input type="text" id="wzPath" class="mono" value="${esc(CFG.emby_data)}" placeholder="/emby-data"><button class="btn" type="button" id="wzCheck">识别</button></div><div id="wzRes"></div><div class="sec-foot" id="wzNav"></div>`;
-  else b.innerHTML = `<h2>${ic('folder')}确认分区与保护</h2><p class="sec-sub">按目录名自动猜的，逐项确认或改绑；不对的选「不用」。之后在盘点页随时能改。</p><div id="wzRes" class="muted">读取目录…</div><div class="sec-foot" id="wzNav"></div>`;
+  else b.innerHTML = `<h2>${ic('folder')}确认分区与保护</h2><p class="sec-sub">勾哪些文件夹，哪些才进对应分区；没勾的一律不纳入。只有名字很明确的才帮你预勾，其余在「未归类」里自己指定。之后在盘点页随时能改。</p><div id="wzRes" class="muted">读取目录…</div><div class="sec-foot" id="wzNav"></div>`;
   const c = $('#wzCheck'); if (c) c.onclick = wzCheck;
   wzCheck();
 }
@@ -2015,38 +2047,98 @@ async function wzCheck() {
     h += `<div class="chipset">${(r.top_dirs.length ? r.top_dirs : r.tops).map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div><p class="muted" style="font-size:12.5px">和你在 CD2 里看到的对得上，就点下一步。</p>`;
   } else if (st === 2) {
     const pf = r.prefix || {};
-    WZ.prefix = pf.ok ? pf.prefix : null;
-    h = `<div class="kv">${kv('片库', '<span class="t-green">找到</span> <span class="mono" style="font-size:11px">' + esc(r.db) + '</span>')}${kv('电影', n(r.movies) + ' 部（带 TMDB ' + n(r.movies_tmdb) + '）')}</div>
-      <div class="${pf.ok ? 'opt-box' : 'warn-box'}">${esc(pf.say)}${pf.ok ? '<div class="r-row" style="margin-top:6px"><label><input type="radio" name="wzPf" value="1" checked> 对，用这个</label> <label style="margin-left:12px"><input type="radio" name="wzPf" value="0"> 不对，先不管</label></div>' : ''}</div>
-      <p class="muted" style="font-size:12.5px">电影数和 Emby 后台对得上，就点下一步。</p>`;
+    if (WZ.prefix === undefined || WZ.prefixFor !== pf.prefix) { WZ.prefix = pf.ok ? pf.prefix : null; WZ.prefixFor = pf.prefix; }
+    h = `<div class="kv">${kv('片库', '<span class="t-green">找到</span> <span class="mono" style="font-size:11px">' + esc(r.db) + '</span>')}${kv('电影', n(r.movies) + ' 部（带 TMDB ' + n(r.movies_tmdb) + '）')}`
+      + (pf.ok ? kv('路径抽查', `抽查 ${n(pf.checked)} 部，<b class="t-green">${n(pf.hits)}</b> 部对得上（${Math.round(pf.hits / Math.max(1, pf.checked) * 100)}%）`) : '') + '</div>';
+    if (pf.ok) {
+      const ex = pf.example || (pf.sample || [])[0] || '';
+      const rest = ex.startsWith(pf.prefix) ? ex.slice(pf.prefix.length) : ex;
+      h += `<div class="pf-card"><div class="pf-label">Emby 路径前缀</div><div class="pf-main mono">${esc(pf.prefix || '（无）')}</div>
+        <div class="pf-sample mono" title="${esc(ex)}"><b>${esc(pf.prefix)}</b><span>${esc(shortPath(rest))}</span></div></div>
+        <p class="muted" style="font-size:12.5px;margin:8px 0 0">去掉这段前缀，就是网盘里的路径；对不上的多半是网盘外的片。</p>
+        <div class="choice-cards" role="radiogroup" aria-label="前缀对不对">
+          <button type="button" class="choice-card${WZ.prefix != null ? ' on' : ''}" role="radio" aria-checked="${WZ.prefix != null}" data-pf="1"><b>对，用这个</b><span>按路径给原盘配实测分辨率</span></button>
+          <button type="button" class="choice-card${WZ.prefix == null ? ' on' : ''}" role="radio" aria-checked="${WZ.prefix == null}" data-pf="0"><b>不对，先不管</b><span>之后在高级设置里再填</span></button>
+        </div>`;
+    } else {
+      const ex = (pf.sample || [])[0] || '';
+      h += `<div class="warn-box"><b>Emby 路径对不上网盘目录，像是 strm 镜像库。</b><div class="pf-sample mono" title="${esc(ex)}" style="color:inherit">${esc(shortPath(ex))}</div>这一项不用设：原盘的实测分辨率改按 TMDB 编号配对。</div>`;
+    }
+    h += '<p class="muted" style="font-size:12.5px">电影数和 Emby 后台对得上，就点下一步。</p>';
   } else {
-    const sz = r.sizes || {};
-    const rows = Object.entries(r.zones).flatMap(([z, ps]) => ps.map(p => [p, z])).sort((a, b) => (sz[b[0]] || 0) - (sz[a[0]] || 0));
-    const opts = z => `<option value="">不用</option>` + Object.entries(ZN).map(([k, v]) => `<option value="${k}" ${k === z ? 'selected' : ''}>${v}</option>`).join('');
-    h = rows.length ? `<div class="bind-wrap"><table class="bind-table"><tbody>${rows.map(([p, z]) => {
-      const cv = (r.coverage || {})[p];
-      return `<tr><td data-l="目录"><span class="mono">${esc(p)}</span>${sz[p] != null ? ` <span class="muted" style="font-size:12px">${n(sz[p])} 个下层文件夹</span>` : ''}${cv && cv.count ? `<br><span class="t-amber" style="font-size:12px">${n(cv.count)} 个目录 CD2 还没打开过，那部分不在比对范围内</span>` : ''}</td>
-        <td data-l="分区" style="width:180px"><select class="sel sm" data-wzp="${esc(p)}">${opts(z)}</select></td></tr>`; }).join('')}</tbody></table></div>`
-      : '<div class="warn-box">没从目录名认出像合集 / 原盘 / REMUX 的目录。点「完成」后在盘点页的目录表里手动绑定就行。</div>';
+    WZ.zsel = {};
+    // 已经绑过分区（重走向导）：只按已绑的勾，不再按名字预勾——用户取消过的不能又冒回来
+    const bound = (r.candidates || []).some(c => c.current);
+    (r.candidates || []).forEach(c => { const z = bound ? c.current : c.strong; if (z) WZ.zsel[c.path] = {zone: z, on: true}; });
+    WZ.zmore = false;
+    h = (r.candidates || []).length ? '<div id="wzZones"></div>'
+      : '<div class="warn-box">没在网盘里找到装着电影的目录（CD2 可能还没打开过）。点「完成」后在盘点页的目录树里手动绑定就行。</div>';
     h += '<h3 style="margin:16px 0 6px;font-size:13px">保护目录（整个不看、不动）</h3>' + (r.protect_found.length ? r.protect_found.map(t => `<label class="path-row"><input type="checkbox" class="wzProt" value="${esc(t)}" checked>目录名含「${esc(t)}」的</label>`).join('')
       : '<p class="muted" style="font-size:12.5px">没认出常见的保护目录。需要的话之后在盘点页加。</p>');
     if (r.listpack_found.length) h += `<h3 style="margin:16px 0 6px;font-size:13px">榜单包</h3><p class="muted" style="font-size:12.5px">这些按榜单包处理：留在统计里，但整包不筛。</p><div class="chipset">${r.listpack_found.map(p => `<span class="tag">${esc(p)}</span>`).join('')}</div>`;
   }
   res.innerHTML = h;
+  if (st === 3 && $('#wzZones')) renderWzZones();
   $$('[name="wzApi"]').forEach(i => i.onchange = () => { WZ.api = i.value; wzCheck(); });
-  $$('[name="wzPf"]').forEach(i => i.onchange = () => { WZ.prefix = i.value === '1' ? WZ.r.prefix.prefix : null; });
+  $$('#wzRes [data-pf]').forEach(b => b.onclick = () => {
+    WZ.prefix = b.dataset.pf === '1' ? WZ.r.prefix.prefix : null;
+    $$('#wzRes [data-pf]').forEach(x => { const on = x === b; x.classList.toggle('on', on); x.setAttribute('aria-checked', on); });
+  });
   nav.innerHTML = back + cancel + `<button class="btn primary" type="button" id="wzNext">${nextLbl}</button>`;
   bind(); $('#wzNext').onclick = wzNext;
+}
+/* 路径一行放下：中间目录省略、长文件名中间截断 */
+function shortPath(p) {
+  const segs = (p || '').split('/').filter(Boolean);
+  if (!segs.length) return p || '';
+  let name = segs[segs.length - 1];
+  if (name.length > 34) name = name.slice(0, 22) + '…' + name.slice(-8);
+  return '/' + (segs.length > 3 ? [segs[0], segs[1], '…', name] : [...segs.slice(0, -1), name]).join('/');
+}
+const ZDESC = {yuanpan: '高画质参照，用来判断别处那份是不是多余', heji: '主要被筛的区，参加三刀', remux: '和原盘、主库对比', pack: '只参加跨区比对，不进三刀'};
+const ZORDER = ['yuanpan', 'heji', 'remux', 'pack'];
+function renderWzZones() {
+  const r = WZ.r, cands = r.candidates || [], cov = r.coverage || {}, sel = WZ.zsel;
+  const on = Object.keys(sel).filter(p => sel[p].on);
+  const meta = c => {
+    const cv = cov[c.path];
+    return `<div class="zmeta">${c.units != null ? '约 ' + n(c.units) + ' 部片' : n(c.subdirs) + ' 个下层文件夹'}${c.hint ? ` · 名字里有「${esc(c.hint)}」` : ''}</div>`
+      + (cv && cv.count ? `<div class="zmeta t-amber">${n(cv.count)} 个目录 CD2 还没打开过，那部分不在比对范围内</div>` : '');
+  };
+  let h = ZORDER.map(z => {
+    const rows = cands.filter(c => sel[c.path] && sel[c.path].zone === z);
+    const k = rows.filter(c => sel[c.path].on).length;
+    return `<div class="zgroup"><div class="zgroup-head"><b>${esc(ZN[z])}</b><span>${esc(ZDESC[z])}</span><span class="zcount">已勾 ${n(k)}</span></div>`
+      + (rows.length ? rows.map(c => `<label class="zrow${sel[c.path].on ? '' : ' off'}"><input type="checkbox" data-zon="${esc(c.path)}" ${sel[c.path].on ? 'checked' : ''}>
+          <div class="zmain"><div class="mono">${esc(c.path)}</div>${meta(c)}</div><button type="button" class="zmove" data-zout="${esc(c.path)}" title="放回未归类">移出</button></label>`).join('')
+        : `<div class="zempty">${z === 'pack' ? '没有。像「10-合集」这种整夹存放、只想参加跨区比对的，从下面「未归类」里指定到这里。' : '没有。从下面「未归类」里指定。'}</div>`) + '</div>';
+  }).join('');
+  const under = c => on.some(p => c.path.startsWith(p + '/'));
+  const rest = cands.filter(c => !sel[c.path]);
+  const vis = rest.filter(c => !under(c)), hid = rest.length - vis.length;
+  const shown = WZ.zmore ? vis : vis.slice(0, 12);
+  h += `<div class="zgroup"><div class="zgroup-head"><b>未归类</b><span>不勾就不纳入；名字含糊（只叫「合集」、BDMV、UHD原盘、动漫原盘、未整理 / PT 下面的）都在这里，需要的指定一个分区</span></div>`
+    + (shown.length ? shown.map(c => `<div class="zrow"><div class="zmain"><div class="mono">${esc(c.path)}</div>${meta(c)}
+        <div class="zassign">${ZORDER.map(z => `<button type="button" data-zin="${esc(c.path)}" data-z="${z}">${esc(ZN[z])}</button>`).join('')}</div></div></div>`).join('')
+      : '<div class="zempty">没有了。</div>')
+    + (vis.length > shown.length ? `<button type="button" class="zmore" id="wzMore">展开其余 ${n(vis.length - shown.length)} 个</button>` : '')
+    + (hid ? `<div class="zempty">另有 ${n(hid)} 个在已勾目录下面，已省略（整个上层已经纳入）。</div>` : '') + '</div>';
+  $('#wzZones').innerHTML = h;
+  $$('#wzZones [data-zon]').forEach(i => i.onchange = () => { sel[i.dataset.zon].on = i.checked; renderWzZones(); });
+  $$('#wzZones [data-zout]').forEach(b => b.onclick = e => { e.preventDefault(); delete sel[b.dataset.zout]; renderWzZones(); });
+  $$('#wzZones [data-zin]').forEach(b => b.onclick = () => { sel[b.dataset.zin] = {zone: b.dataset.z, on: true}; renderWzZones(); });
+  const m = $('#wzMore'); if (m) m.onclick = () => { WZ.zmore = true; renderWzZones(); };
 }
 async function wzNext() {
   const st = WZ.step, c = JSON.parse(JSON.stringify(CFG));
   try {
     if (st === 1) { c.cd2_config = $('#wzPath').value.trim(); c.cd2_api_name = WZ.api || c.cd2_api_name; c.cd2_api_user = ''; }
-    if (st === 2) { c.emby_data = $('#wzPath').value.trim(); if (WZ.prefix != null) c.emby_prefix = WZ.prefix; }
+    if (st === 2) { c.emby_data = $('#wzPath').value.trim(); if (WZ.prefix != null) c.emby_prefix = WZ.prefix; WZ.prefix = undefined; }
     if (st === 3) {
+      // 勾选结果整组覆盖：已绑定的分区都在候选里（默认勾着），取消勾选 = 不再纳入
       const z = {heji: [], yuanpan: [], remux: [], pack: []};
-      $$('#wzRes select[data-wzp]').forEach(s => { if (s.value) z[s.value].push(s.dataset.wzp); });
-      for (const k in z) c.zones[k] = [...new Set([...(c.zones[k] || []), ...z[k]])];
+      Object.entries(WZ.zsel || {}).forEach(([p, v]) => { if (v.on) z[v.zone].push(p); });
+      if (WZ.r && WZ.r.candidates) c.zones = z;
       $$('.wzProt:checked').forEach(i => { if (!c.protect_names.includes(i.value)) c.protect_names.push(i.value); });
       c.setup_done = true;
     }

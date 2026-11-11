@@ -87,6 +87,53 @@ def _children_map(cfg):
         return _tree['children']
 
 
+_units = {'key': None, 'dirs': None}
+
+
+def unit_dirs(cfg):
+    """「影片单元」所在目录（排好序的列表）：装着够大视频文件的夹；盘结构（BDMV/VIDEO_TS）里的算到盘根那一层。
+    向导用它数一个目录下大概有几部片，区分「装着电影的目录」和「本身就是一部电影的目录」。只读缓存，零网盘请求。"""
+    db = find_db(cfg)
+    minb = cfg['min_video_mb'] * 1024 * 1024
+    key = (db, _stamp(db), minb, cfg.get('cd2_api_name'), cfg.get('cd2_api_user'))
+    with _tree_lock:
+        if _units['key'] == key:
+            return _units['dirs']
+    conn, _ = S.open_ro(db)
+    api_sql, api_args = _api_where(cfg)
+    out = set()
+    try:
+        for ppath, name, size in conn.execute(
+                'select ci.path, f.name, f.size from files f join cached_item ci on ci.id = f.parent_id '
+                'where f.file_type = 4 and ' + api_sql, api_args):
+            if os.path.splitext(name)[1].lower() not in S.VIDEO_EXT or (size or 0) < minb:
+                continue
+            parts = (ppath or '').rstrip('/').split('/')
+            # 取最深的那个 BDMV/VIDEO_TS（外层也可能有个叫 BDMV 的收纳夹，如 /03-PT/BDMV/某片/BDMV/STREAM）
+            for i in range(len(parts) - 1, -1, -1):
+                if parts[i].lower() in S.DISC_DIRS:
+                    parts = parts[:i]
+                    break
+            out.add('/'.join(parts) or '/')
+    finally:
+        conn.close()
+    dirs = sorted(out)
+    with _tree_lock:
+        _units.update(key=key, dirs=dirs)
+    return dirs
+
+
+def count_units(dirs, root):
+    """dirs（unit_dirs 的结果）里落在 root 自己或其下面的个数。"""
+    import bisect
+    root = root.rstrip('/')
+    i = bisect.bisect_left(dirs, root)
+    own = 1 if i < len(dirs) and dirs[i] == root else 0
+    lo = bisect.bisect_left(dirs, root + '/')
+    hi = bisect.bisect_left(dirs, root + '/\U0010ffff')
+    return own + hi - lo
+
+
 def list_dirs(cfg, vpath='/'):
     ch = _children_map(cfg)
     base = '/' + vpath.strip('/') if vpath.strip('/') else '/'
