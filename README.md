@@ -175,7 +175,7 @@ docker compose down                          # 停止
 ## 当前已知边界
 
 - 重复副本（上面「重复副本怎么判」）取代了早先按手工作业顺序分趟的几步（合集 vs 原盘、合集内重复、小文件低质、合集 vs REMUX、REMUX vs 原盘），
-  数字和当年的金标准对不上是结构变了，对照见 `基线.md`「旧类目 → 新结构」。`tools/verify_a1.py --legacy-keys`、`tools/verify_a3.py` 只复现当年手工口径，留作历史对照。
+  数字和当年的金标准对不上是结构变了，对照见 `docs/基线.md`「旧类目 → 新结构」。`tools/verify_a1.py --legacy-keys`、`tools/verify_a3.py` 只复现当年手工口径，留作历史对照。
 - 主库对比：合集区剩下的片和 Emby 主库比（库里没有 → 主库缺口；库里更差 → 洗版提醒；TMDB 对上、同档或更好 → 这份可清理；只片名对上 → 仅标注）；
   REMUX 区和整夹合集单元拿去比主库里的原盘版（主库那份不比这份差 → 可清理；REMUX 更高 → 提醒可给主库洗版；画质看不出或只有片名对上 → 需人工确认）。
 - 剧集分流：新写，**未对金标准**，仅出清单。
@@ -196,3 +196,9 @@ docker compose up -d
 .\setup.ps1
 .\start.ps1      # http://127.0.0.1:8760
 ```
+
+## 仓库里有什么
+
+- `app.py`、`panel/`、`static/`：面板本体；`sieve.py`：片名键与主库对比的内核。
+- `tools/`：演练（`drill_b.py`）、当年手工口径的对账（`verify_a1~a3.py`）、新旧片名键差分（`keydiff.py`，靠 `legacy_steps.py` 里的旧流程步骤）。
+- `docs/`：`基线.md`（各轮基线，新基线用 `python -m panel.baseline` 打印）、方案、交接、任务单、前端方案；`docs/反馈/` 是历次反馈原文。

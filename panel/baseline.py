@@ -1,4 +1,4 @@
-"""从一轮扫描结果直接打印基线表（Markdown），重跑后贴进 基线.md 就行，不用手数。
+"""从一轮扫描结果直接打印基线表（Markdown），重跑后贴进 docs/基线.md 就行，不用手数。
 
 用法：
     docker exec sieve-panel python -m panel.baseline              # 最近一轮完整扫描
