@@ -533,7 +533,7 @@
       }
       .toast.show{opacity:1;transform:translate(-50%,0)}
 
-      /* ============ 盘点页 ============ */
+      /* ============ 扫描页 ============ */
       .alert.red{border-color:var(--red-border);background:var(--red-bg);color:var(--red-text)}
       .part-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:14px}
       .part-card{padding:16px 18px;text-align:left}
@@ -869,6 +869,19 @@
       .tnode.in{background:var(--muted)}
       .ttog{flex:none;width:20px;height:20px;padding:0;border:none;background:none;color:var(--muted-foreground);cursor:pointer;font-size:12px;min-height:0;line-height:20px;text-align:center}
       .ztag{display:inline-block;font-size:11.5px;padding:1px 8px;border-radius:999px;background:var(--card);border:1px solid var(--border);margin-right:6px}
+      .steps{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 18px;font-size:12.5px}
+      .steps a{display:inline-flex;align-items:center;gap:7px;padding:5px 11px 5px 6px;border-radius:999px;border:1px solid var(--border);background:var(--card);color:var(--muted-foreground);text-decoration:none;min-height:30px}
+      .steps a .sn{display:inline-flex;align-items:center;justify-content:center;width:19px;height:19px;border-radius:999px;background:var(--muted);font-size:11px;font-weight:700;color:var(--muted-foreground)}
+      .steps a.done .sn{background:var(--green-bg);color:var(--green)}
+      .steps a.cur{color:var(--foreground);border-color:var(--primary);box-shadow:0 0 0 1px var(--primary);font-weight:600}
+      .steps a.cur .sn{background:var(--primary);color:var(--primary-foreground)}
+      .steps a .nx{font-size:11px;color:var(--primary);font-weight:600}
+      .steps .sep{color:var(--muted-foreground);opacity:.5}
+      .grp-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:4px}
+      .grp-table td{padding:6px 6px;border-bottom:1px dashed var(--border);vertical-align:top}
+      .grp-table tr.me td{background:var(--muted)}
+      .grp-table .role{white-space:nowrap;font-weight:600}
+      .grp-table .mono{word-break:break-all;font-size:11.5px}
       .next-card{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:18px 0 4px;padding:16px 18px;border:1px solid var(--border);border-left:4px solid var(--primary);border-radius:var(--radius);background:var(--card);box-shadow:var(--shadow-xs)}
       .next-card .nc-text{flex:1 1 260px;min-width:0}
       .next-card .nc-text b{display:block;font-size:15px}
@@ -902,7 +915,7 @@
         </div>
         <div class="nav-label">工作台</div>
         <a class="nav-item" href="#/overview" data-nav="overview"><i data-ic="overview"></i>总览</a>
-        <a class="nav-item" href="#/inventory" data-nav="inventory"><i data-ic="inventory"></i>盘点</a>
+        <a class="nav-item" href="#/inventory" data-nav="inventory"><i data-ic="inventory"></i>扫描</a>
         <a class="nav-item" href="#/list" data-nav="list"><i data-ic="list"></i>清单<span class="count" id="navListCount" hidden></span></a>
         <a class="nav-item exec-nav" href="#/execute" data-nav="execute"><i data-ic="play"></i>执行<span class="count" id="navExecCount" hidden></span></a>
         <a class="nav-item" href="#/settings" data-nav="settings"><i data-ic="settings"></i>设置</a>
@@ -915,15 +928,15 @@
 
       <main>
         <div class="wrap">
+          <nav class="steps" id="steps" aria-label="流程"></nav>
           <div id="jobBar" class="job-bar" hidden></div>
 
           <!-- ============ 总览 ============ -->
           <section data-view="overview" hidden>
             <div class="page-head">
               <div><h1>总览</h1><p id="ovSub">—</p></div>
-              <div class="head-actions">
-                <a class="btn" href="#/inventory"><i data-ic="inventory" class="sm"></i>盘点</a>
-                <button class="btn primary" type="button" data-run="full"><i data-ic="refresh" class="sm"></i>一键跑筛</button>
+              <div class="head-actions" id="ovActions">
+                <button class="btn primary" type="button" data-run="full"><i data-ic="refresh" class="sm"></i>扫描</button>
               </div>
             </div>
             <div id="ovBanners"></div>
@@ -959,17 +972,16 @@
             </section>
           </section>
 
-          <!-- ============ 盘点 ============ -->
+          <!-- ============ 扫描（原盘点页） ============ -->
           <section data-view="inventory" hidden>
             <div class="page-head">
-              <div><h1>盘点</h1><p id="invSub">—</p></div>
+              <div><h1>扫描</h1><p id="invSub">—</p></div>
               <div class="head-actions">
-                <button class="btn" type="button" data-run="inventory"><i data-ic="refresh" class="sm"></i>重新盘点</button>
-                <button class="btn primary" type="button" data-run="full"><i data-ic="play" class="sm"></i>开始跑筛</button>
+                <button class="btn primary" type="button" data-run="full"><i data-ic="refresh" class="sm"></i>扫描</button>
               </div>
             </div>
             <div id="invNext"></div>
-            <section class="stats" id="invStats" aria-label="盘点小结"></section>
+            <section class="stats" id="invStats" aria-label="扫描小结"></section>
             <div class="ov-section-head"><h2>分区构成</h2><p>目录绑到分区后才进筛查；要改，展开页面最下面的「目录绑定与保护」</p></div>
             <div class="part-grid" id="invParts"></div>
             <section class="card section-card" aria-label="缓存覆盖">
@@ -995,7 +1007,7 @@
               </div>
               <div class="sec-foot">
                 <button class="btn primary sm" type="button" id="btnSaveBind" disabled>保存绑定</button>
-                <span class="hint" id="bindHint">改动后记得保存；保存后重新盘点</span>
+                <span class="hint" id="bindHint">改动后记得保存；保存后重新扫描</span>
               </div>
             </section>
             <section class="fold-part" aria-label="按目录名建议">
@@ -1010,7 +1022,8 @@
             <div class="page-head">
               <div><h1>清单</h1><p id="listSub">—</p></div>
               <div class="head-actions">
-                <button class="btn" type="button" data-run="full"><i data-ic="refresh" class="sm"></i>重新跑筛</button>
+                <a class="btn primary exec-only" href="#/execute" id="btnGoExec" hidden><i data-ic="play" class="sm"></i>去执行</a>
+                <button class="btn" type="button" data-run="full"><i data-ic="refresh" class="sm"></i>重新扫描</button>
                 <button class="btn primary" type="button" id="btnExport"><i data-ic="download" class="sm"></i>导出 CSV</button>
               </div>
             </div>
@@ -1106,7 +1119,7 @@
 
           <!-- ============ 设置 ============ -->
           <section data-view="settings" hidden>
-            <div class="page-head"><div><h1>设置</h1><p>改完点底部「保存」；改了口径的，旧清单会作废，需要重新跑筛</p></div></div>
+            <div class="page-head"><div><h1>设置</h1><p>改完点底部「保存」；改了口径的，旧清单会作废，需要重新扫描</p></div></div>
             <div class="set-wrap">
               <section class="card set-card" aria-label="数据源">
                 <h2><i data-ic="db"></i>数据源</h2>
@@ -1184,7 +1197,7 @@
 
     <nav class="mobile-nav" aria-label="主导航">
       <a href="#/overview" data-nav="overview"><i data-ic="overview" class="lg"></i>总览</a>
-      <a href="#/inventory" data-nav="inventory"><i data-ic="inventory" class="lg"></i>盘点</a>
+      <a href="#/inventory" data-nav="inventory"><i data-ic="inventory" class="lg"></i>扫描</a>
       <a href="#/list" data-nav="list"><i data-ic="list" class="lg"></i>清单</a>
       <a href="#/execute" class="exec-nav" data-nav="execute"><i data-ic="play" class="lg"></i>执行</a>
       <a href="#/settings" data-nav="settings"><i data-ic="settings" class="lg"></i>设置</a>
@@ -1201,6 +1214,7 @@
           <div class="vs-card keep"><span class="vs-tag keep">保留 / 参照</span><div class="vs-file" id="dKeepFile">—</div><ul class="vs-specs" id="dKeepSpecs"></ul><div class="vs-path mono" id="dKeepPath">—</div></div>
         </div>
         <h3>判定依据</h3><div class="reason" id="dReason">—</div>
+        <div id="dGroupWrap" hidden><h3 id="dGroupHead">这部片的全部副本</h3><div id="dGroup"></div></div>
         <h3>处理方式</h3><div class="reason" id="dAction">—</div>
         <div id="dKeepWrap" hidden><h3>看过了</h3><div class="reason" id="dKeep">—</div></div>
         <div class="exec-only" id="dExecWrap" hidden><h3>批准</h3><div class="reason" id="dExec">—</div></div>
@@ -1214,7 +1228,7 @@
     <div class="toast" id="toast" role="status"></div>
     <div class="search-overlay" id="kOverlay" hidden><input id="kInput" placeholder="搜索片名或路径，回车跳到清单"></div>
     <script>
-/* PanCheck 前端：五页（总览 / 盘点 / 清单 / 执行 / 设置）+ 首次设置向导。
+/* PanCheck 前端：五页（总览 / 扫描 / 清单 / 执行 / 设置），主线：设定 → 扫描 → 决定 → 执行+ 首次设置向导。
    判定一律渲染后端 bucket / stage / cls 的白话名（/api/labels），数字一律读后端结果，前端不写死任何子类语义。 */
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -1313,7 +1327,8 @@ function updateNavCounts() {
 function banners(r) {
   if (!r) return '';
   let h = '';
-  if (r.stale) h += `<div class="alert amber">${ic('alert')}<div><b>设置改过，这份清单已过期。</b>重新跑筛后才能导出「可清理」和批准。</div></div>`;
+  if (r.engine !== 2) h += `<div class="alert amber">${ic('alert')}<div><b>这份清单是旧版生成的（按「合集 vs 原盘 / 合集内 / 小文件」分开判）。</b>重新扫描一次，同一部片的副本会归成一组再判。</div></div>`;
+  if (r.stale) h += `<div class="alert amber">${ic('alert')}<div><b>设置改过，这份清单已过期。</b>重新扫描后才能导出「可清理」和批准。</div></div>`;
   if (r.rejected) h += `<div class="alert red">${ic('alert')}<div><b>整批拒绝：</b>「可清理」里有 ${n((r.protect_violations || []).length)} 条落在保护区 / 榜单包里，不能导出、不能批准。<br><span class="mono" style="font-size:11.5px">${esc((r.protect_violations || []).slice(0, 3).join('  ·  '))}</span></div></div>`;
   return h;
 }
@@ -1326,6 +1341,19 @@ function parseHash() {
   const v = (i < 0 ? h : h.slice(0, i)) || 'overview';
   return {view: VIEWS.includes(v) ? v : 'overview', params: new URLSearchParams(i < 0 ? '' : h.slice(i + 1))};
 }
+/* 主线：设定 → 扫描 → 决定 → 执行。标出现在在哪一步、下一步该去哪 */
+function renderSteps() {
+  const el = $('#steps'); if (!el) return;
+  const nAppr = Object.keys((APPR && APPR.items) || {}).length;
+  const done = {setup: !!(CFG && CFG.setup_done), scan: !!(RES && !RES.stale), decide: nAppr > 0, exec: false};
+  const cur = {settings: 'setup', wizard: 'setup', inventory: 'scan', list: 'decide', execute: 'exec'}[VIEW] || '';
+  const order = ['setup', 'scan', 'decide', 'exec'];
+  const next = order.find(k => !done[k] && (k !== 'exec' || execOn)) || '';
+  const S = [['setup', '设定', CFG && !CFG.setup_done ? '#/wizard' : '#/settings'], ['scan', '扫描', '#/inventory'],
+             ['decide', '决定', '#/list'], ['exec', '执行', '#/execute']];
+  el.innerHTML = S.map(([k, label, href], i) => `${i ? '<span class="sep">›</span>' : ''}<a href="${href}" class="${done[k] ? 'done' : ''} ${cur === k ? 'cur' : ''}" ${cur === k ? 'aria-current="step"' : ''}>`
+    + `<span class="sn">${done[k] ? '✓' : i + 1}</span>${label}${next === k && cur !== k ? '<span class="nx">下一步</span>' : ''}</a>`).join('');
+}
 function go(view, params) { const qs = params ? params.toString() : ''; location.hash = '#/' + view + (qs ? '?' + qs : ''); }
 let VIEW = '';
 async function route() {
@@ -1336,6 +1364,7 @@ async function route() {
   $$('[data-view]').forEach(s => s.hidden = s.dataset.view !== view);
   $$('[data-nav]').forEach(a => { const on = a.dataset.nav === (view === 'wizard' ? 'settings' : view); a.classList.toggle('active', on); if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
   window.scrollTo(0, 0);
+  renderSteps();
   try {
     if (view === 'overview') await renderOverview();
     else if (view === 'inventory') await renderInventory();
@@ -1344,12 +1373,13 @@ async function route() {
     else if (view === 'settings') await renderSettings();
     else if (view === 'wizard') renderWizard();
   } catch (e) { toast(e.message); }
+  renderSteps();
 }
 window.addEventListener('hashchange', route);
 
-/* ---------- 任务（跑筛 / 盘点 / 执行 / 回滚） ---------- */
+/* ---------- 任务（扫描 / 执行 / 回滚） ---------- */
 let JOB = {running: false}, polling = false;
-const JOB_NAME = {inventory: '盘点', full: '跑筛', run: '执行', rollback: '回滚'};
+const JOB_NAME = {inventory: '盘点', full: '扫描', run: '执行', rollback: '回滚'};
 function renderJobBar() {
   const j = JOB, bar = $('#jobBar');
   $$('[data-run]').forEach(b => b.disabled = !!j.running);
@@ -1362,7 +1392,7 @@ function renderJobBar() {
 async function runJob(mode) {
   if (mode === 'full') {
     let k = 0; try { k = (await api('api/exec/status')).approvals || 0; } catch (e) {}
-    if (k && !confirm(`当前有 ${n(k)} 条已批准。重跑后，判定没变的批准会自动带到新结果，判定变了或已不在的会作废（跑完会报数）。确定重跑？`)) return;
+    if (k && !confirm(`当前有 ${n(k)} 条已批准。重新扫描后，判定没变的批准会自动带到新结果，判定变了或已不在的会作废（扫完会报数）。确定重新扫描？`)) return;
   }
   try { await api('api/run/' + mode, {method: 'POST'}); poll(); } catch (e) { toast(e.message); }
 }
@@ -1372,14 +1402,19 @@ async function stopJob() {
 }
 async function poll() {
   if (polling) return; polling = true;
+  let watched = false;
   try {
     while (true) {
       JOB = await api('api/job'); renderJobBar();
+      if (JOB.running) watched = true;
       if (!JOB.running) {
         if (JOB.run_id && JOB.finished && Date.now() / 1000 - JOB.finished < 15) toast(JOB.msg || '完成');
         await Promise.all([loadResult(), loadAppr(), loadExec()]);
         LIST.paths = null;
         if (JOB.mode === 'run' || JOB.mode === 'rollback') EXSEL = JOB.run_id || EXSEL;
+        // 扫描跑完（这次看着它跑的、且成功出了结果）→ 直接落到清单，下一步就是做决定
+        if (watched && JOB.mode === 'full' && !JOB.exit && !JOB.cancelled && RES && RES.run_id === JOB.run_id
+            && !['settings', 'wizard', 'execute'].includes(VIEW) && VIEW !== 'list') { location.hash = '#/list'; break; }
         route();
         break;
       }
@@ -1394,13 +1429,14 @@ async function renderOverview() {
   await Promise.all([loadResult(), loadExec()]);
   const r = RES, fresh = CFG && !CFG.setup_done;
   $('#ovBanners').innerHTML = banners(r);
+  $('#ovActions').hidden = fresh;                    // 还没设定：只给「开始设置」，不给扫描
   $('#ovMain').hidden = fresh || !r;
   $('#ovEmpty').hidden = !(fresh || !r);
   if (fresh || !r) {
-    $('#ovEmptyTitle').textContent = fresh ? '还没连上数据源' : '还没有筛查结果';
-    $('#ovEmptyText').textContent = fresh ? '只要告诉面板两个目录：CD2 配置目录、Emby 数据目录。其余自动识别，你只负责确认。' : '跑一遍筛查后，判定分布和清单会出现在这里。';
+    $('#ovEmptyTitle').textContent = fresh ? '还没连上数据源' : '还没有扫描结果';
+    $('#ovEmptyText').textContent = fresh ? '只要告诉面板两个目录：CD2 配置目录、Emby 数据目录。其余自动识别，你只负责确认。' : '扫描一遍，同一部片的副本会归成一组，留哪份、清哪份都写在清单里。';
     $('#ovEmptyBtns').innerHTML = fresh ? '<a class="btn primary" href="#/wizard">开始设置</a>'
-      : '<a class="btn" href="#/inventory">去盘点</a><button class="btn primary" type="button" data-run="full">一键跑筛</button>';
+      : '<button class="btn primary" type="button" data-run="full">扫描</button>';
     $('#ovSub').textContent = fresh ? '首次使用' : '尚无结果';
     return;
   }
@@ -1419,7 +1455,8 @@ async function renderOverview() {
     return `<button class="dist-row" type="button" data-bucket="${esc(b)}"><span class="dist-dot dot-${TONE[b]}"></span><span class="dist-label">${esc(bn(b))}</span><span class="dist-count">${n(c)}</span><span class="dist-bar"><i class="bar-${TONE[b]}" style="width:${Math.max(pct, .5)}%"></i></span><span class="dist-pct">${pct.toFixed(1)}%</span>${ic('chev', 'sm chev')}</button>`;
   }).join('');
   $$('#distRows .dist-row').forEach(b => b.onclick = () => go('list', new URLSearchParams({bucket: b.dataset.bucket})));
-  $('#ovHeld').innerHTML = `<div class="unmatched"><span class="u-label">暂不判定</span><span class="u-count">${n(r.held_stage2)}</span><span class="u-note">条疑似剧集的重复组（合集内重复）；小体积检查覆盖 ${n(r.stage3_population)} 条。</span></div>`;
+  const gst = r.groups || {};
+  $('#ovHeld').innerHTML = r.engine === 2 ? `<div class="unmatched"><span class="u-label">暂不判定</span><span class="u-count">${n(gst.held_groups || 0)}</span><span class="u-note">组像剧集（同一个夹里好几份或带集号），共 ${n(gst.held_copies || 0)} 份，没判；归成重复组的共 ${n(gst.groups || 0)} 组。</span></div>` : '';
   const parts = [['原盘区', (st.yuanpan || {}).gb], ['REMUX 区', (st.remux || {}).gb], ['整夹合集区', (st.pack || {}).gb], ['合集区', (st.heji || {}).gb], ['保护区（不参与）', st.protected_gb]].filter(p => p[1]);
   const tot = parts.reduce((a, p) => a + p[1], 0) || 1;
   $('#ovStack').innerHTML = parts.map((p, i) => `<i class="seg-${i + 1}" style="width:${p[1] / tot * 100}%"></i>`).join('');
@@ -1429,7 +1466,7 @@ async function renderOverview() {
   const mods = {};
   (r.detail || []).forEach(d => { const m = mods[d.stage] = mods[d.stage] || {count: 0, cut: 0, cutgb: 0, cls: []}; m.count += d.count; if (d.bucket === '可切') { m.cut += d.count; m.cutgb += d.gb; } m.cls.push(d); });
   const keys = Object.keys(mods).sort((a, b) => mods[b].cut - mods[a].cut || mods[b].count - mods[a].count);
-  $('#ovModHead').innerHTML = `共 <b>${keys.length}</b> 个模块`;
+  $('#ovModHead').innerHTML = `共 <b>${keys.length}</b> 类`;
   $('#ovSieves').innerHTML = keys.map(k => {
     const m = mods[k], dot = m.cut ? 'green' : (m.cls.some(d => d.bucket === '待定') ? 'amber' : 'zinc');
     const top = m.cls.sort((a, b) => b.count - a.count).slice(0, 3).map(d => esc(cn(d.stage, d.cls)) + ' ' + n(d.count)).join(' · ');
@@ -1440,10 +1477,10 @@ async function renderOverview() {
   const kv = (k, v, dot) => `<div class="kv-row"><span class="k">${k}</span>${dot ? `<span class="status-dot dot-${dot}"></span>` : ''}<span class="v">${v}</span></div>`;
   const ex = EXS || {};
   $('#ovEngine').innerHTML = kv('结果', esc(r.run_id)) + kv('完成于', fmtTime(r.finished))
-    + kv('配置', r.stale ? '改过，需重跑' : '与结果一致', r.stale ? 'amber' : 'green')
+    + kv('配置', r.stale ? '改过，需重新扫描' : '与结果一致', r.stale ? 'amber' : 'green')
     + kv('保护守卫', r.rejected ? '整批拒绝' : '通过', r.rejected ? 'amber' : 'green')
     + kv('执行态', execOn ? '执行已开 · ' + (ex.backend === 'cd2' ? 'CD2 直连' : '挂载改名') : (ex.allowed ? '界面已锁定' : '只读默认态'), execOn ? 'amber' : 'zinc')
-    + (r.error_count ? kv('提示', n(r.error_count) + ' 条（见盘点页）', 'amber') : '');
+    + (r.error_count ? kv('提示', n(r.error_count) + ' 条（见扫描页）', 'amber') : '');
   const src = r.source || {}, em = st.emby || {}, unl = src.unlisted || {};
   const unlN = Object.values(unl).reduce((a, x) => a + ((x || {}).count || 0), 0);
   $('#ovSource').innerHTML = kv('来源', {cache: 'CD2 目录缓存', scan: '遍历挂载目录', csv: '现成 CSV'}[src.kind] || '—')
@@ -1466,26 +1503,26 @@ async function renderOverview() {
 }
 const actName = a => (a || '').split(',').map(x => ACT_NAME[x] || x).join(' / ') || '—';
 
-/* ============================== 盘点 ============================== */
+/* ============================== 扫描 ============================== */
 let INV = null, PROBE = null, TREE_PATH = '/', BIND_DIRTY = false;
-/* 任务完成后的下一步：盘点完 → 开始跑筛；跑筛完 → 直达清单 */
+/* 扫描页的下一步：没扫过 → 扫描；扫完 → 去清单做决定；设置改过 → 重新扫描 */
 function nextStepHtml(inv) {
   const r = RES, sm = (r && r.summary) || {};
   const card = (t, sub, btn) => `<div class="next-card" role="status"><div class="nc-text"><b>${t}</b><span>${sub}</span></div>${btn}</div>`;
-  if (r && r.run_id && !r.stale && (!inv || (r.finished || 0) >= (inv.finished || 0))) {
+  const scanBtn = label => `<button class="btn primary" type="button" data-run="full">${ic('refresh', 'sm')}${label}</button>`;
+  if (r && r.run_id && r.stale) return card('设置改过，这份结果过期了', '重新扫描一次，再去清单做决定。', scanBtn('重新扫描'));
+  if (r && r.run_id) {
     const cut = (sm['可切'] || {}).count || 0, tbd = (sm['待定'] || {}).count || 0;
-    return card('跑筛完成', `${esc(r.run_id)} · ${fmtTime(r.finished)}。结果在「清单」页：先看「可清理」，再看「需人工确认」`,
-      `<a class="btn primary" href="#/list">查看清单（可清理 ${n(cut)} 条 · 需人工确认 ${n(tbd)} 条）${ic('chev', 'sm')}</a>`);
+    return card('扫描完成', `${esc(r.run_id)} · ${fmtTime(r.finished)}。下一步：到清单里看每组留哪份、清哪份，做决定`,
+      `<a class="btn primary" href="#/list">去清单做决定（可清理 ${n(cut)} 条 · 需人工确认 ${n(tbd)} 条）${ic('chev', 'sm')}</a>`);
   }
-  if (inv) return card('盘点完成', '下一步：跑一遍筛查，出清单。只出清单，不动任何文件。',
-    `<button class="btn primary" type="button" data-run="full">${ic('play', 'sm')}开始跑筛</button>`);
-  return card('还没有盘点', '先盘点一遍，看看各分区里有多少东西。', `<button class="btn primary" type="button" data-run="inventory">${ic('refresh', 'sm')}开始盘点</button>`);
+  return card('还没扫描', '点「扫描」：读一遍各分区和 Emby 片库，把同一部片的副本归成一组。只出清单，不动任何文件。', scanBtn('扫描'));
 }
 async function renderInventory() {
   const [inv] = await Promise.all([api('api/inventory').catch(() => null)]);
   INV = inv;
   const st = (inv && inv.stats) || {}, src = st.source || {};
-  $('#invSub').innerHTML = inv ? `${esc(inv.run_id)}<span class="dot-sep">·</span>${fmtTime(inv.finished)}${inv.stale ? '<span class="dot-sep">·</span><span class="t-amber">设置改过，建议重新盘点</span>' : ''}` : '还没有盘点结果';
+  $('#invSub').innerHTML = inv ? `${esc(inv.run_id)}<span class="dot-sep">·</span>${fmtTime(inv.finished)}${inv.stale ? '<span class="dot-sep">·</span><span class="t-amber">设置改过，建议重新扫描</span>' : ''}` : '还没有扫描结果';
   const roots = Object.values(CFG.zones || {}).reduce((a, z) => a + z.length, 0);
   const unl = src.unlisted || {}, unlN = Object.values(unl).reduce((a, x) => a + ((x || {}).count || 0), 0);
   const prot = Object.values(st.protected_skipped || {}).reduce((a, x) => a + x, 0);
@@ -1519,7 +1556,7 @@ async function renderInventory() {
   if (em.movies !== undefined) h += kv('Emby 电影', `${n(em.movies)} 部 · ${esc(em.movie_rule || '')}`, 'green');
   if (st.hash_mode) h += kv('改名重复分组', st.hash_mode === 'sha1' ? '按 Sha1' : '按字节数');
   if (inv && inv.error_count) h += `<div class="warn-box">${n(inv.error_count)} 条提示：<br>${(inv.errors || []).slice(0, 12).map(esc).join('<br>')}</div>`;
-  $('#invInfo').innerHTML = h || '<div class="muted">还没有盘点结果。点右上角「重新盘点」。</div>';
+  $('#invInfo').innerHTML = h || '<div class="muted">还没有扫描结果。点右上角「扫描」。</div>';
 }
 function zoneOf(p) { for (const z in ZN) if ((CFG.zones[z] || []).includes(p)) return z; return ''; }
 function isLocked(name) { return [...(CFG.protect_names || []), ...(CFG.listpack_names || [])].some(w => w && name.includes(w)); }
@@ -1553,7 +1590,7 @@ async function loadTree(path) {
 }
 function markDirty() { BIND_DIRTY = true; $('#btnSaveBind').disabled = false; $('#bindHint').innerHTML = '<span class="t-amber">有改动待保存</span>'; }
 $('#btnSaveBind').onclick = async () => {
-  try { await putCfg(CFG, !!CFG._rmProtect); BIND_DIRTY = false; $('#btnSaveBind').disabled = true; $('#bindHint').textContent = '已保存；重新盘点后生效'; toast('绑定已保存'); renderInventory(); }
+  try { await putCfg(CFG, !!CFG._rmProtect); BIND_DIRTY = false; $('#btnSaveBind').disabled = true; $('#bindHint').textContent = '已保存；重新扫描后生效'; toast('绑定已保存'); renderInventory(); }
   catch (e) { toast(e.message); }
 };
 $('#btnSuggest').onclick = async () => {
@@ -1583,12 +1620,13 @@ async function putCfg(c, confirmRm) {
 }
 
 /* ============================== 清单 ============================== */
-const LIST = {f: {bucket: new Set(), stage: new Set(), cls: new Set(), flag: new Set()}, q: '', sort: 'gb', page: 0, rows: [], total: 0, all: 0, gb: 0, facets: {}, sel: new Set(), paths: null, pathsKey: '', open: null};
+const LIST = {f: {bucket: new Set(), stage: new Set(), tag: new Set(), cls: new Set(), flag: new Set()}, q: '', sort: 'gb', page: 0, rows: [], total: 0, all: 0, gb: 0, facets: {}, sel: new Set(), paths: null, pathsKey: '', open: null};
 const PAGE = 100;
-const FACET_GROUPS = [['stage', '模块'], ['bucket', '判定'], ['cls', '子类'], ['flag', '标记']];
+const FACET_GROUPS = [['bucket', '判定'], ['stage', '类别'], ['tag', '标签'], ['cls', '子类'], ['flag', '标记']];
 function facetLabel(g, k) {
   if (g === 'bucket') return bn(k);
   if (g === 'stage') return sn(k);
+  if (g === 'tag') return k;
   if (g === 'cls') { const [s, c] = k.split('|'); return sn(s) + ' · ' + cn(s, c); }
   return FLAG_NAME[k] || k;
 }
@@ -1614,7 +1652,9 @@ async function renderList(params) {
   await Promise.all([loadResult(), loadExec(), loadAppr()]);
   const r = RES;
   $('#listBanners').innerHTML = banners(r) + carryNote() + (r ? `<div class="alert">${ic('info')}<div>结果以 CD2 缓存时刻为准${execOn ? ' · 勾选后「批准，送入执行」，到执行页预演、执行' : ' · 现在是只读模式：可以筛选和导出清单。开启执行后，这里会出现批准按钮。'}</div></div>` : '');
-  $('#listSub').innerHTML = r ? `${esc(r.run_id)}<span class="dot-sep">·</span>${fmtTime(r.finished)}` : '还没有筛查结果';
+  $('#listSub').innerHTML = r ? `${esc(r.run_id)}<span class="dot-sep">·</span>${fmtTime(r.finished)}<span class="dot-sep">·</span>每条写着留哪份；同一部片的其他副本点开看整组` : '还没有扫描结果';
+  const nA = Object.keys(APPR.items || {}).length, ge = $('#btnGoExec');
+  if (ge) { ge.hidden = !(execOn && nA); ge.innerHTML = `${ic('play', 'sm')}去执行（已批准 ${n(nA)} 条）`; }
   await loadRows();
 }
 async function loadRows() {
@@ -1630,7 +1670,7 @@ async function loadRows() {
 function renderListStats() {
   const S = b => (RES && RES.summary || {})[b] || {count: 0, gb: 0};
   const kpi = (label, icon, num, sub, tone = '') => `<div class="card stat"><div class="stat-top"><span class="stat-label">${label}</span>${ic(icon)}</div><div class="stat-num ${tone}">${num}</div><div class="stat-sub">${sub}</div></div>`;
-  $('#listStats').innerHTML = kpi('入清单条目', 'db', n(LIST.all), '全部模块')
+  $('#listStats').innerHTML = kpi('入清单条目', 'db', n(LIST.all), '全部类别')
     + kpi('当前筛选', 'search', n(LIST.total), fmtGB(LIST.gb))
     + kpi(esc(bn('可切')), 'trash', n(S('可切').count), '约 ' + fmtGB(S('可切').gb), 't-green')
     + kpi('已勾选', 'check', n(LIST.sel.size), LIST.sel.size ? '跨页保留' : '勾选后可导出' + (execOn ? '或批准' : ''));
@@ -1685,7 +1725,7 @@ function rowChips(x) {
 function renderTable() {
   const tb = $('#tbody');
   $('#empty').hidden = !!LIST.rows.length;
-  if (!RES) { $('#emptyTitle').textContent = '还没有筛查结果'; $('#emptyText').textContent = '先到盘点页绑定分区，再一键跑筛。'; }
+  if (!RES) { $('#emptyTitle').textContent = '还没有扫描结果'; $('#emptyText').textContent = '先到扫描页点「扫描」。'; }
   else { $('#emptyTitle').textContent = '没有符合条件的结果'; $('#emptyText').textContent = '换个关键词，或清除筛选条件试试。'; }
   tb.innerHTML = LIST.rows.map((x, i) => {
     const picked = LIST.sel.has(x.path), keep = x.keep || '';
@@ -1793,6 +1833,27 @@ $('#btnApprove').onclick = async () => {
 function openDlg(i) { LIST.open = i; renderDlg(); $('#dlg').classList.add('open'); $('#scrim').classList.add('open'); $('#dlg').setAttribute('aria-hidden', 'false'); }
 function closeDlg() { LIST.open = null; $('#dlg').classList.remove('open'); $('#scrim').classList.remove('open'); $('#dlg').setAttribute('aria-hidden', 'true'); }
 $('#dClose').onclick = closeDlg; $('#scrim').onclick = closeDlg;
+const ROLE = {keep: ['保留', 't-green'], '版本型': ['也留（版本对）', 't-green'], '可切': ['可清理', ''], '待定': ['需人工确认', 't-amber'], locked: ['不碰（榜单 / 排除 / 多片合装）', 'muted']};
+const ZONE_SHORT = {heji: '合集区', yuanpan: '原盘区', remux: 'REMUX 区', pack: '整夹合集区'};
+const KIND_SHORT = {I: '原盘', D: 'DIY', R: 'REMUX', O: '压制'};
+const RES_SHORT = {U: '4K', H: '1080p', S: '720p 及以下', '?': '画质未知'};
+async function renderGroup(x) {
+  const w = $('#dGroupWrap');
+  w.hidden = !x.grp;
+  if (!x.grp) return;
+  $('#dGroup').innerHTML = '<div class="muted">读取中…</div>';
+  let g; try { g = await api('api/group/' + encodeURIComponent(x.grp) + (RES ? '?run_id=' + encodeURIComponent(RES.run_id) : '')); }
+  catch (e) { $('#dGroup').innerHTML = `<div class="muted">${esc(e.message)}</div>`; return; }
+  if (LIST.rows[LIST.open] !== x) return;
+  $('#dGroupHead').textContent = `这部片的全部副本（${g.members.length} 份 · ${g.title}）`;
+  const order = ['keep', '版本型', '可切', '待定', 'locked'];
+  const ms = [...g.members].sort((a, b) => order.indexOf(a.role) - order.indexOf(b.role) || b.gb - a.gb);
+  $('#dGroup').innerHTML = `<table class="grp-table"><tbody>${ms.map(m => {
+    const [rn, tone] = ROLE[m.role] || [m.role, ''];
+    return `<tr class="${m.path === x.path ? 'me' : ''}"><td class="role ${tone}">${esc(rn)}${m.path === x.path ? '<br><span class="muted">（这一条）</span>' : ''}</td>
+      <td>${esc(ZONE_SHORT[m.zone] || m.zone)} · ${esc(KIND_SHORT[m.kind] || m.kind)} · ${esc(RES_SHORT[m.res] || m.res)}${m.res_src === '体积推断' ? '*' : ''} · <span translate="no">${fmtGB(m.gb)}</span><div class="mono">${esc(m.path)}</div></td></tr>`;
+  }).join('')}</tbody></table><div class="muted" style="font-size:11.5px;margin-top:6px">先比分辨率，同分辨率再比来源（原盘 > DIY > REMUX > 压制），再比所在区和命名。* = 按体积推断。</div>`;
+}
 function renderDlg() {
   const x = LIST.rows[LIST.open]; if (!x) return;
   $('#dTitle').textContent = stripExt(baseName(x.path));
@@ -1807,6 +1868,7 @@ function renderDlg() {
   $('#dKeepSpecs').innerHTML = keep.startsWith('/') ? li('分区', esc(zoneOfPath(keep))) + (x.keep_gb ? li('大小', '<span translate="no">' + fmtGB(x.keep_gb) + '</span>') : '') : '';
   $('#dKeepPath').textContent = keep.startsWith('/') ? keep : '';
   $('#dReason').textContent = x.basis || '—';
+  renderGroup(x);
   const B = LB.buckets[x.bucket] || {};
   $('#dAction').innerHTML = `${esc(B.desc || '')}<br><b>${esc(B.action || '')}</b>`;
   const can = x.bucket === '可切' || x.bucket === '缺口';
@@ -2054,7 +2116,7 @@ function renderWizard() {
       <div class="wz-in"><input type="text" id="wzPath" class="mono" value="${esc(CFG.cd2_config)}" placeholder="/cd2-config"><button class="btn" type="button" id="wzCheck">识别</button></div><div id="wzRes"></div><div class="sec-foot" id="wzNav"></div>`;
   else if (st === 2) b.innerHTML = `<h2>${ic('db')}连 Emby</h2><p class="sec-sub">只填 Emby 的数据目录（Emby 后台「关于」页能看到原样路径）。Docker 部署时就是 compose 里挂进来的 /emby-data。</p>
       <div class="wz-in"><input type="text" id="wzPath" class="mono" value="${esc(CFG.emby_data)}" placeholder="/emby-data"><button class="btn" type="button" id="wzCheck">识别</button></div><div id="wzRes"></div><div class="sec-foot" id="wzNav"></div>`;
-  else b.innerHTML = `<h2>${ic('folder')}确认分区与保护</h2><p class="sec-sub">勾哪些文件夹，哪些才进对应分区；没勾的一律不纳入。只有名字很明确的才帮你预勾，其余在「未归类」里自己指定。之后在盘点页随时能改。</p><div id="wzRes" class="muted">读取目录…</div><div class="sec-foot" id="wzNav"></div>`;
+  else b.innerHTML = `<h2>${ic('folder')}确认分区与保护</h2><p class="sec-sub">勾哪些文件夹，哪些才进对应分区；没勾的一律不纳入。只有名字很明确的才帮你预勾，其余在「未归类」里自己指定。之后在扫描页最下面「目录绑定与保护」里随时能改。</p><div id="wzRes" class="muted">读取目录…</div><div class="sec-foot" id="wzNav"></div>`;
   const c = $('#wzCheck'); if (c) c.onclick = wzCheck;
   wzCheck();
 }
@@ -2072,7 +2134,7 @@ async function wzCheck() {
     else r = await api('api/setup/zones', {method: 'POST'});
   } catch (e) { r = {ok: false, error: '识别时出错了。', hint: '刷新页面再试；一直这样就看容器日志。'}; }
   WZ.r = r;
-  const nextLbl = WZ.mode === 'edit' ? '保存' : st === 3 ? '完成，去盘点' : '下一步';
+  const nextLbl = WZ.mode === 'edit' ? '保存' : st === 3 ? '完成，去扫描' : '下一步';
   if (!r.ok) {
     res.innerHTML = `<div class="err-box"><b>${esc(r.error)}</b>${r.hint ? '<br>' + esc(r.hint) : ''}</div>`;
     nav.innerHTML = back + cancel + (st === 2 ? '<button class="btn" type="button" id="wzSkip">暂不连 Emby</button><span class="hint">不连也能用，只是少了「对比 Emby」和「主库缺口」</span>' : '');
@@ -2113,9 +2175,9 @@ async function wzCheck() {
     (r.candidates || []).forEach(c => { const z = bound ? c.current : c.strong; if (z) WZ.zsel[c.path] = {zone: z, on: true}; });
     WZ.zopen = null;
     h = (r.candidates || []).length ? '<div id="wzZones"></div>'
-      : '<div class="warn-box">没在网盘里找到装着电影的目录（CD2 可能还没打开过）。点「完成」后在盘点页的目录树里手动绑定就行。</div>';
+      : '<div class="warn-box">没在网盘里找到装着电影的目录（CD2 可能还没打开过）。点「完成」后在扫描页最下面的「目录绑定与保护」里手动绑定就行。</div>';
     h += '<h3 style="margin:16px 0 6px;font-size:13px">保护目录（整个不看、不动）</h3>' + (r.protect_found.length ? r.protect_found.map(t => `<label class="path-row"><input type="checkbox" class="wzProt" value="${esc(t)}" checked>目录名含「${esc(t)}」的</label>`).join('')
-      : '<p class="muted" style="font-size:12.5px">没认出常见的保护目录。需要的话之后在盘点页加。</p>');
+      : '<p class="muted" style="font-size:12.5px">没认出常见的保护目录。需要的话之后在扫描页最下面加。</p>');
     if (r.listpack_found.length) h += `<h3 style="margin:16px 0 6px;font-size:13px">榜单包</h3><p class="muted" style="font-size:12.5px">这些按榜单包处理：留在统计里，但整包不筛。</p><div class="chipset">${r.listpack_found.map(p => `<span class="tag">${esc(p)}</span>`).join('')}</div>`;
   }
   res.innerHTML = h;
@@ -2136,7 +2198,7 @@ function shortPath(p) {
   if (name.length > 34) name = name.slice(0, 22) + '…' + name.slice(-8);
   return '/' + (segs.length > 3 ? [segs[0], segs[1], '…', name] : [...segs.slice(0, -1), name]).join('/');
 }
-const ZDESC = {yuanpan: '高画质参照，用来判断别处那份是不是多余', heji: '主要被筛的区，参加三刀', remux: '和原盘、主库对比', pack: '只参加跨区比对，不进三刀'};
+const ZDESC = {yuanpan: '高画质参照库，同档时优先留这里的', heji: '散放的合集，同一部片有更好的就可清理', remux: 'REMUX 单元，和其他区的副本一起比', pack: '整夹存放的合集（如 10-合集），按单元一起比'};
 const ZORDER = ['yuanpan', 'heji', 'remux', 'pack'];
 function renderWzZones() {
   const r = WZ.r, cands = r.candidates || [], cov = r.coverage || {}, sel = WZ.zsel;
@@ -2152,7 +2214,7 @@ function renderWzZones() {
     return `<div class="zgroup"><div class="zgroup-head"><b>${esc(ZN[z])}</b><span>${esc(ZDESC[z])}</span><span class="zcount">已勾 ${n(k)}</span></div>`
       + (rows.length ? rows.map(c => `<label class="zrow${sel[c.path].on ? '' : ' off'}"><input type="checkbox" data-zon="${esc(c.path)}" ${sel[c.path].on ? 'checked' : ''}>
           <div class="zmain"><div class="mono">${esc(c.path)}</div>${meta(c)}</div><button type="button" class="zmove" data-zout="${esc(c.path)}" title="放回未归类">移出</button></label>`).join('')
-        : `<div class="zempty">${z === 'pack' ? '没有。像「10-合集」这种整夹存放、只想参加跨区比对的，从下面「未归类」里指定到这里。' : '没有。从下面「未归类」里指定。'}</div>`) + '</div>';
+        : `<div class="zempty">${z === 'pack' ? '没有。像「10-合集」这种整夹存放的，从下面「未归类」里指定到这里。' : '没有。从下面「未归类」里指定。'}</div>`) + '</div>';
   }).join('');
   h += `<div class="zgroup"><div class="zgroup-head"><b>未归类</b><span>按网盘目录一层层展开，需要的指定一个分区；不指定就不纳入。灰色的是路过的目录，本身不能当分区</span></div>`
     + `<div class="ztree">${wzTreeHtml(cands, sel, meta)}</div></div>`;

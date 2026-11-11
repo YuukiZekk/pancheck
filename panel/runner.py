@@ -1,5 +1,5 @@
 """跑筛子进程：python -m panel.runner <mode> <run_dir>
-mode = inventory（只盘点）| full（盘点 + 三刀 + 纵向 + 剧集分流）
+mode = inventory（只盘点）| full（扫描：盘点 + 重复副本归组 + 主库对比 + 孤本 + 剧集分流）
 进度以 "@@P <json>" 行写 stdout；结果写 run_dir/result.json 与各类 CSV。
 内核 sieve.py 原样 import，读写都在 run_dir 里（内核按相对路径读五张 CSV）。
 """
@@ -68,6 +68,8 @@ def tv_split(cfg, files):
     return out
 
 
+MAIN_STAGE = '主库对比'
+LONE_STAGE = '孤本'
 CROSS_STAGE = '合集×REMUX'
 CROSS_BUCKET = {'A': '可切', 'B': '可切', 'C': '版本型', 'D': '待定', 'E': '待定'}
 KIND_NAME = {'D': 'DIY/特效字幕', 'I': '原盘', 'R': 'REMUX', 'O': '普通压制'}
@@ -126,7 +128,7 @@ def cross_heji_remux(cfg, cut_all, result):
     return out
 
 
-DUPE_STAGE = '原盘重复'
+DUPE_STAGE = '重复副本'          # 原盘区同名同大小：独立一条线，结果归到「重复副本」，带标签
 
 
 def yuanpan_dupes(result):
@@ -146,8 +148,8 @@ def yuanpan_dupes(result):
     out = []
     for x, keep, why in moves:
         where = '保护 / 保留优先目录' if why == 'top' else '更大的包「%s」' % (keep['pack'] or '分区根')
-        out.append(row(DUPE_STAGE, 'A', '可切', x['path'], x['size'] / GIB, keep=keep['path'],
-                       basis='同名同大小的另一份在%s，留那份' % where))
+        out.append(row(DUPE_STAGE, 'L1', '可切', x['path'], x['size'] / GIB, keep=keep['path'],
+                       basis='同名同大小的另一份在%s，留那份' % where, tags=['原盘同名同大小']))
     result['dupes'] = {'groups': len(dupes.groups(items)), 'all_protected': all_top, 'moves': len(out),
                        'gb': round(sum(r['gb'] for r in out), 1)}
     result['stats']['a2_l1'] = result['dupes']
@@ -231,7 +233,7 @@ def remux_x_yuanpan(cfg, rows, result):
     return out
 
 
-B7_STAGE = 'REMUX×主库'
+B7_STAGE = '主库对比'
 B7_BUCKET = {'A': '可切', 'D1': '待定', 'D2': '待定', 'W': '提醒'}
 TR = {'U': 3, 'H': 2, 'S': 1}
 
@@ -317,7 +319,7 @@ def remux_vs_mainlib(cfg, rows, result):
     return out
 
 
-HIDDEN_STAGE = '同字节重复'
+HIDDEN_STAGE = '重复副本'        # 同字节：独立一条线（口径不变），结果归到「重复副本」，带标签
 
 
 def hidden_dupes(cfg, rows, result):
@@ -349,8 +351,8 @@ def hidden_dupes(cfg, rows, result):
     groups = dupes.hidden_groups(items, cross.keyof)
     moves, st = dupes.plan_hidden(groups, held, gone=lambda p: p in cut)
     how = 'Sha1 完全一致' if use_sha1 else '字节数完全一致'
-    out = [row(HIDDEN_STAGE, 'A', '可切', x['path'], x['size'] / GIB, keep=k['path'],
-               basis='和保留的那份%s、只是名字不同；留规格标注更全 / 已刮削的那份' % how) for x, k in moves]
+    out = [row(HIDDEN_STAGE, 'SHA', '可切', x['path'], x['size'] / GIB, keep=k['path'],
+               basis='和保留的那份%s、只是名字不同；留规格标注更全 / 已刮削的那份' % how, tags=['同字节']) for x, k in moves]
     result['hidden'] = dict(st, key='sha1' if use_sha1 else 'size', moves=len(out),
                             move_groups=len({id(k) for _, k in moves}), gb=round(sum(r['gb'] for r in out), 1))
     result['stats']['a2_l2'] = result['hidden']
@@ -378,65 +380,50 @@ def main(mode, run_dir):
         return
 
     import sieve
+    from . import groups as G
     rows = []
-    emit('stage1', '比对合集与原盘', 20)
-    s1 = sieve.stage1()
-    for cls, path, g, ypath, ygb, pt, yt in s1:
-        rows.append(row('第一刀', cls, S1[cls], path, g, keep=ypath,
-                        basis='%s：这份 %s，原盘区 %s（%sGB）' % (S1_DESC[cls], L.tier(pt), L.tier(yt), ygb)))
-    cut1 = {r[1] for r in s1 if r[0] in ('A', 'B')}
-
-    emit('stage2', '查找合集内重复', 40)
-    s2A, s2B, held = sieve.stage2(cut1)
-    for cls, path, g, keep in s2A:
-        rows.append(row('第二刀', cls, '可切', path, g, keep=keep, basis='合集里同一部片有更好的一份，保留那份'))
-    for cls, path, g, keep in s2B:
-        rows.append(row('第二刀', cls, '版本型', path, g, keep=keep, basis='DIY/特效字幕版与普通版，或剪辑版本不同'))
-    all2 = s2A + s2B
-
-    emit('stage3', '检查小体积低画质文件', 60)
-    emby_tmdb, emby_title = sieve.load_emby()
-    s3A, s3B, lone, popn = sieve.stage3(s1, all2, emby_tmdb)
-    for cls, path, g, basis, keep in s3A:
-        rows.append(row('第三刀', cls, '可切', path, g, keep=keep, basis=L.plain_basis(basis)))
-    for cls, path, g, basis, keep in s3B:
-        rows.append(row('第三刀', cls, '待定', path, g, keep=keep, basis=L.plain_basis(basis)))
-    for x in lone:
-        rows.append(row('第三刀', '孤本', '孤本', x['path'], x['gb'], basis='原盘区、合集、Emby 片库里都没有别的副本'))
-
-    emit('vertical', '对比 Emby 片库', 75)
-    cut_all = cut1 | {r[1] for r in s2A} | {r[1] for r in s3A}
-    for cls, path, g, note in sieve.vertical(cut_all, emby_tmdb, emby_title):
-        # 「库内无此片」单列为主库缺口（只改面板分类，内核判定与条数不变）
-        # 规则 2（第二期 B1）：主库（Emby）已有、且不差于这份（TMDB 精确命中、同档或更好）→ 多余；只改面板分类，内核判定不变
-        if cls == '库内已有同档+':
-            rows.append(row('纵向', cls, '可切', path, g, keep='Emby 主库', basis=L.plain_basis(note) + '，这份不比库里的好'))
-        else:
-            rows.append(row('纵向', cls, '缺口' if cls == '入库提醒' else '提醒', path, g, basis=L.plain_basis(note)))
-
-    emit('cross', '比对合集与 REMUX', 80)
-    rows += cross_heji_remux(cfg, cut_all, result)
-
-    emit('dupes', '查找原盘区完全重复', 83)
+    emit('dupes', '查找原盘区完全重复', 20)
     rows += yuanpan_dupes(result)
+    l1 = {r['path'] for r in rows}
 
-    emit('hidden', '查找改了名的完全重复', 84)
+    emit('groups', '把同一部片的副本归组', 35)
+    grows, gout, gst, gs = G.scan(cfg, gone=l1)
+    rows += grows
+    result['groups'] = gst
+    result['stats']['groups'] = gst
+    with open(os.path.join(run_dir, 'groups.json'), 'w', encoding='utf-8') as f:
+        json.dump(gout, f, ensure_ascii=False)
+
+    emit('vertical', '对比 Emby 片库', 60)
+    emby_tmdb, emby_title = sieve.load_emby()
+    cut_all = {r['path'] for r in rows if r['bucket'] == '可切'}
+    vert_cut = set()
+    for cls, path, g, note in sieve.vertical(cut_all, emby_tmdb, emby_title):
+        # 主库（Emby）已有、且不差于这份（TMDB 精确命中、同档或更好）→ 多余；库里没有 → 主库缺口
+        if cls == '库内已有同档+':
+            vert_cut.add(path)
+            rows.append(row(MAIN_STAGE, cls, '可切', path, g, keep='Emby 主库', basis=L.plain_basis(note) + '，这份不比库里的好'))
+        else:
+            rows.append(row(MAIN_STAGE, cls, '缺口' if cls == '入库提醒' else '提醒', path, g, basis=L.plain_basis(note)))
+
+    # 孤本（口径同原小文件层）：合集区小文件、全库只有这一份、主库里也没有同档以上的
+    lone = [x for x in G.lone_small(gs) if x['path'] not in vert_cut]
+    for x in lone:
+        rows.append(row(LONE_STAGE, '孤本', '孤本', x['path'], x['gb'], basis='原盘区、合集、REMUX 区、Emby 片库里都没有别的副本'))
+
+    emit('hidden', '查找改了名的完全重复', 75)
     rows += hidden_dupes(cfg, rows, result)
 
-    emit('a3', '比对 REMUX 与原盘', 85)
-    rows += remux_x_yuanpan(cfg, rows, result)
-
-    emit('b7', '比对 REMUX 与主库', 86)
+    emit('b7', '比对 REMUX 与主库', 82)
     rows += remux_vs_mainlib(cfg, rows, result)
 
     emit('tvsplit', '识别混入的剧集', 85)
-    # 第一期分流只出清单、不摘刀口行：刀口各桶保持内核原样（已对金标准），两边互斥留到第二期执行时处理
     rows += tv_split(cfg, files)
 
-    # 用户追加的排除词：第二/三刀与纵向不碰（与内核内置 EXCL 同口径）
+    # 用户追加的排除词：主库对比与孤本不碰（重复副本在归组时已处理：命中的副本可当保留份，自己不进可清理）
     extra_ex = [x for x in cfg['exclude_names'] if x not in C.BUILTIN_EXCLUDE]
     if extra_ex:
-        rows = [r for r in rows if not (r['stage'] in ('第二刀', '第三刀', '纵向')
+        rows = [r for r in rows if not (r['stage'] in (MAIN_STAGE, LONE_STAGE)
                                         and sources.hit_any(r['path'], extra_ex))]
 
     # 与扫描剪枝同一口径：只看目录组件，单片夹夹名与文件名里的简介字样不算
@@ -480,8 +467,7 @@ def main(mode, run_dir):
             kg = gb_of.get(k) or gb_dir.get(k)
             if kg:
                 r['keep_gb'] = round(kg, 2)
-    result['held_stage2'] = held
-    result['stage3_population'] = popn
+    result['engine'] = 2
 
     emit('export', '写出清单', 92)
     summary = defaultdict(lambda: {'count': 0, 'gb': 0.0})

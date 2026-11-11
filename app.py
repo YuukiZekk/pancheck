@@ -203,7 +203,8 @@ def _name_key(r):
 FLAGS = {'infer': lambda r: '按体积推断' in (r.get('basis') or ''), 'roujiang': lambda r: bool(r.get('flag')),
          'whole': lambda r: r.get('move') == '整夹', 'file': lambda r: r.get('move') == '单文件'}
 FACET_KEY = {'bucket': lambda r: [r['bucket']], 'stage': lambda r: [r['stage']],
-             'cls': lambda r: ['%s|%s' % (r['stage'], r['cls'])], 'flag': lambda r: [k for k, f in FLAGS.items() if f(r)]}
+             'cls': lambda r: ['%s|%s' % (r['stage'], r['cls'])], 'flag': lambda r: [k for k, f in FLAGS.items() if f(r)],
+             'tag': lambda r: r.get('tags') or []}
 
 
 def _sel(v):
@@ -218,9 +219,9 @@ def _q_ok(r, q):
     return not q or q in r['path'].lower() or q in (r.get('keep') or '').lower() or q in (r.get('flag') or '').lower()
 
 
-def filter_rows(rows, bucket='', stage='', cls='', q='', flag=''):
+def filter_rows(rows, bucket='', stage='', cls='', q='', flag='', tag=''):
     q = (q or '').strip().lower()
-    want = {'bucket': _sel(bucket), 'stage': _sel(stage), 'flag': _sel(flag),
+    want = {'bucket': _sel(bucket), 'stage': _sel(stage), 'flag': _sel(flag), 'tag': _sel(tag),
             'cls': {c if '|' in c else c for c in _sel(cls)}}
     # 兼容旧调用：cls 只给了判定码（没有「来源|」）时按判定码匹配
     bare = {c for c in want['cls'] if '|' not in c}
@@ -229,9 +230,9 @@ def filter_rows(rows, bucket='', stage='', cls='', q='', flag=''):
     return [r for r in rows if all(_match(r, g, w) for g, w in want.items()) and (not bare or r['cls'] in bare) and _q_ok(r, q)]
 
 
-def facet_counts(rows, bucket='', stage='', cls='', q='', flag=''):
+def facet_counts(rows, bucket='', stage='', cls='', q='', flag='', tag=''):
     """每组的计数 = 其他组的条件都生效、本组不限时的分布（OpenStatus 式联动）。"""
-    args = {'bucket': bucket, 'stage': stage, 'cls': cls, 'flag': flag}
+    args = {'bucket': bucket, 'stage': stage, 'cls': cls, 'flag': flag, 'tag': tag}
     out = {}
     for g in FACET_KEY:
         rs = filter_rows(rows, q=q, **dict(args, **{g: ''}))
@@ -554,7 +555,7 @@ def run(mode: str):
         raise HTTPException(404)
     c = C.load()
     if c['data_source'] != 'csv' and not any(c['zones'][z] for z in ('heji', 'yuanpan')):
-        raise HTTPException(400, '先在「盘点」页至少指定一个合集区或原盘区目录')
+        raise HTTPException(400, '先在「设置」里至少指定一个合集区或原盘区目录（重新走一遍首次设置也行）')
     return JOB.start(mode)
 
 
@@ -622,12 +623,12 @@ def result(run_id: str = ''):
 
 @app.get('/api/rows')
 def rows(bucket: str = '', stage: str = '', cls: str = '', q: str = '', flag: str = '', offset: int = 0, limit: int = 100,
-         sort: str = 'gb', run_id: str = '', facets: int = 0):
+         sort: str = 'gb', run_id: str = '', facets: int = 0, tag: str = ''):
     res, d = load_run(run_id or None)
     if not res:
         return {'total': 0, 'gb': 0, 'rows': [], 'all': 0, 'facets': {}, 'kept_hidden': {'count': 0, 'gb': 0}}
     allrows, hidden = shown_rows(d)
-    rs = filter_rows(allrows, bucket, stage, cls, q, flag)
+    rs = filter_rows(allrows, bucket, stage, cls, q, flag, tag)
     if sort in ('gb', 'gb_desc'):
         rs = sorted(rs, key=lambda r: -r['gb'])
     elif sort == 'gb_asc':
@@ -640,24 +641,41 @@ def rows(bucket: str = '', stage: str = '', cls: str = '', q: str = '', flag: st
     out = {'total': len(rs), 'gb': round(sum(r['gb'] for r in rs), 1), 'rows': rs[offset:offset + limit], 'all': len(allrows),
            'kept_hidden': _hidden_info(hidden)}
     if facets:
-        out['facets'] = facet_counts(allrows, bucket, stage, cls, q, flag)
+        out['facets'] = facet_counts(allrows, bucket, stage, cls, q, flag, tag)
     return out
 
 
+@app.get('/api/group/{gid}')
+def group_detail(gid: str, run_id: str = ''):
+    """重复副本的一整组：保留份、版本对、可清理、需人工确认、不碰的，一次看全。"""
+    res, d = load_run(run_id or None)
+    if not res:
+        raise HTTPException(404, '还没有扫描结果')
+    f = d / 'groups.json'
+    if not f.exists():
+        raise HTTPException(404, '这一轮没有分组信息（旧版结果，重新扫描后才有）')
+    g = json.loads(f.read_text(encoding='utf-8')).get(gid)
+    if not g:
+        raise HTTPException(404, '没有这个组')
+    return g
+
+
 @app.get('/api/rows/paths')
-def rows_paths(bucket: str = '', stage: str = '', cls: str = '', q: str = '', flag: str = '', run_id: str = ''):
+def rows_paths(bucket: str = '', stage: str = '', cls: str = '', q: str = '', flag: str = '', run_id: str = '', tag: str = ''):
     """「全选」作用于当前筛选的全部结果（跨页）：返回全部匹配路径。"""
     res, d = load_run(run_id or None)
     if not res:
         return {'paths': []}
-    return {'paths': list(dict.fromkeys(r['path'] for r in filter_rows(shown_rows(d)[0], bucket, stage, cls, q, flag)))}
+    return {'paths': list(dict.fromkeys(r['path'] for r in filter_rows(shown_rows(d)[0], bucket, stage, cls, q, flag, tag)))}
 
 
 # 导出给人看：分类/来源/判定用白话名，最后一列保留内部叫法便于对账
 COLS = [('分类', lambda r: L.bucket(r['bucket'])), ('能不能动', lambda r: L.BUCKETS.get(r['bucket'], ('', '', ''))[2]),
-        ('来源', lambda r: L.stage(r['stage'])), ('判定', lambda r: L.cls(r['stage'], r['cls'])),
+        ('类别', lambda r: L.stage(r['stage'])), ('判定', lambda r: L.cls(r['stage'], r['cls'])),
+        ('标签', lambda r: ' / '.join(r.get('tags') or [])),
         ('候选路径', lambda r: r['path']), ('GB', lambda r: r['gb']), ('保留的那份 / 参照', lambda r: r.get('keep', '')),
-        ('依据', lambda r: r.get('basis', '')), ('内部分类', lambda r: '%s/%s/%s' % (r['bucket'], r['stage'], r['cls']))]
+        ('依据', lambda r: r.get('basis', '')), ('组号', lambda r: r.get('grp', '')),
+        ('内部分类', lambda r: '%s/%s/%s' % (r['bucket'], r['stage'], r['cls']))]
 
 
 def _csv_bytes(rs):
@@ -679,7 +697,7 @@ def _export_guard(res, buckets):
 def _export_resp(res, rs, label, fmt):
     _export_guard(res, {r['bucket'] for r in rs})
     if fmt == 'json':
-        body = json.dumps([dict(r, 分类=L.bucket(r['bucket']), 来源=L.stage(r['stage']), 判定=L.cls(r['stage'], r['cls']))
+        body = json.dumps([dict(r, 分类=L.bucket(r['bucket']), 类别=L.stage(r['stage']), 判定=L.cls(r['stage'], r['cls']))
                            for r in rs], ensure_ascii=False, indent=1).encode('utf-8')
         name, mt = 'sieve_%s_%s.json' % (res['run_id'], label), 'application/json; charset=utf-8'
     else:
@@ -688,11 +706,12 @@ def _export_resp(res, rs, label, fmt):
 
 
 @app.get('/api/export')
-def export(bucket: str = '', stage: str = '', cls: str = '', q: str = '', flag: str = '', run_id: str = '', fmt: str = 'csv'):
+def export(bucket: str = '', stage: str = '', cls: str = '', q: str = '', flag: str = '', run_id: str = '', fmt: str = 'csv',
+           tag: str = ''):
     res, d = load_run(run_id or None)
     if not res:
         raise HTTPException(404, '还没有筛选结果')
-    rs = sorted(filter_rows(shown_rows(d)[0], bucket, stage, cls, q, flag), key=lambda r: -r['gb'])
+    rs = sorted(filter_rows(shown_rows(d)[0], bucket, stage, cls, q, flag, tag), key=lambda r: -r['gb'])
     return _export_resp(res, rs, L.bucket(bucket) if bucket else '全部', fmt)
 
 
@@ -733,8 +752,8 @@ def export_zip(run_id: str = ''):
             # 不静默扣下：包里放一份说明，和页面上弹出的原因一致
             z.writestr('_未包含「可清理」的原因.txt', ('\ufeff' + skip_reason + '\r\n').encode('utf-8'))
         z.writestr('summary.json', json.dumps({k: res.get(k) for k in (
-            'run_id', 'fingerprint', 'stale', 'rejected', 'summary', 'detail', 'held_stage2',
-            'stage3_population', 'protect_violations')}, ensure_ascii=False, indent=2))
+            'run_id', 'fingerprint', 'stale', 'rejected', 'summary', 'detail', 'groups', 'engine',
+            'held_stage2', 'stage3_population', 'protect_violations')}, ensure_ascii=False, indent=2))
     mem.seek(0)
     return StreamingResponse(mem, media_type='application/zip', headers={
         'Content-Disposition': "attachment; filename*=UTF-8''" + _q('sieve_%s.zip' % res['run_id'])})
