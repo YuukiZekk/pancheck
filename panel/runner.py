@@ -97,12 +97,11 @@ def cross_heji_remux(cfg, cut_all, result):
     if not rem:
         result['cross'] = {'skipped': '没有 REMUX 区单元'}
         return []
-    extra = [x for x in cfg['exclude_names'] if x not in C.BUILTIN_EXCLUDE] + \
-            [x for x in cfg['listpack_names'] if x not in C.BUILTIN_LISTPACK]
+    extra = [x for x in cfg['exclude_names'] if x not in C.BUILTIN_EXCLUDE]
     hj, n_cut = [], 0
     for r in csv.DictReader(open('heji_films.csv', encoding='utf-8-sig')):
         p = r['路径']
-        if any(b in p for b in sieve.BANGDAN) or any(e in p for e in sieve.EXCL) or sources.hit_any(p, extra):
+        if sources.lp_path(p, cfg) or any(e in p for e in sieve.EXCL) or sources.hit_any(p, extra):
             continue
         if p in cut_all:
             n_cut += 1
@@ -381,6 +380,7 @@ def main(mode, run_dir):
 
     import sieve
     from . import groups as G
+    sieve.LP_OFF = tuple(cfg.get('listpack_off') or ())          # 用户点过「不算榜单包」的目录
     rows = []
     emit('dupes', '查找原盘区完全重复', 20)
     rows += yuanpan_dupes(result)
@@ -430,9 +430,9 @@ def main(mode, run_dir):
     unit_dirs = sources.film_unit_dirs([f[1] for f in files])
 
     # 用户追加的榜单包名（内核不认识）：榜单包留在人口里，但任何一刀的结论都不出
-    extra_lp = [x for x in cfg['listpack_names'] if x not in C.BUILTIN_LISTPACK]
+    extra_lp = list(cfg['listpack_names'])
     if extra_lp:
-        rows = [r for r in rows if r['stage'] == '剧集分流' or not sources.listpack_hit(r['path'], extra_lp, cfg)]
+        rows = [r for r in rows if r['stage'] == '剧集分流' or not sources.listpack_hit(r['path'], extra_lp, cfg, rule=False)]
 
     # 红线：可切里只要有一条落在保护区/榜单包，整批拒绝（不部分放行）
 

@@ -169,6 +169,34 @@ def list_dirs(cfg, vpath='/'):
     return [{'name': n, 'path': pre + '/' + n} for n in names]
 
 
+_unopened = {'key': None, 'dirs': None}
+
+
+def unopened_dirs(cfg):
+    """CD2 从没打开过的目录（虚拟路径集合）：父目录列过、所以 files 里有它这一行（文件夹），但它自己没有 cached_item 行。
+    这类目录里有什么面板不知道——向导里写「CD2 还没打开过，内容未知」，和「没有电影」分开说。"""
+    db = find_db(cfg)
+    api_sql, api_args = _api_where(cfg)
+    key = (db, _stamp(db), tuple(api_args))
+    with _tree_lock:
+        if _unopened['key'] == key:
+            return _unopened['dirs']
+    conn, _ = S.open_ro(db)
+    try:
+        listed = {(p or '').rstrip('/') for (p,) in conn.execute('select path from cached_item')}
+        out = set()
+        for ppath, name in conn.execute('select ci.path, f.name from files f join cached_item ci on ci.id = f.parent_id '
+                                        'where f.file_type = 3 and ' + api_sql, api_args):
+            vp = (ppath or '').rstrip('/') + '/' + name
+            if vp not in listed:
+                out.add(vp)
+    finally:
+        conn.close()
+    with _tree_lock:
+        _unopened.update(key=key, dirs=out)
+    return out
+
+
 def dir_exists(cfg, vpath):
     """缓存里有没有这个目录（被列过，或作为某个被列过目录的上层出现过）。"""
     ch = _children_map(cfg)

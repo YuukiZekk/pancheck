@@ -69,7 +69,29 @@ def ident(name):
             t = ''
     if t in S.PURE or S.title_suspect(t, year):
         t = ''
+    # 剧集的不同季 / 全 N 季合集不是同一部片（反馈 19 放开裸「豆瓣」后露出来的：嗜血法医 第2季 被当成 第1季 的重复）
+    se = season_of(name)
+    if se:
+        t = t and t + '~' + se
+        tm = tm and tm + '~' + se
     return tm, t, year
+
+
+_CN_NUM = {'一': '1', '二': '2', '三': '3', '四': '4', '五': '5', '六': '6', '七': '7', '八': '8', '九': '9', '十': '10'}
+_SEASON = re.compile(r'(?i)(全)\s*([\d一二三四五六七八九十]+)\s*季|第\s*([\d一二三四五六七八九十]+)\s*季'
+                     r'|(?<![a-z0-9])season[\s._]*(\d{1,2})(?![0-9])|(?<![a-z0-9])s(\d{1,2})(?![0-9]|\s*[._]?e\d)(?![a-z])')
+
+
+def season_of(name):
+    """名字里的季号 → 's2' / 'all6'；没有返回 ''。只认「第 N 季 / Season N / S02（后面不跟集号）/ 全 N 季」。"""
+    m = _SEASON.search(name or '')
+    if not m:
+        return ''
+    if m.group(1):
+        return 'all' + _CN_NUM.get(m.group(2), m.group(2))
+    v = next(g for g in m.groups()[2:] if g)
+    v = _CN_NUM.get(v, v)
+    return 's' + str(int(v)) if v.isdigit() else 's' + v
 
 
 # ---------------- 特效字幕版识别（反馈 16）----------------
@@ -332,7 +354,8 @@ def copies(cfg, gone=frozenset()):
             form = 'ISO' if mn.lower().endswith('.iso') else ('BDMV' if '.' not in mn[-6:] else 'FILE')
             g = float(u['单元总GB']) * 1e9 / GIB                 # 单元体积是 1000 进制，换回 115 口径
             out.append(dict(zone=u['分区'], path=u['路径'], name=u['电影'], main_name=mn, form=form, gb=g, mgb=g, vh=None))
-    extra = [x for x in cfg['exclude_names']] + [x for x in cfg['listpack_names']]
+    extra = [x for x in cfg['exclude_names']]
+    S.LP_OFF = tuple(cfg.get('listpack_off') or ())
     hit = subfx_matcher(cfg.get('subfx_groups') or [])
     res = []
     gone_dirs = {g.rsplit('/', 1)[0] for g in gone}            # 被判掉的文件所在的夹：整夹那一份也不再参与
@@ -340,7 +363,7 @@ def copies(cfg, gone=frozenset()):
         if c['path'] in gone or c['path'] in gone_dirs:
             continue
         p = c['path']
-        c['locked'] = bool(any(b in p for b in S.BANGDAN) or any(e in p for e in S.EXCL) or sources.hit_any(p, extra))
+        c['locked'] = bool(sources.lp_path(p, cfg) or any(e in p for e in S.EXCL) or sources.hit_any(p, extra))
         c['multi'] = bool(_MULTI.search(S.SPEC_CUT.sub(' ', c['name'])))           # 一份里装着几部片（红气球+白鬃野马）：可当保留份，自己不搬
         c['locked'] = c['locked'] or c['multi']
         c['subfx'] = subfx_reason(c['name'] + ' ' + c['main_name'], hit)

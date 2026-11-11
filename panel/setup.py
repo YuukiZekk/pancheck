@@ -204,8 +204,42 @@ def _tree(cfg, max_depth=4, max_dirs=3000):
     return kids, seen >= max_dirs
 
 
-def zone_candidates(cfg, max_depth=3):
+# 反馈 20：不合格的目录不再凭空消失，置灰并写原因（顶层全列；规则隐藏的在任何层都留一行灰字）
+OFF_WHY = {
+    'hidden': '按规则隐藏：像是别的工具的工作区 / 回收站 / 排查区，本身和下面都不扫',
+    'quarantine': '面板的排查区：本身和下面都不扫',
+    'mainlib': '面板的主库目录（主库缺口挪去这里），不当分区',
+    'unique': '面板的唯一副本目录，不当分区',
+    'unknown': 'CD2 还没打开过，内容未知——去 CD2 里把它点开一次，回来点「刷新」就能看到',
+    'staging': '待整理 / 下载类目录，本身不当分区；下层够格的照常列出',
+    'few': '部片太少（不到 %d 部），像是一部片 / 一部剧的夹，不当分区' % MIN_UNITS,
+    'empty': '下面没有文件夹，像是一部片的夹，不当分区',
+}
+
+
+def _own_dirs(cfg):
+    return [('/' + cfg[k].strip('/'), z) for k, z in (('quarantine_dir', 'quarantine'), ('main_lib_dir', 'mainlib'),
+                                                       ('unique_dir', 'unique')) if (cfg.get(k) or '').strip('/')]
+
+
+def _full_tree(cfg):
+    """→ (kids, unopened, truncated)。缓存模式把「列过的父目录里出现、但自己没打开过」的目录也补进树里。"""
     kids, truncated = _tree(cfg)
+    unopened = set()
+    if cfg.get('data_source') == 'cache':
+        from . import cd2cache
+        unopened = cd2cache.unopened_dirs(cfg)
+        if unopened:
+            kids = {k: set(v) for k, v in kids.items()}
+            for vp in unopened:
+                par, _, nm = vp.rpartition('/')
+                kids.setdefault(par or '/', set()).add(nm)
+            kids = {k: sorted(v) for k, v in kids.items()}
+    return kids, unopened, truncated
+
+
+def zone_candidates(cfg, max_depth=3, tree=None):
+    kids, unopened, truncated = tree or _full_tree(cfg)
     cache = cfg.get('data_source') == 'cache'
     units, tops = None, None
     if cache:
@@ -213,33 +247,49 @@ def zone_candidates(cfg, max_depth=3):
         units = cd2cache.work_dirs(cd2cache.unit_dirs(cfg))
         tops = cd2cache.api_tops(cfg)
     current = {p: z for z, ps in cfg['zones'].items() for p in ps}
-    # 面板自己的去处（排查区 / 主库 / 唯一副本目录）绝不能当分区：本身和下面都不列
-    own = ['/' + d.strip('/') for d in (cfg.get('quarantine_dir'), cfg.get('main_lib_dir'), cfg.get('unique_dir')) if d and d.strip('/')]
+    # 面板自己的去处（排查区 / 主库 / 唯一副本目录）绝不能当分区：本身留一行灰字，下面不列
+    own = _own_dirs(cfg)
     out, queue = [], [('/', 0)]
     while queue:
         path, depth = queue.pop(0)
         for name in kids.get(path, ()):
             vp = ('' if path == '/' else path) + '/' + name
             core = _core(name)
-            if _has(core, JUNK) or any(vp == d or vp.startswith(d + '/') for d in own):
-                continue                                      # 连同下面整棵都不列
-            if depth + 1 < max_depth:
-                queue.append((vp, depth + 1))
             if depth == 0 and (tops is None or name in tops):
+                queue.append((vp, depth + 1))
                 continue                                      # 网盘根（/115）本身不当分区
             if tops is not None and vp.strip('/').split('/', 1)[0] not in tops:
                 continue                                      # 缓存里别的网盘
-            if _has(core, NOT_ZONE) and vp not in current:
-                continue
             sub = len(kids.get(vp, ()))
             n_units = cd2cache.count_units(units, vp) if units is not None else None
-            if vp not in current and (sub == 0 if vp in kids or cache else False):
-                continue                                      # 没有下层文件夹：一部片 / 一季剧
-            if vp not in current and n_units is not None and n_units < MIN_UNITS:
+            base = {'path': vp, 'subdirs': sub, 'units': n_units, 'strong': None, 'hint': '', 'current': current.get(vp)}
+            ok = next((z for d, z in own if vp == d), None)
+            if ok or (_has(core, JUNK) and vp not in current):
+                out.append(dict(base, off=ok or 'hidden'))   # 连同下面整棵都不列
+                continue
+            if any(vp.startswith(d + '/') for d, _ in own):
+                continue
+            if depth + 1 < max_depth:
+                queue.append((vp, depth + 1))
+            off = None
+            if vp in current:
+                pass
+            elif vp in unopened:
+                off = 'unknown'
+            elif _has(core, NOT_ZONE):
+                off = 'staging'
+            elif sub == 0 and (vp in kids or cache):
+                off = 'empty'                                 # 没有下层文件夹：一部片 / 一季剧
+            elif n_units is not None and n_units < MIN_UNITS:
+                off = 'few'
+            if off:
+                if depth == 1:                                # 顶层全列；更深的不合格目录不单列（太多），靠上层的说明交代
+                    out.append(dict(base, off=off))
                 continue
             strong, hint = zone_guess(vp)
-            out.append({'path': vp, 'subdirs': sub, 'units': n_units, 'strong': strong, 'hint': hint,
-                        'current': current.get(vp)})
+            if strong and _has(name, S.PROTECT_TEMPLATES + list(cfg['protect_names'])):
+                strong = None                                 # 「01-系列电影合集」这类是保护目录，不预勾成分区
+            out.append(dict(base, strong=strong, hint=hint))
     # 已绑定、但不在前三层里的分区也要列出来（向导「完成」时按勾选结果整组覆盖，不能把它们丢了）
     listed = {c['path'] for c in out}
     for vp, z in current.items():
@@ -250,29 +300,100 @@ def zone_candidates(cfg, max_depth=3):
     # 高置信的父目录已预勾时，子目录不再预勾（同一片区不重复绑）
     picked = []
     for c in sorted(out, key=lambda c: c['path']):
+        if c.get('off'):
+            continue
         if c['strong'] and not c['current'] and any(c['path'].startswith(p + '/') for p in picked):
             c['strong'] = None
         elif c['strong'] or c['current']:
             picked.append(c['path'])
-    out.sort(key=lambda c: (-(c['units'] or 0), c['path']))
+    for c in out:
+        if c.get('off'):
+            c['why'] = OFF_WHY[c['off']]
+    out.sort(key=lambda c: (bool(c.get('off')), -(c['units'] or 0), c['path']))
     return out, truncated
 
 
+def _walk(kids, cfg, max_seg=5):
+    """目录树按层遍历（网盘根算第 1 段，最多 max_seg 段），跳过规则隐藏和面板自己的去处。→ [(路径, 名字)]"""
+    own = [d for d, _ in _own_dirs(cfg)]
+    out, queue = [], ['/']
+    while queue:
+        path = queue.pop(0)
+        for name in kids.get(path, ()):
+            vp = ('' if path == '/' else path) + '/' + name
+            if _has(_core(name), JUNK) or any(vp == d or vp.startswith(d + '/') for d in own):
+                continue
+            out.append((vp, name))
+            if vp.count('/') < max_seg:
+                queue.append(vp)
+    return out
+
+
+def protect_scan(cfg, kids, max_seg=5):
+    """反馈 19：保护目录（系列电影合集、出品公司…）多在分区根的下一层，按名字往下多看两层；
+    只看「装着好几部片」的目录，免得片名里的「收藏版」被当保护目录。→ {模板词: [示例路径]}"""
+    units = None
+    if cfg.get('data_source') == 'cache':
+        from . import cd2cache
+        units = cd2cache.work_dirs(cd2cache.unit_dirs(cfg))
+    found = {}
+    for vp, name in _walk(kids, cfg, max_seg):
+        t = next((t for t in S.PROTECT_TEMPLATES if t in name), None)
+        if not t or t in cfg['protect_names'] or any(vp.startswith(p + '/') for ps in found.values() for p in ps):
+            continue
+        if any(S.hit_any(comp, cfg['protect_names']) for comp in vp.strip('/').split('/')[:-1]):
+            continue                                          # 上层已经是保护目录了，不再单提
+        if units is not None and cd2cache.count_units(units, vp) < 2:
+            continue
+        if units is None and not kids.get(vp):
+            continue
+        found.setdefault(t, [])
+        if len(found[t]) < 3:
+            found[t].append(vp)
+    return found
+
+
+def listpack_scan(cfg, kids, max_seg=5):
+    """反馈 19：自动认出的榜单包（内置组合词规则 + 用户追加的名字），每条带来源，界面上可逐条移除。
+    上层已算榜单包的，下层不再单列。用户移除过的（listpack_off）也列出来，能加回去。"""
+    import sieve
+    out = []
+    for vp, name in _walk(kids, cfg, max_seg):
+        if any(vp.startswith(o['path'] + '/') for o in out):
+            continue
+        w, by = sieve.listpack_word(name), 'rule'
+        if not w:
+            w, by = S.hit_any(name, cfg['listpack_names']), 'name'
+        if w:
+            out.append({'path': vp, 'word': w, 'by': by, 'off': bool(S.lp_off(vp, cfg))})
+    listed = {o['path'] for o in out}
+    out += [{'path': p, 'word': '', 'by': 'rule', 'off': True} for p in cfg.get('listpack_off') or () if p not in listed]
+    return out[:40]
+
+
 def check_zones(cfg=None):
-    """第 3 步：分区候选（分组勾选）+ 保护/榜单包模板预勾 + 缓存覆盖。"""
+    """第 3 步：分区候选（不合格的置灰写原因）+ 保护 / 榜单包 / 排查区一站式设定 + 缓存覆盖。"""
     cfg = cfg or C.load()
     try:
-        cands, truncated = zone_candidates(cfg)
-        sg = S.suggest(cfg)                                   # 保护 / 榜单包模板沿用原来的按名识别
+        tree = _full_tree(cfg)
+        cands, truncated = zone_candidates(cfg, tree=tree)
+        protect = protect_scan(cfg, tree[0])
+        lps = listpack_scan(cfg, tree[0])
     except Exception:
         return {'ok': False, 'error': '读不出网盘目录树。', 'hint': '回到第 1 步重新识别 CD2。'}
     cov = {}
     if cfg.get('data_source') == 'cache' and cands:
         from . import cd2cache
         try:
-            cov = cd2cache.coverage(cfg, [c['path'] for c in cands])
+            cov = cd2cache.coverage(cfg, [c['path'] for c in cands if c.get('off') in (None, 'few', 'staging')])
         except Exception:
             cov = {}
+    # 名字里带「排查」的目录（按规则不当候选）：还没指定排查区时，提示从这里挑
+    qguess = [c['path'] for c in cands if c.get('off') == 'hidden' and '排查' in c['path'].rsplit('/', 1)[-1]]
     return {'ok': True, 'candidates': cands, 'truncated': truncated, 'coverage': cov,
-            'protect_templates': sg['protect_templates'], 'protect_found': sg['protect_found'],
-            'listpack_found': sg['listpack_found'], 'exclude_found': sg['exclude_found']}
+            'protect_templates': S.PROTECT_TEMPLATES, 'protect_found': list(protect), 'protect_where': protect,
+            'protect_names': cfg['protect_names'],
+            'listpacks': lps, 'listpack_found': [o['path'] for o in lps if not o['off']],
+            'listpack_rule': C.LISTPACK_RULE, 'quarantine_guess': qguess,
+            'dirs': {'quarantine': cfg.get('quarantine_dir') or '', 'mainlib': cfg.get('main_lib_dir') or '',
+                     'unique': cfg.get('unique_dir') or ''}}

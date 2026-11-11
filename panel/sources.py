@@ -46,14 +46,35 @@ def blocked_names(cfg):
     return list(cfg['protect_names']) + list(cfg['listpack_names'])
 
 
-def listpack_hit(vp, names, cfg):
+def lp_off(vp, cfg):
+    """用户点过「不算榜单包」的目录及其下面。"""
+    return any(vp == o or vp.startswith(o.rstrip('/') + '/') for o in cfg.get('listpack_off') or ())
+
+
+def lp_word(text, names):
+    """一个目录名算不算榜单包：内置组合词规则（sieve.LP_RE）或用户追加的名字。返回命中的字样。"""
+    import sieve
+    return sieve.listpack_word(text) or hit_any(text, names)
+
+
+def lp_path(vp, cfg):
+    """整条路径口径（内核判定层用）：内置规则 + 用户名字，扣掉用户移除的。"""
+    return None if lp_off(vp, cfg) else lp_word(vp, cfg['listpack_names'])
+
+
+def listpack_hit(vp, names, cfg, rule=True):
     """榜单包只认「包」这一层（分区根下第一级目录），与内核第一刀按大包名判榜单包同口径。
-    更深层目录名里顺带出现的字样（如「狗神主演-戛纳影帝-…」「胜利之光 豆瓣8.1」）不算。"""
+    更深层目录名里顺带出现的字样（如「狗神主演-戛纳影帝-…」「胜利之光 豆瓣8.1」）不算。
+    rule=False 只看 names（用户追加的名字），不看内置规则。"""
+    if lp_off(vp, cfg):
+        return None
     for roots in cfg['zones'].values():
         for r in roots:
             if vp.startswith(r.rstrip('/') + '/'):
                 rel = vp[len(r.rstrip('/')) + 1:].split('/')
-                return hit_any(rel[0], names) if len(rel) > 1 else None
+                if len(rel) < 2:
+                    return None
+                return lp_word(rel[0], names) if rule else hit_any(rel[0], names)
     return None
 
 
@@ -265,7 +286,16 @@ def scan_inputs(cfg, workdir, progress):
                 raw[zone] += [(root, kind, vp, size) for kind, vp, size in walk_zone(cfg, root, errors, progress, drops[zone])]
         stats['source'] = {'kind': 'scan'}
     stats['dropped'] = {z: dict(c) for z, c in drops.items() if c}
-    unit_dirs = film_unit_dirs([it[2] for z in raw for it in raw[z]])
+    # 反馈 21：排查区（面板搬去待删的地方）及其下面一律不进扫描——那里都是已判定要清的份，扫进来会污染分组
+    q = (cfg.get('quarantine_dir') or '').rstrip('/')
+    if q:
+        nq = 0
+        for z in raw:
+            keep = [it for it in raw[z] if not (it[2] == q or it[2].startswith(q + '/'))]
+            nq += len(raw[z]) - len(keep)
+            raw[z] = keep
+        stats['quarantine_skipped'] = nq
+    unit_dirs =film_unit_dirs([it[2] for z in raw for it in raw[z]])
     # 原盘重复（A2）要看到保护区里的那份才能判「保护档留、档外搬」：剔除前先把原盘区全量存一份
     keep_first = list(cfg['protect_names']) + list(cfg['keep_first_names'])
     yall = []
@@ -276,7 +306,7 @@ def scan_inputs(cfg, workdir, progress):
     _write(workdir, 'yuanpan_all.csv', ['path', 'size', 'kind', 'pack', 'top'], yall, 'utf-8-sig')
     # 同字节重复（A2 第二层）：全区文件（含保护区），缓存模式带 Sha1；保留档 / 守卫命中在这里先标好
     import sieve
-    tier = list(cfg['protect_names']) + list(cfg['keep_first_names']) + list(sieve.LISTPACK)
+    tier = list(cfg['protect_names']) + list(cfg['keep_first_names'])
     hall = []
     for z in raw:
         zroot_depth = {r: r.rstrip('/').count('/') for r in cfg['zones'][z]}
@@ -285,7 +315,7 @@ def scan_inputs(cfg, workdir, progress):
                 continue
             hall.append({'path': vp, 'size': size, 'sha1': sha1.get(vp, ''), 'zone': z,
                          'root_depth': zroot_depth.get(root, 0),
-                         'tier': 1 if protect_hit(vp, tier, unit_dirs) else 0,
+                         'tier': 1 if (protect_hit(vp, tier, unit_dirs) or listpack_hit(vp, cfg['listpack_names'], cfg)) else 0,
                          'guard': 1 if guard_hit(cfg, vp, unit_dirs) else 0})
     _write(workdir, 'hidden_all.csv', ['path', 'size', 'sha1', 'zone', 'root_depth', 'tier', 'guard'], hall, 'utf-8-sig')
     stats['hash_mode'] = 'sha1' if sha1 else 'size'

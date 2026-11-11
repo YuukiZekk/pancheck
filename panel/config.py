@@ -25,7 +25,9 @@ DEFAULTS = {
     'zones': {'heji': [], 'yuanpan': [], 'remux': [], 'pack': []},
     # 保护（只能加；按目录组件匹配，扫描时剔除，可切里命中则整批拒绝）
     'protect_names': [],                                # 系列合集 / 出品公司 / 已刮削 等目录名
-    'listpack_names': ['豆瓣', 'IMDB', 'IMDb', '戛纳', 'Top250', 'Top 250'],
+    # 榜单包：内置规则在内核 sieve.LP_RE（豆瓣/IMDb + Top N、Top 250、戛纳电影节…，评分字样不算）；这里是用户追加的名字
+    'listpack_names': [],
+    'listpack_off': [],                                 # 内置规则认出、但用户点了「不算榜单包」的目录（路径）
     'exclude_names': ['金庸', '动漫', 'ADWEB'],          # 命中的副本不进可清理（可当保留份）；主库对比、孤本不碰（内置，这里可追加）
     'tv_keep_names': ['系列', '三部曲', '部曲'],          # 剧集分流时：路径含这些的视为系列电影，不分流
     'keep_first_names': [],                             # 重复时优先留这里（与保护目录同属一档）；只影响 A2，不剔除
@@ -48,7 +50,10 @@ DEFAULTS = {
 ZONES = [('yuanpan', '原盘区'), ('heji', '合集区'), ('remux', 'REMUX 区'), ('pack', '整夹合集区')]
 
 # 内核写死的保护词，用户配置只能在此基础上加，不能删
-BUILTIN_LISTPACK = ['豆瓣', 'IMDB', 'IMDb', '戛纳', 'Top250', 'Top 250']
+BUILTIN_LISTPACK = []          # 反馈 19：内置榜单包改成组合词规则（sieve.LP_RE），不再是名字列表
+LISTPACK_RULE = '豆瓣 / IMDb 后面跟 Top N 或「榜单」、Top 250、戛纳电影节 / 金棕榈 / 获奖…；「豆瓣8.3分」这类评分字样不算'
+# 旧版内置的裸词（会命中「豆瓣8.3分」这类评分标注），从老配置里剥掉
+LEGACY_LISTPACK = ('豆瓣', 'IMDB', 'IMDb', '戛纳', 'Top250', 'Top 250')
 BUILTIN_EXCLUDE = ['金庸', '动漫', 'ADWEB']
 # A2 保留档内置词（用户 2026-11-08 拍板：01/02-系列、11-出品公司、已刮削大包同属一档）。
 # 只决定重复组里留哪份，不从比对人口里剔除——剔除名单另是 protect_names，两者分开，第一刀基线不受影响
@@ -74,7 +79,11 @@ def normalize(cfg):
                   for k in ('heji', 'yuanpan', 'remux', 'pack')}
     for k in ('protect_names', 'listpack_names', 'exclude_names', 'tv_keep_names', 'keep_first_names', 'subfx_groups'):
         c[k] = _merge_unique([], c.get(k))
-    c['listpack_names'] = _merge_unique(BUILTIN_LISTPACK, c['listpack_names'])
+    c['listpack_names'] = [x for x in c['listpack_names'] if x not in LEGACY_LISTPACK]
+    c['listpack_off'] = _merge_unique([], ['/' + str(p).strip().strip('/') for p in (c.get('listpack_off') or []) if str(p).strip().strip('/')])
+    for k in ('quarantine_dir', 'main_lib_dir', 'unique_dir'):
+        v = str(c.get(k) or '').strip().strip('/')
+        c[k] = '/' + v if v else ''
     c['exclude_names'] = _merge_unique(BUILTIN_EXCLUDE, c['exclude_names'])
     c['keep_first_names'] = _merge_unique(BUILTIN_KEEP_FIRST, c['keep_first_names'])
     c['min_video_mb'] = max(0, int(c.get('min_video_mb') or 0))
@@ -106,6 +115,7 @@ def save(cfg):
 def fingerprint(cfg):
     """影响判定的配置指纹：变了旧清单即作废。"""
     keys = ('data_source', 'cd2_mount', 'cd2_config', 'cd2_api_name', 'cd2_api_user', 'emby_data', 'emby_prefix', 'csv_dir', 'min_video_mb', 'zones',
-            'protect_names', 'listpack_names', 'exclude_names', 'tv_keep_names', 'keep_first_names', 'subfx_groups')
+            'protect_names', 'listpack_names', 'listpack_off', 'exclude_names', 'tv_keep_names', 'keep_first_names', 'subfx_groups',
+            'quarantine_dir')
     blob = json.dumps({k: cfg.get(k) for k in keys}, ensure_ascii=False, sort_keys=True)
     return hashlib.sha1(blob.encode('utf-8')).hexdigest()[:12]

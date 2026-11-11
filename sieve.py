@@ -10,7 +10,7 @@
 口径即手工账本身，两处已知毛边如实保留并注明：
   1) 无标注 ISO 按 55GB 线体积推断档位，且推断档按面值参与比较（第二刀 A 类里约千条属此）；
   2) 第一刀的 DIY 判定含大包级继承（至尊宝/SGNB/Blucook/不撸酷客 整包视为 DIY 来源）。
-保护：合集榜单包（豆瓣Top250/IMDB/戛纳）不筛；金庸/动漫/ADWEB 第二刀不碰。
+保护：合集榜单包（豆瓣Top250/IMDB Top 250/戛纳电影节，见 LP_RE）不筛；金庸/动漫/ADWEB 第二刀不碰。
 """
 import csv, re
 from collections import defaultdict, Counter
@@ -108,7 +108,23 @@ def keyof2(name):
 # ================= 第一刀 =================
 TR = {'U': 3, 'H': 2, 'S': 1, '?': 0}
 DIY_PACKS = ('至尊宝', 'SGNB', 'Blucook', '不撸酷客')
-LISTPACK = ('豆瓣电影Top250', 'IMDB Top 250', '戛纳')
+# 榜单包（反馈 19）：只认榜单组合词——豆瓣/IMDb + Top N / 榜单、Top 250、戛纳 + 电影节/金棕榈/获奖……
+# 「豆瓣8.3分」「豆瓣排名117」「IMDb 7.5」「戛纳影帝」这类评分 / 简介字样不算（旧版拿裸「豆瓣」做整路径子串，误伤剧集和单片）
+LP_RE = re.compile(r'(?i)top\s*250|(?:豆瓣|imdb)[^/]{0,6}?(?:top\s*\d{2,3}|榜单|排行榜)'
+                   r'|戛纳[^/]{0,4}?(?:电影节|影展|金棕榈|获奖|入围|参展|主竞赛|历届)')
+LP_OFF = ()          # 用户在面板里点过「不算榜单包」的目录（路径），面板跑判定前设
+
+
+def listpack_word(text):
+    m = LP_RE.search(text or '')
+    return m.group(0) if m else None
+
+
+def is_listpack(path):
+    if any(path == o or path.startswith(o.rstrip('/') + '/') for o in LP_OFF):
+        return False
+    return bool(LP_RE.search(path or ''))
+
 PRE = '/115/01-好康的/01-电影原盘'
 
 def tier_of(name, vh=None):
@@ -181,7 +197,7 @@ def stage1():
     rows = []
     for r in csv.DictReader(open('heji_films.csv', encoding='utf-8-sig')):
         top, title, gb, form, path = r['大包'], r['片名(文件名)'], float(r['GB']), r['形态'], r['路径']
-        if any(k in top for k in LISTPACK):
+        if listpack_word(top) and is_listpack(path):
             continue
         parent = path.rsplit('/', 1)[0].rsplit('/', 1)[-1]
         ctx = title + ' ' + parent                      # 档位/DIY 看文件名+父夹名
@@ -206,7 +222,6 @@ def stage1():
 # ================= 第二刀 =================
 RES_R = {'U': 3, 'U*': 3, 'H': 2, 'H*': 2, '?': 1, 'S': 0}
 KIND_R = {'D': 4, 'I': 3, 'R': 2, 'O': 1}
-BANGDAN = ('豆瓣', 'IMDb', 'IMDB', '戛纳', 'Top 250', 'Top250', 'TOP250')
 EXCL = ('金庸', '动漫', 'ADWEB')
 EP = re.compile(r'(?i)(s\d{1,2}e\d{1,3}|第\s*\d{1,3}\s*[集话話]|\bep\.?\s*\d{1,3}\b)')
 EDITION = re.compile(r'(导演剪辑|加长版|扩展版|imax|未分级|终极版|theatrical|extended|director)', re.I)
@@ -229,7 +244,7 @@ def stage2(cut1):
     groups = defaultdict(list)
     for r in csv.DictReader(open('heji_films.csv', encoding='utf-8-sig')):
         path = r['路径']
-        if path in cut1 or any(b in path for b in BANGDAN) or any(e in path for e in EXCL):
+        if path in cut1 or is_listpack(path) or any(e in path for e in EXCL):
             continue
         name, gb = r['片名(文件名)'], float(r['GB'])
         tm, key = keyof2(name)
@@ -305,7 +320,7 @@ def stage3(s1_rows, s2_rows, emby_tmdb):
     pop = []
     for r in csv.DictReader(open('heji_films.csv', encoding='utf-8-sig')):
         path = r['路径']
-        if path in gone or any(b in path for b in BANGDAN) or any(e in path for e in EXCL):
+        if path in gone or is_listpack(path) or any(e in path for e in EXCL):
             continue
         gb = float(r['GB'])
         low = bool(LOWMARK.search(r['片名(文件名)']))
@@ -367,7 +382,7 @@ def vertical(cut_paths, emby_tmdb, emby_title):
     out = []
     for r in csv.DictReader(open('heji_films.csv', encoding='utf-8-sig')):
         path = r['路径']
-        if path in cut_paths or any(b in path for b in BANGDAN) or any(e in path for e in EXCL):
+        if path in cut_paths or is_listpack(path) or any(e in path for e in EXCL):
             continue
         name, gb = r['片名(文件名)'], float(r['GB'])
         tm, key = keyof3(name)

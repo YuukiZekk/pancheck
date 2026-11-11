@@ -259,7 +259,7 @@ def index():
 def get_config():
     c = C.load()
     return {'config': c, 'fingerprint': C.fingerprint(c), 'auth_enabled': bool(PASSWORD), 'builtin': {
-        'listpack': C.BUILTIN_LISTPACK, 'exclude': C.BUILTIN_EXCLUDE}}
+        'listpack': C.BUILTIN_LISTPACK, 'listpack_rule': C.LISTPACK_RULE, 'exclude': C.BUILTIN_EXCLUDE}}
 
 
 @app.get('/api/suggest')
