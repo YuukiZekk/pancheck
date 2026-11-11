@@ -29,10 +29,11 @@ DEFAULTS = {
     'exclude_names': ['金庸', '动漫', 'ADWEB'],          # 命中的副本不进可清理（可当保留份）；主库对比、孤本不碰（内置，这里可追加）
     'tv_keep_names': ['系列', '三部曲', '部曲'],          # 剧集分流时：路径含这些的视为系列电影，不分流
     'keep_first_names': [],                             # 重复时优先留这里（与保护目录同属一档）；只影响 A2，不剔除
-    # 特效字幕组（反馈 16，号主确认的名单 + 查证过的别名）：名字命中即算特效字幕版，同分辨率内最优先留。
-    # 待号主确认、先不放：至尊宝、碟影。明确不放：cXcY@FRDS、Yobee@Sunny、LGNB@oSpecialCN、泛化的 DIY@站点 标签
+    # 特效字幕组（反馈 16 / 18，号主确认的名单 + 查证过的别名）：名字命中即算特效字幕版，同分辨率内最优先留。
+    # 明确不放：cXcY@FRDS、Yobee@Sunny、LGNB@oSpecialCN、泛化的 DIY@站点 标签
     'subfx_groups': ['SGNB', 'Thor@HDSky', '雅典娜', 'Athena@HDSky', 'x-man@HDSky', 'DIY@HDSky', 'Nest@ADWeb', 'Nest@ADE',
-                     'Nimbus@Sunny', 'Breeze@Sunny', 'LINMENG@CHDBits', 'nn@CHDBits', 'sh@CHDBits', 'BHYS@OurBits'],
+                     'Nimbus@Sunny', 'Breeze@Sunny', 'LINMENG@CHDBits', 'nn@CHDBits', 'sh@CHDBits', 'BHYS@OurBits',
+                     '至尊宝', '碟影'],
     # 第二期用
     'quarantine_dir': '',                               # 排查区（「可清理」搬到这里；同一网盘内）
     'main_lib_dir': '',                                 # 主库目录（「主库缺口」挪入这里）

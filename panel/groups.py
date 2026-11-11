@@ -224,6 +224,21 @@ def _yuanpan_copies(meas):
 _DISC_TOK = re.compile(r'^(\d{1,2}|[一二三四五六上中下]|[A-Da-d])$')
 _DISC_KW = re.compile(r'(?i)(disc|disk|cd|dvd|bd|part|pt|vol|d)[\s._\-]*\(?$|[碟盘集部第][\s._\-]*$')
 _NOT_DISC = re.compile(r'(?i)(x26|h\.?26|\d[\.\-]|\d{3,})$')   # x264/x265、5.1/7.1、1080/2160 这类规格差一位数不算碟号
+# 名字里任意位置写着的碟号（Disc2、DISC.01、CD1、D1、第二碟、碟一、上集 / (下)）；「2-Disc Edition」这种不算
+DISC_MARK = re.compile(r'(?i)[\s._\-\[(（]*(?:dis[ck]|cd)[\s._\-]*0?(\d{1,2})(?!\d)[\])）]?'
+                       r'|[\s._\-]*(?:第[一二三四五六]碟|碟[一二三四五六])|[\s._\-]*[(（]?[上下]集[)）]?|[\s._\-]*[(（][上下][)）]')
+
+
+def _norm_stem(s):
+    return re.sub(r'[\s._\-]+', ' ', s).strip().lower()
+
+
+def has_disc(name):
+    return bool(DISC_MARK.search(name or ''))
+
+
+# 判「只是一部分」只认 Disc / CD / 碟 写法；「（上）（下）」多半是分上下两部上映的独立影片（嘲笑鸟、破晓），不算
+PARTIAL_MARK = re.compile(r'(?i)(?:dis[ck]|cd)[\s._\-]*0?\d{1,2}(?!\d)|第[一二三四五六]碟|碟[一二三四五六]')
 
 
 def disc_siblings(a, b, iso):
@@ -232,6 +247,9 @@ def disc_siblings(a, b, iso):
     免得把「片名(1).mkv / 片名(2).mkv」这种下载重名副本当成一套。"""
     if a == b:
         return False
+    # 挖掉碟号后两边一样（一张写 Disc2、另一张不写碟号；或碟号在名字中段，后面还跟着 .1080p.AVC…）
+    if (has_disc(a) or has_disc(b)) and _norm_stem(DISC_MARK.sub(' ', a)) == _norm_stem(DISC_MARK.sub(' ', b)):
+        return True
     p = len(os.path.commonprefix([a, b]))
     ra, rb = a[p:], b[p:]
     q = len(os.path.commonprefix([ra[::-1], rb[::-1]]))
@@ -239,7 +257,7 @@ def disc_siblings(a, b, iso):
     if not (_DISC_TOK.match(da) and _DISC_TOK.match(db)):
         return False
     before, after = a[:p], ra[len(da):]
-    if _NOT_DISC.search(before) or re.match(r'[.\-]\d|[A-Za-z]', after):   # 5.1 / 7.1 声道；2Audio / 4Audio、5ch 这类规格
+    if _NOT_DISC.search(before) or re.match(r'[.\-]\d(?!\d)|[A-Za-z]', after):   # 5.1 / 7.1 声道；2Audio / 4Audio、5ch 这类规格
         return False
     if da in '上中下' or _DISC_KW.search(before):
         return True
@@ -442,6 +460,14 @@ def _tags(x, keep):
     return t
 
 
+def _partial(c):
+    """没并成一套、名字里写着碟号的副本。单文件看文件名；整夹 / 单元看夹名（夹里装着整套时主文件名带碟号是正常的）。"""
+    if c.get('parts'):
+        return False
+    single = c['zone'] == 'heji' or c['path'].rsplit('/', 1)[-1] == c['main_name']
+    return bool(PARTIAL_MARK.search((c['main_name'] if single and c['main_name'] else c['name']) or ''))
+
+
 def judge(ms):
     """一组（同片、同剪辑版本）→ [(副本, 类, 保留份, 依据)]，保留份本身不出行。"""
     ms = sorted(ms, key=rank, reverse=True)
@@ -459,6 +485,11 @@ def judge(ms):
             continue
         # 和版本对里同一家的那份比（多出来的 DIY / 特效字幕版跟留下的那份比），否则跟保留份比
         k = partner if (partner is not None and fam(x) == fam(partner)) else keep
+        px, pk = _partial(x), _partial(k)
+        if px or pk:                                         # 反馈 18：单张碟没凑成套（或同片两版各写碟号），不自动判
+            out.append((x, 'U', k, '%s名字里写着碟号、没和同套其他碟并成一套，可能只是一部分（或是同片另一版本），请自己看'
+                        % ('这份' if px else '保留的那份')))
+            continue
         if x['res'] == '?' or k['res'] == '?':
             if x['kind'] == 'R' and x['res'] == '?' and k['kind'] in ('I', 'D', 'T') and k['res'] == 'U' and k['res_src'] != '体积推断':
                 out.append((x, 'N', k, 'REMUX 没标分辨率，保留的那份是已确认的 4K 原盘'))
