@@ -1,27 +1,28 @@
 """反馈 13 差分报告：同一轮的输入，按修复前 / 修复后两套片名键各算一遍，列出哪些条目变了。
 
 用法（容器里）：
-    docker exec sieve-panel python -m panel.keydiff            # 默认用最近一轮跑筛
-    docker exec sieve-panel python -m panel.keydiff <run_id>
+    docker exec sieve-panel python tools/keydiff.py            # 默认用最近一轮跑筛
+    docker exec sieve-panel python tools/keydiff.py <run_id>
 写出 <run_dir>/keyfix_diff.md 和 keyfix_diff.csv，并在终端打印数字。只读：不改结果、不碰批准。
 
 覆盖：第二刀（逐组列出）、第三刀、纵向、合集×REMUX（条数 + 变动条目）。
 同字节重复与 REMUX×主库也用这把键，但要连 Emby / 全区清单，留给修复版真跑后在面板里看。
 """
 import csv
-import json
 import os
 import re
 import sys
 from collections import Counter, defaultdict
 
 APP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if APP not in sys.path:
-    sys.path.insert(0, APP)
+for _p in (APP, os.path.dirname(os.path.abspath(__file__))):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 import sieve as S                     # noqa: E402
 from panel import config as C        # noqa: E402
-from panel import cross, runner      # noqa: E402
+from panel import cross              # noqa: E402
+import legacy_steps                  # noqa: E402  （同在 tools/）
 
 
 def _title2_legacy(s):
@@ -55,7 +56,7 @@ def _compute(cfg):
     cut_all = cut1 | {r[1] for r in s2A} | {r[1] for r in s3A}
     vert = S.vertical(cut_all, emby_tmdb, emby_title)
     res = {'stats': {}}
-    a1 = runner.cross_heji_remux(cfg, cut_all, res)
+    a1 = legacy_steps.cross_heji_remux(cfg, cut_all, res)
     return {
         's2': {r[1]: (r[0], r[3], r[2]) for r in all2}, 's2_held': held,
         's3': {r[1]: (r[0], r[4], r[2]) for r in s3A + s3B}, 's3_lone': len(lone), 's3_pop': popn,

@@ -12,6 +12,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY sieve.py app.py ./
 COPY panel ./panel
 COPY static ./static
+COPY tools ./tools
 
 EXPOSE 8760
 HEALTHCHECK --interval=60s --timeout=5s CMD python -c "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8760/healthz')" || exit 1

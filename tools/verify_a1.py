@@ -9,7 +9,8 @@ APP, PKG = sys.argv[1:3]
 sys.path.insert(0, APP)
 from panel import cross
 if '--legacy-keys' in sys.argv:
-    from panel import keydiff
+    sys.path.insert(0, os.path.join(APP, 'tools'))
+    import keydiff
     keydiff._set_mode(True)
 os.chdir(PKG)
 moved = set()
