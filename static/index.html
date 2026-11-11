@@ -720,6 +720,14 @@
       body.exec-closed [data-view="execute"] > :not(.page-head):not(#exOff){display:none!important}
       body.exec-closed [data-view="execute"] .head-actions{display:none!important}
       .ready-list .kv-row .k{width:auto;flex:1}
+      /* 已确认保留（反馈 9） */
+      .keep-list{margin-top:12px;max-height:420px;overflow:auto;border:1px solid var(--border);border-radius:10px}
+      .keep-item{display:flex;gap:10px;align-items:center;padding:9px 12px;border-bottom:1px dashed var(--border);font-size:12.5px}
+      .keep-item:last-child{border-bottom:none}
+      .keep-item .ki-main{min-width:0;flex:1}
+      .keep-item .ki-path{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .keep-item .ki-meta{color:var(--muted-foreground);font-size:11.5px;margin-top:2px}
+      .keep-empty{padding:14px;color:var(--muted-foreground);font-size:12.5px}
       .exec-off-note{display:none}
       body:not(.exec-on) .exec-off-note{display:flex}
       /* 清单页：批准条（只做决定，唯一出口动作） */
@@ -949,6 +957,7 @@
               </div>
             </div>
             <div id="listBanners"></div>
+            <div id="keptNote"></div>
             <section class="stats" id="listStats" aria-label="筛查概览"></section>
             <section class="card approve-bar exec-only" id="approveBar" hidden aria-label="批准，送入执行">
               <div class="approve-actions" style="border-top:none;padding-top:0;margin-top:0">
@@ -959,17 +968,19 @@
             </section>
             <section class="card table-card" aria-label="清单明细">
               <div class="toolbar toolbar-main">
-                <div class="search"><i data-ic="search" class="sm"></i><input type="search" id="q" placeholder="搜索片名或路径…" aria-label="搜索片名或路径"><kbd class="search-kbd" aria-hidden="true">⌘K</kbd></div>
+                <div class="search"><i data-ic="search" class="sm"></i><input type="search" id="q" placeholder="搜索片名或路径（保留份路径也算）…" aria-label="搜索片名或路径"><kbd class="search-kbd" aria-hidden="true">⌘K</kbd></div>
                 <div class="facets" id="facets" aria-label="分面筛选"></div>
                 <div class="toolbar-right">
                   <select class="sel" id="sortSel" aria-label="排序">
                     <option value="gb">按大小 · 从大到小</option>
                     <option value="gb_asc">按大小 · 从小到大</option>
+                    <option value="name">按名称</option>
                     <option value="path">按路径</option>
                   </select>
                   <button class="btn sm sel-all-btn" id="btnSelectAll" type="button" aria-label="全选当前筛选的全部条目"><span class="pick" id="selAllBox"><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><svg class="minus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><path d="M5 12h14"/></svg></span>全选</button>
                   <span class="sel-count" id="selCount">已勾选 <b>0</b> 条</span>
                   <button class="btn sm" id="btnClearSel" type="button" disabled>清空</button>
+                  <button class="btn sm" id="btnKeepSel" type="button" hidden title="把勾选里的「需人工确认」条目记为已确认保留，以后重跑不再提醒">确认保留</button>
                 </div>
               </div>
               <div class="active-bar" id="activeBar" hidden>
@@ -1074,6 +1085,11 @@
                 </div>
                 <label class="field" style="display:flex;gap:8px;align-items:center;font-size:13px"><input type="checkbox" id="confirmRm">我确认移除保护（删掉已有保护目录名时需要）</label>
               </section>
+              <section class="card set-card" aria-label="已确认保留">
+                <h2><i data-ic="check"></i>已确认保留</h2>
+                <p class="sec-sub">「需人工确认」里你看过、决定留着的条目（按路径记）。命中的不再出现在清单里，只报个数；撤销后下次看清单就重新出现。和保护名单不同：这里不影响判定，不会让结果作废。</p>
+                <div class="keep-list" id="keepList"><div class="keep-empty">载入中…</div></div>
+              </section>
               <section class="card set-card" aria-label="执行">
                 <h2><i data-ic="play"></i>执行（只搬不删）</h2>
                 <div class="switch-row"><div class="sw-text"><b>开执行还差哪一步</b><span>全是绿点才能执行；照 README「执行」一节逐项补。</span></div></div>
@@ -1127,6 +1143,7 @@
         </div>
         <h3>判定依据</h3><div class="reason" id="dReason">—</div>
         <h3>处理方式</h3><div class="reason" id="dAction">—</div>
+        <div id="dKeepWrap" hidden><h3>看过了</h3><div class="reason" id="dKeep">—</div></div>
         <div class="exec-only" id="dExecWrap" hidden><h3>批准</h3><div class="reason" id="dExec">—</div></div>
       </div>
       <div class="drawer-foot">
@@ -1275,6 +1292,10 @@ function renderJobBar() {
   const s = $('#btnStop'); if (s) s.onclick = stopJob;
 }
 async function runJob(mode) {
+  if (mode === 'full') {
+    let k = 0; try { k = (await api('api/exec/status')).approvals || 0; } catch (e) {}
+    if (k && !confirm(`当前有 ${n(k)} 条已批准，重跑后批准会清空，确定重跑？`)) return;
+  }
   try { await api('api/run/' + mode, {method: 'POST'}); poll(); } catch (e) { toast(e.message); }
 }
 async function stopJob() {
@@ -1320,7 +1341,7 @@ async function renderOverview() {
   const kpi = (label, icon, num, sub, tone = '') => `<div class="card stat"><div class="stat-top"><span class="stat-label">${label}</span>${ic(icon)}</div><div class="stat-num ${tone}">${num}</div><div class="stat-sub">${sub}</div></div>`;
   $('#ovKpis').innerHTML = kpi('合集区电影', 'db', n((st.heji || {}).count), '合集区人口，不是全盘总数')
     + kpi(esc(bn('可切')), 'trash', n(S('可切').count), '约 ' + fmtGB(S('可切').gb), 't-green')
-    + kpi(esc(bn('待定')), 'alert', n(S('待定').count), fmtGB(S('待定').gb), 't-amber')
+    + kpi(esc(bn('待定')), 'alert', n(S('待定').count), fmtGB(S('待定').gb) + ((r.kept_hidden || {}).count ? ` · 另有 ${n(r.kept_hidden.count)} 条已确认保留` : ''), 't-amber')
     + kpi(esc(bn('缺口')), 'gap', n(S('缺口').count), fmtGB(S('缺口').gb));
   $('#ovRunMeta').innerHTML = `${esc({cache: 'CD2 目录缓存', scan: '遍历挂载目录', csv: 'CSV'}[(r.source || {}).kind] || '')}<span class="dot-sep">·</span>结果以缓存时刻为准`;
   const total = BUCKET_ORDER.reduce((a, b) => a + S(b).count, 0) || 1;
@@ -1519,7 +1540,8 @@ async function loadRows() {
   const p = filterParams(); p.set('sort', LIST.sort); p.set('offset', LIST.page * PAGE); p.set('limit', PAGE); p.set('facets', 1);
   const r = await api('api/rows?' + p);
   if (r.total && LIST.page * PAGE >= r.total) { LIST.page = 0; return loadRows(); }
-  Object.assign(LIST, {rows: r.rows, total: r.total, all: r.all || 0, gb: r.gb, facets: r.facets || {}});
+  Object.assign(LIST, {rows: r.rows, total: r.total, all: r.all || 0, gb: r.gb, facets: r.facets || {}, kept: r.kept_hidden || {count: 0}});
+  $('#keptNote').innerHTML = LIST.kept.count ? `<div class="alert">${ic('check')}<div>另有 <b>${n(LIST.kept.count)}</b> 条「${esc(bn('待定'))}」已确认保留，已隐藏（${fmtGB(LIST.kept.gb)}）· <a href="#/settings">在设置页查看 / 撤销</a></div></div>` : '';
   renderFacets(); renderChips(); renderTable(); renderListStats();
   await refreshPickAll();
 }
@@ -1619,6 +1641,7 @@ function updateSel() {
   const k = LIST.sel.size;
   $('#selCount').innerHTML = `已勾选 <b>${n(k)}</b> 条`;
   $('#btnClearSel').disabled = !k;
+  $('#btnKeepSel').hidden = !k;
   $('#btnApprove').disabled = !k;
   $('#btnExport').innerHTML = ic('download', 'sm') + (k ? `导出已勾选（${n(k)}）` : '导出 CSV');
   renderListStats();
@@ -1705,6 +1728,8 @@ function renderDlg() {
   const B = LB.buckets[x.bucket] || {};
   $('#dAction').innerHTML = `${esc(B.desc || '')}<br><b>${esc(B.action || '')}</b>`;
   const can = x.bucket === '可切' || x.bucket === '缺口';
+  $('#dKeepWrap').hidden = x.bucket !== '待定';
+  if (x.bucket === '待定') $('#dKeep').innerHTML = `判断这份就留着？记下后以后重跑不再出现在「${esc(bn('待定'))}」里（设置页可撤销）。<br><button class="btn sm" type="button" style="margin-top:8px" onclick='dKeep(${esc(JSON.stringify(x.path))})'>${ic('check', 'sm')}确认保留，以后不再提醒</button>`;
   $('#dExecWrap').hidden = !(execOn && can);
   if (execOn && can) {
     const ap = APPR.items[x.path], pe = esc(JSON.stringify(x.path));
@@ -1719,6 +1744,30 @@ function renderDlg() {
   $('#dToggle').textContent = picked ? '取消勾选' : '勾选';
   $('#dPrev').disabled = LIST.open <= 0; $('#dNext').disabled = LIST.open >= LIST.rows.length - 1;
 }
+async function keepPaths(paths) {
+  const r = await api('api/keeps', P({paths}));
+  LIST.sel.forEach(p => { if (paths.includes(p)) LIST.sel.delete(p); });
+  LIST.paths = null;
+  await Promise.all([loadResult(), loadRows()]);
+  return r;
+}
+async function dKeep(path) {
+  try {
+    const r = await keepPaths([path]);
+    if (!r.added) { toast((r.skipped[0] || {}).reason || '没记下'); return; }
+    toast('已记下：以后不再提醒（设置页可撤销）');
+    if (!LIST.rows.length) closeDlg();
+    else { LIST.open = Math.min(LIST.open, LIST.rows.length - 1); renderDlg(); }
+  } catch (e) { toast(e.message); }
+}
+$('#btnKeepSel').onclick = async () => {
+  const k = LIST.sel.size; if (!k) return;
+  if (!confirm(`把勾选的 ${n(k)} 条里属于「${bn('待定')}」的记为「已确认保留」？\n以后重跑不再提醒；设置页能看名单、逐条撤销。其他分类的条目不受影响。`)) return;
+  try {
+    const r = await keepPaths([...LIST.sel]);
+    toast(`已确认保留 ${n(r.added)} 条` + (r.skipped.length ? `；${n(r.skipped.length)} 条不是「${bn('待定')}」，没记` : ''));
+  } catch (e) { toast(e.message); }
+};
 async function dApprove(path, dest) { try { const r = await api('api/approvals', J({add: [{path, dest}]})); if (r.errors.length) toast(r.errors[0].reason); await loadAppr(); renderTable(); renderDlg(); } catch (e) { toast(e.message); } }
 async function dUnapprove(path) { try { await api('api/approvals', J({remove: [path]})); await loadAppr(); renderTable(); renderDlg(); } catch (e) { toast(e.message); } }
 $('#dToggle').onclick = () => togglePick(LIST.open);
@@ -1868,7 +1917,18 @@ async function renderSettings() {
   $('#swLock').setAttribute('aria-checked', uiLock());
   $('#setSecurity').innerHTML = AUTH ? '<div class="recog"><div class="r-row"><b>已设访问口令</b>（浏览器弹窗用户名随便填）</div></div>'
     : `<div class="alert red" style="margin-top:0">${ic('alert')}<div><b>当前未设访问口令：</b>局域网里谁都能打开。在 .env 里设 PANEL_PASSWORD，然后 docker compose up -d。</div></div>`;
-  probeCards();
+  probeCards(); renderKeeps();
+}
+async function renderKeeps() {
+  let r; try { r = await api('api/keeps'); } catch (e) { $('#keepList').innerHTML = `<div class="keep-empty">${esc(e.message)}</div>`; return; }
+  const items = r.items || [];
+  $('#keepList').innerHTML = items.length ? items.map(x => `<div class="keep-item"><div class="ki-main"><div class="ki-path mono" title="${esc(x.path)}">${esc(x.path)}</div>
+      <div class="ki-meta">${esc(x.at || '')} · ${esc(x.stage_name || '')} · ${esc(x.cls_name || '')} · ${fmtGB(x.gb || 0)}${x.hit ? '' : ' · <span class="t-amber">最新结果里已不在待定（可能已搬走或改判）</span>'}</div></div>
+      <button class="btn sm" type="button" data-unkeep="${esc(x.path)}">撤销</button></div>`).join('')
+    : '<div class="keep-empty">还没有。在清单里打开一条「需人工确认」，点「确认保留，以后不再提醒」。</div>';
+  $$('#keepList [data-unkeep]').forEach(b => b.onclick = async () => {
+    try { await api('api/keeps/remove', P({paths: [b.dataset.unkeep]})); toast('已撤销：这条会重新出现在清单里'); LIST.paths = null; await loadResult(); renderKeeps(); } catch (e) { toast(e.message); }
+  });
 }
 function renderSeg() { $$('#segSource button').forEach(b => b.classList.toggle('active', b.dataset.v === SRC)); $('#segDesc').textContent = SRC_DESC[SRC] || ''; }
 $$('#segSource button').forEach(b => b.onclick = () => { SRC = b.dataset.v; renderSeg(); });

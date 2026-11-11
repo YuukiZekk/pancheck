@@ -23,6 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
 from panel import config as C
+from panel import keeps as K
 from panel import labels as L
 from panel import sources
 
@@ -175,6 +176,19 @@ def load_rows(d):
         _rows_cache.clear()
         _rows_cache[key] = json.loads((d / 'rows.json').read_text(encoding='utf-8'))
     return _rows_cache[key]
+
+
+def shown_rows(d):
+    """清单 / 导出看到的行：去掉「已确认保留」命中的待定行（见 panel/keeps.py）。→ (显示的, 隐藏的)"""
+    return K.split(load_rows(d))
+
+
+def _hidden_info(hidden):
+    return {'count': len(hidden), 'gb': round(sum(r['gb'] for r in hidden), 1)}
+
+
+def _name_key(r):
+    return r['path'].rstrip('/').rsplit('/', 1)[-1].lower()
 
 
 # 分面筛选：每组可多选（逗号分隔）；子类用「来源|判定」；标记组：体积推断 / 肉酱盘 / 整夹 / 单文件
@@ -549,11 +563,31 @@ def inventory():
 
 @app.get('/api/result')
 def result(run_id: str = ''):
-    res, _ = load_run(run_id or None)
+    res, d = load_run(run_id or None)
     if not res:
         return JSONResponse(None)
     st = res.get('stats') or {}
     st.pop('heji_packs', None)        # 总览只要各区体积，不要大包明细
+    # 「已确认保留」从待定计数里扣掉，扣了多少单独报（不改 result.json，对账用的原始数在导出 zip 的 summary.json 里）
+    _, hidden = shown_rows(d)
+    res['kept_hidden'] = _hidden_info(hidden)
+    if hidden:
+        sm = (res.get('summary') or {}).get(K.BUCKET)
+        if sm:
+            sm['count'] -= len(hidden)
+            sm['gb'] = round(max(0, sm['gb'] - res['kept_hidden']['gb']), 1)
+        by = {}
+        for r in hidden:
+            k = (r['bucket'], r['stage'], r['cls'])
+            by[k] = (by.get(k, (0, 0))[0] + 1, by.get(k, (0, 0))[1] + r['gb'])
+        det = []
+        for x in res.get('detail') or []:
+            c, g = by.get((x.get('bucket'), x.get('stage'), x.get('cls')), (0, 0))
+            if c:
+                x = dict(x, count=x['count'] - c, gb=round(max(0, x['gb'] - g), 1))
+            if x['count'] > 0:
+                det.append(x)
+        res['detail'] = det
     return res
 
 
@@ -562,8 +596,8 @@ def rows(bucket: str = '', stage: str = '', cls: str = '', q: str = '', flag: st
          sort: str = 'gb', run_id: str = '', facets: int = 0):
     res, d = load_run(run_id or None)
     if not res:
-        return {'total': 0, 'gb': 0, 'rows': [], 'all': 0, 'facets': {}}
-    allrows = load_rows(d)
+        return {'total': 0, 'gb': 0, 'rows': [], 'all': 0, 'facets': {}, 'kept_hidden': {'count': 0, 'gb': 0}}
+    allrows, hidden = shown_rows(d)
     rs = filter_rows(allrows, bucket, stage, cls, q, flag)
     if sort in ('gb', 'gb_desc'):
         rs = sorted(rs, key=lambda r: -r['gb'])
@@ -571,8 +605,11 @@ def rows(bucket: str = '', stage: str = '', cls: str = '', q: str = '', flag: st
         rs = sorted(rs, key=lambda r: r['gb'])
     elif sort == 'path':
         rs = sorted(rs, key=lambda r: r['path'])
+    elif sort == 'name':                      # 按路径最后一段（影片文件夹 / 文件名），约等于按片名
+        rs = sorted(rs, key=lambda r: (_name_key(r), r['path']))
     limit = max(1, min(limit, 1000))
-    out = {'total': len(rs), 'gb': round(sum(r['gb'] for r in rs), 1), 'rows': rs[offset:offset + limit], 'all': len(allrows)}
+    out = {'total': len(rs), 'gb': round(sum(r['gb'] for r in rs), 1), 'rows': rs[offset:offset + limit], 'all': len(allrows),
+           'kept_hidden': _hidden_info(hidden)}
     if facets:
         out['facets'] = facet_counts(allrows, bucket, stage, cls, q, flag)
     return out
@@ -584,7 +621,7 @@ def rows_paths(bucket: str = '', stage: str = '', cls: str = '', q: str = '', fl
     res, d = load_run(run_id or None)
     if not res:
         return {'paths': []}
-    return {'paths': list(dict.fromkeys(r['path'] for r in filter_rows(load_rows(d), bucket, stage, cls, q, flag)))}
+    return {'paths': list(dict.fromkeys(r['path'] for r in filter_rows(shown_rows(d)[0], bucket, stage, cls, q, flag)))}
 
 
 # 导出给人看：分类/来源/判定用白话名，最后一列保留内部叫法便于对账
@@ -626,19 +663,19 @@ def export(bucket: str = '', stage: str = '', cls: str = '', q: str = '', flag: 
     res, d = load_run(run_id or None)
     if not res:
         raise HTTPException(404, '还没有筛选结果')
-    rs = sorted(filter_rows(load_rows(d), bucket, stage, cls, q, flag), key=lambda r: -r['gb'])
+    rs = sorted(filter_rows(shown_rows(d)[0], bucket, stage, cls, q, flag), key=lambda r: -r['gb'])
     return _export_resp(res, rs, L.bucket(bucket) if bucket else '全部', fmt)
 
 
 @app.post('/api/export/selected')
 async def export_selected(request: Request, fmt: str = 'csv'):
-    """清单里勾选的条目单独导出（第一期只导出，不批准、不执行）。"""
+    """清单里勾选的条目单独导出（只导出，不批准、不执行）。"""
     body = await request.json()
     res, d = load_run(body.get('run_id') or None)
     if not res:
         raise HTTPException(404, '还没有筛选结果')
     want = set(body.get('paths') or [])
-    rs = sorted([r for r in load_rows(d) if r['path'] in want], key=lambda r: -r['gb'])
+    rs = sorted([r for r in shown_rows(d)[0] if r['path'] in want], key=lambda r: -r['gb'])
     if not rs:
         raise HTTPException(400, '没有勾选任何条目')
     return _export_resp(res, rs, '已勾选', fmt)
@@ -649,7 +686,8 @@ def export_zip(run_id: str = ''):
     res, d = load_run(run_id or None)
     if not res:
         raise HTTPException(404, '还没有筛选结果')
-    allrows = sorted(load_rows(d), key=lambda r: -r['gb'])
+    shown, hidden = shown_rows(d)
+    allrows = sorted(shown, key=lambda r: -r['gb'])
     buckets = sorted({r['bucket'] for r in allrows})
     skip_reason = zip_withheld_reason(res)
     skip_cut = bool(skip_reason)
@@ -659,6 +697,9 @@ def export_zip(run_id: str = ''):
             if b == '可切' and skip_cut:
                 continue
             z.writestr('%s.csv' % L.bucket(b), _csv_bytes([r for r in allrows if r['bucket'] == b]))
+        if hidden:
+            # 已确认保留的待定行不进「需人工确认.csv」，但单独成表——不出现的东西也要有账
+            z.writestr('已确认保留（已隐藏）.csv', _csv_bytes(sorted(hidden, key=lambda r: -r['gb'])))
         if skip_cut:
             # 不静默扣下：包里放一份说明，和页面上弹出的原因一致
             z.writestr('_未包含「可清理」的原因.txt', ('\ufeff' + skip_reason + '\r\n').encode('utf-8'))
@@ -685,6 +726,39 @@ def export_check(run_id: str = ''):
     if not res:
         raise HTTPException(404, '还没有筛选结果')
     return {'withheld': zip_withheld_reason(res)}
+
+
+@app.get('/api/keeps')
+def keeps_get():
+    """「已确认保留」名单；hit = 最新结果里还命中（还会被隐藏）的条目。"""
+    items = K.load()
+    res, d = load_run(None)
+    live = {r['path'] for r in (load_rows(d) if res else []) if r['bucket'] == K.BUCKET}
+    out = [dict(v, path=p, hit=p in live, stage_name=L.stage(v.get('stage', '')), cls_name=L.cls(v.get('stage', ''), v.get('cls', '')))
+           for p, v in items.items()]
+    out.sort(key=lambda x: x.get('at', ''), reverse=True)
+    return {'items': out}
+
+
+@app.post('/api/keeps')
+async def keeps_add(request: Request):
+    """{paths: [...]} 记为「已确认保留」：只收最新结果里的「需人工确认」条目。"""
+    body = await request.json()
+    res, d = load_run(None)
+    if not res:
+        raise HTTPException(404, '还没有筛选结果')
+    by = {}
+    for r in load_rows(d):
+        by.setdefault(r['path'], []).append(r)
+    ok, skipped = K.add(by, list(dict.fromkeys(body.get('paths') or [])))
+    return {'added': len(ok), 'skipped': skipped}
+
+
+@app.post('/api/keeps/remove')
+async def keeps_remove(request: Request):
+    """{paths: [...]} 撤销：下一次看清单 / 重跑时这些条目重新出现在「需人工确认」里。"""
+    body = await request.json()
+    return {'removed': K.remove(body.get('paths') or [])}
 
 
 @app.get('/api/log')
