@@ -8,7 +8,7 @@
       纯拉丁名去掉年份和规格词后比）。两种键用并查集连起来：带 TMDB 的和不带的同名同年副本归同一组。
 判档：分辨率档（原盘区：Emby 实测 > 主文件名 > ISO/盘片夹体积推断；其他：文件名，ISO ≥55GB / 文件 ≥40GB 推断 4K）
       + 来源类（原盘 > DIY > REMUX > 压制）。
-保留份（用户 2026-11-11 拍板）：先比分辨率，同分辨率再比来源类，再比命名（带 {tmdb}、在已刮削目录、规格写得全的优先，
+保留份（用户 2026-11-11 拍板；反馈 16 加特效字幕版）：先比分辨率，同分辨率再比来源类（特效字幕版 > 原盘 > DIY > REMUX > 压制），再比命名（带 {tmdb}、在已刮削目录、规格写得全的优先，
       裸名靠后），最后比体积。
 组内其余每份：
   - 版本对：保留份不是 DIY 时，最好的那份 DIY 两边都留；保留份是 DIY 时，最好的那份原盘两边都留 → 不同版本
@@ -29,8 +29,9 @@ from . import cross, sources
 GIB = 1024 ** 3
 STAGE = '重复副本'
 RES_R = {'U': 3, 'H': 2, '?': 1, 'S': 0}
-KIND_R = {'I': 4, 'D': 3, 'R': 2, 'O': 1}            # 原盘 > DIY > REMUX > 压制
-KIND_NAME = {'I': '原盘', 'D': 'DIY', 'R': 'REMUX', 'O': '压制'}
+KIND_R = {'T': 5, 'I': 4, 'D': 3, 'R': 2, 'O': 1}    # 特效字幕版 > 原盘 > DIY > REMUX > 压制（反馈 16）
+KIND_NAME = {'T': '特效字幕版', 'I': '原盘', 'D': 'DIY', 'R': 'REMUX', 'O': '压制'}
+DIY_FAMILY = ('D', 'T')                              # 在原盘上加了字幕的：和原版成「版本对」
 RES_NAME = {'U': '4K', 'H': '1080p', 'S': '720p 及以下', '?': '画质未知'}
 ZONE_NAME = {'heji': '合集区', 'yuanpan': '原盘区', 'remux': 'REMUX 区', 'pack': '整夹合集区'}
 BUCKET = {'A': '可切', 'B': '可切', 'N': '可切', 'V': '版本型', 'U': '待定'}
@@ -71,10 +72,55 @@ def ident(name):
     return tm, t, year
 
 
+# ---------------- 特效字幕版识别（反馈 16）----------------
+# 名字里写了「…特效…字幕」（简繁特效字幕、双语特效字幕、国配简繁英特效四字幕、特效+导评五字幕）
+SUBFX_WORD = re.compile(r'特效.{0,4}?字幕')
+
+
+def subfx_matcher(names):
+    """特效字幕组名单 → 判定函数 hit(文本) → 命中的名单项或 ''。
+    拉丁名大小写不敏感，且前后不能紧挨字母数字（SGNB 不命中 LSGNBX；nn@CHDBits 不命中 Ann@CHDBits）；
+    纯中文名按子串匹配，但片名本身不算（《逃往雅典娜》不是雅典娜做的盘）。"""
+    pats = []
+    for n in names or []:
+        n = str(n).strip()
+        if not n:
+            continue
+        if re.search(r'[A-Za-z0-9]', n):
+            pats.append((n, re.compile(r'(?<![A-Za-z0-9])' + re.escape(n) + r'(?![A-Za-z0-9])', re.I), False))
+        else:
+            # 写成发布标签的样子（@雅典娜、-雅典娜、雅典娜@站、雅典娜小组@站）：不管在哪都算
+            tag = re.compile(r'[@\-]\s*' + re.escape(n) + r'|' + re.escape(n) + r'(?:小组|字幕组)?\s*@')
+            pats.append((n, re.compile(re.escape(n)), tag))
+
+    def hit(text, titles=()):
+        for n, p, tag in pats:
+            t = text or ''
+            if tag:
+                if tag.search(t):
+                    return n
+                for ti in titles:                         # 中文名：先把片名挖掉再找
+                    if ti:
+                        t = t.replace(ti, ' ')
+            if p.search(t):
+                return n
+        return ''
+    return hit
+
+
+def subfx_reason(name, hit):
+    if SUBFX_WORD.search(name or ''):
+        return '名字里写了「特效字幕」'
+    g = hit(name, (_first_frag(name), S._title2(name or '')))
+    return ('特效字幕组名单：' + g) if g else ''
+
+
 # ---------------- 判档 ----------------
-def _kind(name, zone, form):
+def _kind(name, zone, form, fx=''):
     n = (name or '').lower()
-    if 'diy' in n or '特效字幕' in (name or ''):
+    if fx:
+        return 'T'
+    if 'diy' in n:
         return 'D'
     if zone == 'yuanpan':
         return 'I'
@@ -196,6 +242,7 @@ def copies(cfg, gone=frozenset()):
             g = float(u['单元总GB']) * 1e9 / GIB                 # 单元体积是 1000 进制，换回 115 口径
             out.append(dict(zone=u['分区'], path=u['路径'], name=u['电影'], main_name=mn, form=form, gb=g, mgb=g, vh=None))
     extra = [x for x in cfg['exclude_names']] + [x for x in cfg['listpack_names']]
+    hit = subfx_matcher(cfg.get('subfx_groups') or [])
     res = []
     gone_dirs = {g.rsplit('/', 1)[0] for g in gone}            # 被判掉的文件所在的夹：整夹那一份也不再参与
     for c in out:
@@ -205,7 +252,8 @@ def copies(cfg, gone=frozenset()):
         c['locked'] = bool(any(b in p for b in S.BANGDAN) or any(e in p for e in S.EXCL) or sources.hit_any(p, extra))
         c['multi'] = bool(_MULTI.search(S.SPEC_CUT.sub(' ', c['name'])))           # 一份里装着几部片（红气球+白鬃野马）：可当保留份，自己不搬
         c['locked'] = c['locked'] or c['multi']
-        c['kind'] = _kind(c['name'] + ' ' + c['main_name'], c['zone'], c['form'])
+        c['subfx'] = subfx_reason(c['name'] + ' ' + c['main_name'], hit)
+        c['kind'] = _kind(c['name'] + ' ' + c['main_name'], c['zone'], c['form'], c['subfx'])
         c['res'], c['res_src'] = _res(c)
         c['small'] = c['zone'] == 'heji' and (c['gb'] < SMALL_GB or (bool(S.LOWMARK.search(c['name'])) and c['gb'] < LOW_GB))
         # 认片看夹名（单元 / 盘片夹的名字就是片名）；夹名里缺的（TMDB / 片名 / 年份）再从主文件名补。两者拼起来会让拉丁片名重复一遍，对不上单文件
@@ -316,6 +364,8 @@ def _tags(x, keep):
         t.append('原盘区内重复')
     if x.get('small'):
         t.append('小文件低质')
+    if x['kind'] == 'T' or keep['kind'] == 'T':
+        t.append('特效字幕版')
     return t
 
 
@@ -324,26 +374,26 @@ def judge(ms):
     ms = sorted(ms, key=rank, reverse=True)
     keep = ms[0]
     rest = ms[1:]
-    partner = None
-    if keep['kind'] != 'D':
-        partner = next((m for m in rest if m['kind'] == 'D'), None)
+    fam = lambda c: 'DT' if c['kind'] in DIY_FAMILY else c['kind']
+    if keep['kind'] not in DIY_FAMILY:
+        partner = next((m for m in rest if m['kind'] in DIY_FAMILY), None)
     else:
         partner = next((m for m in rest if m['kind'] == 'I'), None)
     out = []
     for x in rest:
         if x is partner:
-            out.append((x, 'V', keep, '一份是 DIY（加了中文字幕等），一份是%s，两份都留' % KIND_NAME[keep['kind'] if keep['kind'] != 'D' else x['kind']]))
+            out.append((x, 'V', keep, '%s 和 %s 是一对版本（加了中文字幕的和原版），两份都留' % (KIND_NAME[keep['kind']], KIND_NAME[x['kind']])))
             continue
-        # 和版本对里同类的那份比（多出来的 DIY 跟留下的 DIY 比），否则跟保留份比
-        k = partner if (partner is not None and x['kind'] == partner['kind']) else keep
+        # 和版本对里同一家的那份比（多出来的 DIY / 特效字幕版跟留下的那份比），否则跟保留份比
+        k = partner if (partner is not None and fam(x) == fam(partner)) else keep
         if x['res'] == '?' or k['res'] == '?':
-            if x['kind'] == 'R' and x['res'] == '?' and k['kind'] in ('I', 'D') and k['res'] == 'U' and k['res_src'] != '体积推断':
+            if x['kind'] == 'R' and x['res'] == '?' and k['kind'] in ('I', 'D', 'T') and k['res'] == 'U' and k['res_src'] != '体积推断':
                 out.append((x, 'N', k, 'REMUX 没标分辨率，保留的那份是已确认的 4K 原盘'))
             elif x['res'] == '?' and x.get('small') and k['res'] in ('U', 'H') and (k['gb'] >= 10 or k['gb'] >= 2 * x['gb']):
                 out.append((x, 'A', k, '小文件、没标分辨率，保留的那份是正经版本'))      # 同原小文件层「原盘有正经份」
             elif x['res'] == '?' and k['res'] == '?' and x['kind'] == k['kind']:
                 out.append((x, 'B', k, '两份都没标分辨率、来源相同，留更大 / 命名更好的那份'))   # 同原合集内重复
-            elif x['res'] == '?' and x['kind'] == 'O' and k['kind'] in ('I', 'D', 'R') and k['res'] in ('U', 'H'):
+            elif x['res'] == '?' and x['kind'] == 'O' and k['kind'] in ('I', 'D', 'T', 'R') and k['res'] in ('U', 'H'):
                 out.append((x, 'A', k, '没标分辨率的压制版，保留的那份是%s %s' % (KIND_NAME[k['kind']], RES_NAME[k['res']])))
             else:
                 out.append((x, 'U', k, '有一边分辨率看不出，没法比，请自己看'))
@@ -393,8 +443,11 @@ def scan(cfg, gone=frozenset()):
                 b = BUCKET[cls]
                 members.append(dict(path=x['path'], role=b, **_brief(x)))
                 basis = '%s：这份 %s；留 %s' % (why, _desc(x), _desc(k))
+                fx = '；'.join(z for z in (('这份是特效字幕版（%s）' % x['subfx']) if x['subfx'] else '',
+                                          ('留的是特效字幕版（%s）' % k['subfx']) if k['subfx'] else '') if z)
                 rows.append(dict(stage=STAGE, cls=cls, bucket=b, path=x['path'], gb=round(x['gb'], 2), keep=k['path'],
-                                 basis=basis, tags=_tags(x, k), grp=g, keep_gb=round(k['gb'], 2)))
+                                 basis=basis + ('。' + fx if fx else ''), tags=_tags(x, k), grp=g, keep_gb=round(k['gb'], 2),
+                                 **({'subfx': fx} if fx else {})))
                 st[b] += 1
         gout[g] = {'title': _gtitle(ms), 'members': members}
     for c in cs:
@@ -404,7 +457,8 @@ def scan(cfg, gone=frozenset()):
 
 
 def _brief(c):
-    return {'zone': c['zone'], 'kind': c['kind'], 'res': c['res'], 'res_src': c['res_src'], 'gb': round(c['gb'], 2)}
+    return {'zone': c['zone'], 'kind': c['kind'], 'res': c['res'], 'res_src': c['res_src'], 'gb': round(c['gb'], 2),
+            'subfx': c.get('subfx', '')}
 
 
 def _gtitle(ms):

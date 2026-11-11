@@ -1151,12 +1151,19 @@
                 <div class="field-row">
                   <div class="field"><label>保护目录名（整个不看、不动）</label><textarea class="ta" id="c-protect_names"></textarea></div>
                   <div class="field"><label>榜单包（只认包这一层；不筛不拆）</label><textarea class="ta" id="c-listpack_names"></textarea></div>
-                  <div class="field"><label>排除词（只参与「合集 vs 原盘」）</label><textarea class="ta" id="c-exclude_names"></textarea></div>
+                  <div class="field"><label>排除词（命中的不进可清理，可当保留份）</label><textarea class="ta" id="c-exclude_names"></textarea></div>
                   <div class="field"><label>系列电影关键字（剧集识别时提示）</label><textarea class="ta" id="c-tv_keep_names"></textarea></div>
                   <div class="field"><label>重复时优先保留的目录名（只决定留哪份）</label><textarea class="ta" id="c-keep_first_names"></textarea></div>
                 </div>
                 <label class="field" style="display:flex;gap:8px;align-items:center;font-size:13px"><input type="checkbox" id="confirmRm">我确认移除保护（删掉已有保护目录名时需要）</label>
               </section>
+              <details class="card set-card fold" aria-label="特效字幕组">
+                <summary><span><b>特效字幕组</b><span class="sec-sub">已带默认名单，一般不用改。同分辨率里，命中这些作者的盘算「特效字幕版」，最优先留</span></span></summary>
+                <p class="sec-sub" style="margin-top:12px">名字里直接写了「特效字幕」的不用列。一行一个，照发布名里的写法：
+                  <span class="mono">SGNB</span>、<span class="mono">Thor@HDSky</span>、<span class="mono">雅典娜</span>。英文不分大小写，只认整段（SGNB 不会命中 LSGNBX）；
+                  中文名出现在片名里不算（《逃往雅典娜》不会被认成雅典娜的盘）。改了要重新扫描。</p>
+                <div class="field"><textarea class="ta" id="c-subfx_groups" style="min-height:150px"></textarea></div>
+              </details>
               <section class="card set-card" aria-label="已确认保留">
                 <h2><i data-ic="check"></i>已确认保留</h2>
                 <p class="sec-sub">「需人工确认」里你看过、决定留着的条目（按路径记）。命中的不再出现在清单里，只报个数；撤销后下次看清单就重新出现。和保护名单不同：这里不影响判定，不会让结果作废。</p>
@@ -1719,6 +1726,7 @@ function rowChips(x) {
   if (ap) c.push(`<span class="chip hot">已批准 → ${esc(ACT_NAME[ap.action] || '')}</span>`);
   if (x.move) c.push(`<span class="chip">${x.move === '整夹' ? '整夹' : '单文件'}</span>`);
   if (x.flag) c.push(`<span class="chip">${esc(x.flag)}</span>`);
+  if (x.subfx) c.push(`<span class="chip" title="${esc(x.subfx)}">特效字幕</span>`);
   if ((x.basis || '').includes('按体积推断')) c.push('<span class="chip">体积推断*</span>');
   return c.join('');
 }
@@ -1835,7 +1843,7 @@ function closeDlg() { LIST.open = null; $('#dlg').classList.remove('open'); $('#
 $('#dClose').onclick = closeDlg; $('#scrim').onclick = closeDlg;
 const ROLE = {keep: ['保留', 't-green'], '版本型': ['也留（版本对）', 't-green'], '可切': ['可清理', ''], '待定': ['需人工确认', 't-amber'], locked: ['不碰（榜单 / 排除 / 多片合装）', 'muted']};
 const ZONE_SHORT = {heji: '合集区', yuanpan: '原盘区', remux: 'REMUX 区', pack: '整夹合集区'};
-const KIND_SHORT = {I: '原盘', D: 'DIY', R: 'REMUX', O: '压制'};
+const KIND_SHORT = {T: '特效字幕版', I: '原盘', D: 'DIY', R: 'REMUX', O: '压制'};
 const RES_SHORT = {U: '4K', H: '1080p', S: '720p 及以下', '?': '画质未知'};
 async function renderGroup(x) {
   const w = $('#dGroupWrap');
@@ -1851,8 +1859,8 @@ async function renderGroup(x) {
   $('#dGroup').innerHTML = `<table class="grp-table"><tbody>${ms.map(m => {
     const [rn, tone] = ROLE[m.role] || [m.role, ''];
     return `<tr class="${m.path === x.path ? 'me' : ''}"><td class="role ${tone}">${esc(rn)}${m.path === x.path ? '<br><span class="muted">（这一条）</span>' : ''}</td>
-      <td>${esc(ZONE_SHORT[m.zone] || m.zone)} · ${esc(KIND_SHORT[m.kind] || m.kind)} · ${esc(RES_SHORT[m.res] || m.res)}${m.res_src === '体积推断' ? '*' : ''} · <span translate="no">${fmtGB(m.gb)}</span><div class="mono">${esc(m.path)}</div></td></tr>`;
-  }).join('')}</tbody></table><div class="muted" style="font-size:11.5px;margin-top:6px">先比分辨率，同分辨率再比来源（原盘 > DIY > REMUX > 压制），再比所在区和命名。* = 按体积推断。</div>`;
+      <td>${esc(ZONE_SHORT[m.zone] || m.zone)} · ${esc(KIND_SHORT[m.kind] || m.kind)} · ${esc(RES_SHORT[m.res] || m.res)}${m.res_src === '体积推断' ? '*' : ''} · <span translate="no">${fmtGB(m.gb)}</span>${m.subfx ? `<div class="muted">认作特效字幕版：${esc(m.subfx)}</div>` : ''}<div class="mono">${esc(m.path)}</div></td></tr>`;
+  }).join('')}</tbody></table><div class="muted" style="font-size:11.5px;margin-top:6px">先比分辨率，同分辨率再比来源（特效字幕版 > 原盘 > DIY > REMUX > 压制），再比所在区和命名。* = 按体积推断。特效字幕组名单在设置里改。</div>`;
 }
 function renderDlg() {
   const x = LIST.rows[LIST.open]; if (!x) return;
@@ -2049,7 +2057,7 @@ async function batchAct(kind, id, be) {
 
 /* ============================== 设置 ============================== */
 const SCALARS = ['cd2_mount', 'cd2_config', 'cd2_api_name', 'cd2_api_user', 'emby_data', 'emby_prefix', 'csv_dir', 'min_video_mb', 'quarantine_dir', 'main_lib_dir', 'unique_dir', 'exec_mode', 'cd2_api_addr'];
-const LISTS = ['protect_names', 'listpack_names', 'exclude_names', 'tv_keep_names', 'keep_first_names'];
+const LISTS = ['protect_names', 'listpack_names', 'exclude_names', 'tv_keep_names', 'keep_first_names', 'subfx_groups'];
 const SRC_DESC = {cache: '读 CD2 自己的目录缓存（推荐）：快，不向网盘发请求；结果以缓存时刻为准。', scan: '遍历 CD2 挂载目录（兜底）：慢，每个目录都会经 CD2 向网盘发请求。', csv: '读现成的五张 CSV（对账用）。'};
 let SRC = 'cache';
 async function renderSettings() {
