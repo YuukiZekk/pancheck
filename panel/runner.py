@@ -381,6 +381,7 @@ def main(mode, run_dir):
     import sieve
     from . import groups as G
     sieve.LP_OFF = tuple(cfg.get('listpack_off') or ())          # 用户点过「不算榜单包」的目录
+    sieve.LP_ON = not cfg.get('tree_model')                      # 勾选模型：没勾 = 不筛，不再另认榜单包
     rows = []
     emit('dupes', '查找原盘区完全重复', 20)
     rows += yuanpan_dupes(result)

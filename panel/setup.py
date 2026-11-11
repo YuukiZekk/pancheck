@@ -371,29 +371,190 @@ def listpack_scan(cfg, kids, max_seg=5):
     return out[:40]
 
 
+# ---------------- 反馈 23：顶部三个位置 + 下面一棵只管勾选的目录树 ----------------
+# 勾上的目录 = zones 里的根（分区类型由这里按名字自动定，界面上不出现）；根下面没勾的 = skip_dirs。
+# 置灰只是提示（内容未知 / 部片太少 / 规则隐藏），不挡勾选；只有查重区本身不能勾（它不进扫描）。
+TREE_WHY = {
+    'hidden': '按规则隐藏的目录（别的工具的工作区 / 回收站 / 排查类），默认不勾',
+    'unknown': 'CD2 还没打开过，内容未知——去 CD2 里点开一次，回来点「刷新」',
+    'todo': '待整理 / 下载类目录，默认不勾',
+    'few': '部片太少，像是一部片 / 一部剧的夹',
+    'empty': '下面没有文件夹，像是一部片的夹',
+}
+PLACE_NAME = {'mainlib': '主媒体库', 'quarantine': '查重区', 'staging': '待入库区'}
+MAX_CHILDREN = 500
+
+
+class _Ctx:
+    """一次请求里共用的目录树信息（缓存模式全是现成的，零网盘请求）。"""
+
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.kids, self.unopened, self.truncated = _full_tree(cfg)
+        self.cache = cfg.get('data_source') == 'cache'
+        self.units, self.tops = None, None
+        if self.cache:
+            from . import cd2cache
+            self.units = cd2cache.work_dirs(cd2cache.unit_dirs(cfg))
+            self.tops = cd2cache.api_tops(cfg)
+        self.current = {p: z for z, ps in cfg['zones'].items() for p in ps}
+
+    def n_units(self, vp):
+        if self.units is None:
+            return None
+        from . import cd2cache
+        return cd2cache.count_units(self.units, vp)
+
+    def children_names(self, vp):
+        names = self.kids.get(vp or '/', ())
+        if (vp or '/') == '/' and self.tops is not None:
+            names = [n for n in names if n in self.tops]
+        return names
+
+
+def auto_zone(vp, current=None):
+    """勾上的目录按名字自动归类（界面上不出现）：已绑过的照旧；名字里有 REMUX → REMUX 区；
+    原盘 / 蓝光 / BDMV / ISO → 原盘区（自己没有就看上层）；其余 → 合集区。"""
+    if current and vp in current:
+        return current[vp]
+    strong, _ = zone_guess(vp)
+    if strong:
+        return strong
+    parts = [_core(x) for x in vp.strip('/').split('/')[1:]]
+    for core in reversed(parts):
+        if 'remux' in core:
+            return 'remux'
+        if _has(core, S.ZONE_HINTS['yuanpan']) and not _has(core, ('合集', '电影包')):
+            return 'yuanpan'
+        if _has(core, ('合集', '电影包')):
+            return 'heji'
+    return 'heji'
+
+
+def _entry(ctx, vp, depth):
+    name = vp.rsplit('/', 1)[-1]
+    core = _core(name)
+    sub = len(ctx.kids.get(vp, ()))
+    units = ctx.n_units(vp)
+    off = None
+    if _has(core, JUNK):
+        off = 'hidden'
+    elif vp in ctx.unopened:
+        off = 'unknown'
+    elif _has(core, NOT_ZONE):
+        off = 'todo'
+    elif sub == 0 and (vp in ctx.kids or ctx.cache):
+        off = 'empty'
+    elif units is not None and units < MIN_UNITS:
+        off = 'few'
+    e = {'path': vp, 'name': name, 'kids': sub, 'units': units, 'auto': auto_zone(vp, ctx.current)}
+    if off:
+        e['off'], e['why'] = off, TREE_WHY[off]
+    return e
+
+
+def children(cfg, vp, ctx=None):
+    """一个目录下面的子目录（展开时按需取）。网盘根（/）只列目标网盘的顶层（如 /115）。"""
+    ctx = ctx or _Ctx(cfg)
+    vp = '/' + vp.strip('/') if vp.strip('/') else '/'
+    names = ctx.children_names(vp)
+    pre = '' if vp == '/' else vp
+    out = [_entry(ctx, pre + '/' + n, pre.count('/') + 1) for n in names[:MAX_CHILDREN]]
+    return {'path': vp, 'dirs': out, 'more': max(0, len(names) - MAX_CHILDREN)}
+
+
+def _container(ctx, vp):
+    """装着好几部片的目录（保护 / 榜单包类目录的预选只看这类，片名里的「收藏版」不算）。"""
+    u = ctx.n_units(vp)
+    return (u >= 2) if u is not None else bool(ctx.kids.get(vp))
+
+
+def _preskip(ctx, roots):
+    """预选里「父级已勾、它们未勾」的目录：系列电影合集 / 出品公司 / 已刮削大包 / 榜单包 / 已有的保护名。
+    只取最上面那层；按整棵缓存树找（任意层），不限前三层。→ [(路径, 原因)]"""
+    import sieve
+    cfg = ctx.cfg
+    names = list(cfg['protect_names']) + list(cfg['keep_first_names']) + list(S.PROTECT_TEMPLATES)
+    lp_names = list(cfg['listpack_names'])
+    out = []
+    queue = list(roots)
+    while queue:
+        path = queue.pop(0)
+        for n in ctx.kids.get(path, ()):
+            vp = path + '/' + n
+            if not _container(ctx, vp):
+                continue
+            why = None
+            if S.hit_any(n, names):
+                why = '保护类目录（名字含「%s」）' % S.hit_any(n, names)
+            elif (sieve.listpack_word(n) or S.hit_any(n, lp_names)) and not S.lp_off(vp, cfg):
+                why = '榜单包（%s）' % (sieve.listpack_word(n) or S.hit_any(n, lp_names))
+            if why:
+                out.append((vp, why))
+            else:
+                queue.append(vp)
+    return out
+
+
+def _place_guess(ctx):
+    """顶部三个位置按名字猜：查重区 ← 含「排查 / 查重」；待入库区 ← 含「待入库 / 待整理 / 新入库」；
+    主媒体库 ← 含「媒体库 / 主库」，没有就用唯一绑定的原盘区根。只看前三层，取最浅的。"""
+    cands = []
+    queue = [('/', 0)]
+    while queue:
+        path, d = queue.pop(0)
+        for n in ctx.children_names(path):
+            vp = ('' if path == '/' else path) + '/' + n
+            if d >= 1:
+                cands.append((d, vp, _core(n)))
+            if d < 3:
+                queue.append((vp, d + 1))
+    cands.sort()
+
+    def first(words):
+        for w in words:
+            for _, vp, core in cands:
+                if w in core:
+                    return vp
+        return ''
+    yp = ctx.cfg['zones']['yuanpan']
+    return {'quarantine': first(('查重', '排查')), 'staging': first(('待入库', '待整理', '新入库')),
+            'mainlib': first(('媒体库', '主库')) or (yp[0] if len(yp) == 1 else '')}
+
+
 def check_zones(cfg=None):
-    """第 3 步：分区候选（不合格的置灰写原因）+ 保护 / 榜单包 / 排查区一站式设定 + 缓存覆盖。"""
+    """第 3 步「确认筛查范围」：顶部三个位置 + 目录树预选（勾上的根 + 根下面没勾的）。只读，前端点「完成」时再存。"""
     cfg = cfg or C.load()
     try:
-        tree = _full_tree(cfg)
-        cands, truncated = zone_candidates(cfg, tree=tree)
-        protect = protect_scan(cfg, tree[0])
-        lps = listpack_scan(cfg, tree[0])
+        ctx = _Ctx(cfg)
+        cands, _ = zone_candidates(cfg, tree=(ctx.kids, ctx.unopened, ctx.truncated))
     except Exception:
         return {'ok': False, 'error': '读不出网盘目录树。', 'hint': '回到第 1 步重新识别 CD2。'}
-    cov = {}
-    if cfg.get('data_source') == 'cache' and cands:
-        from . import cd2cache
-        try:
-            cov = cd2cache.coverage(cfg, [c['path'] for c in cands if c.get('off') in (None, 'few', 'staging')])
-        except Exception:
-            cov = {}
-    # 名字里带「排查」的目录（按规则不当候选）：还没指定排查区时，提示从这里挑
-    qguess = [c['path'] for c in cands if c.get('off') == 'hidden' and '排查' in c['path'].rsplit('/', 1)[-1]]
-    return {'ok': True, 'candidates': cands, 'truncated': truncated, 'coverage': cov,
-            'protect_templates': S.PROTECT_TEMPLATES, 'protect_found': list(protect), 'protect_where': protect,
-            'protect_names': cfg['protect_names'],
-            'listpacks': lps, 'listpack_found': [o['path'] for o in lps if not o['off']],
-            'listpack_rule': C.LISTPACK_RULE, 'quarantine_guess': qguess,
-            'dirs': {'quarantine': cfg.get('quarantine_dir') or '', 'mainlib': cfg.get('main_lib_dir') or '',
-                     'unique': cfg.get('unique_dir') or ''}}
+    places = {'mainlib': cfg.get('main_lib_dir') or '', 'quarantine': cfg.get('quarantine_dir') or '',
+              'staging': cfg.get('staging_dir') or ''}
+    guess = _place_guess(ctx)
+    guessed = [k for k in places if not places[k] and guess[k]]
+    for k in guessed:
+        places[k] = guess[k]
+    if cfg.get('tree_model'):
+        include = sorted(ctx.current)
+        skip = [{'path': p, 'why': ''} for p in cfg.get('skip_dirs') or ()]
+    else:
+        # 老配置第一次进新向导：已绑的分区原样当「勾上」；没绑过的按原来的候选规则预勾名字明确的电影区
+        include = sorted(ctx.current) or sorted(c['path'] for c in cands if c.get('strong') and not c.get('off'))
+        q = places['quarantine']
+        include = [p for p in include if not (q and (p == q or p.startswith(q + '/')))]
+        skip = [{'path': p, 'why': w} for p, w in _preskip(ctx, include)]
+    # 展开到能看见每个勾 / 不勾的位置：它们的各层上级的子目录都带上
+    want = {'/'} | {t for t in ctx.children_names('/')}
+    for p in include + [s['path'] for s in skip] + [v for v in places.values() if v]:
+        parts = p.strip('/').split('/')
+        for i in range(0, len(parts)):
+            want.add('/' + '/'.join(parts[:i]) if i else '/')
+    want = {('/' + w.strip('/')) if w.strip('/') else '/' for w in want}
+    nodes = {w: children(cfg, w, ctx) for w in sorted(want) if w == '/' or w in ctx.kids}
+    legacy = {'protect_names': cfg['protect_names'], 'listpack_names': cfg['listpack_names']} if not cfg.get('tree_model') else {}
+    return {'ok': True, 'tree_model': cfg.get('tree_model'), 'places': places, 'guessed': guessed,
+            'staging_on': cfg.get('staging_on', True), 'include': include, 'skip': skip,
+            'auto': {p: auto_zone(p, ctx.current) for p in include}, 'nodes': nodes, 'legacy': legacy,
+            'truncated': ctx.truncated}

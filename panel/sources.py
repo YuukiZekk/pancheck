@@ -59,6 +59,8 @@ def lp_word(text, names):
 
 def lp_path(vp, cfg):
     """整条路径口径（内核判定层用）：内置规则 + 用户名字，扣掉用户移除的。"""
+    if cfg.get('tree_model'):
+        return None
     return None if lp_off(vp, cfg) else lp_word(vp, cfg['listpack_names'])
 
 
@@ -66,7 +68,7 @@ def listpack_hit(vp, names, cfg, rule=True):
     """榜单包只认「包」这一层（分区根下第一级目录），与内核第一刀按大包名判榜单包同口径。
     更深层目录名里顺带出现的字样（如「狗神主演-戛纳影帝-…」「胜利之光 豆瓣8.1」）不算。
     rule=False 只看 names（用户追加的名字），不看内置规则。"""
-    if lp_off(vp, cfg):
+    if lp_off(vp, cfg) or cfg.get('tree_model'):
         return None
     for roots in cfg['zones'].values():
         for r in roots:
@@ -80,7 +82,23 @@ def listpack_hit(vp, names, cfg, rule=True):
 
 def guard_hit(cfg, vp, units):
     """可清理守卫：保护目录名（任意层目录组件）或榜单包（包这一层）。"""
-    return protect_hit(vp, cfg['protect_names'], units) or listpack_hit(vp, cfg['listpack_names'], cfg)
+    return protect_hit(vp, cfg['protect_names'], units) or listpack_hit(vp, cfg['listpack_names'], cfg) or skip_hit(vp, cfg)
+
+
+def skip_hit(vp, cfg):
+    """筛查范围（反馈 23）：勾上的目录（zones 里的根）参与筛查，根下面没勾的（skip_dirs）不筛。
+    返回命中的「没勾」目录；路径又落在它下面某个单独勾上的根里时不算。"""
+    best = None
+    for d in cfg.get('skip_dirs') or ():
+        if (vp == d or vp.startswith(d + '/')) and (best is None or len(d) > len(best)):
+            best = d
+    if not best:
+        return None
+    for roots in cfg['zones'].values():
+        for r in roots:
+            if r.startswith(best + '/') and (vp == r or vp.startswith(r + '/')):
+                return None
+    return best
 
 
 def hit_any(text, names):
@@ -302,7 +320,8 @@ def scan_inputs(cfg, workdir, progress):
     for root, kind, vp, size in raw['yuanpan']:
         rel = vp[len(root):].strip('/').split('/')
         yall.append({'path': vp, 'size': size, 'kind': kind, 'pack': rel[0] if len(rel) > 1 else '',
-                     'top': 1 if (protect_hit(vp, keep_first, unit_dirs) or listpack_hit(vp, cfg['listpack_names'], cfg)) else 0})
+                     'top': 1 if (protect_hit(vp, keep_first, unit_dirs) or listpack_hit(vp, cfg['listpack_names'], cfg)
+                                  or skip_hit(vp, cfg)) else 0})
     _write(workdir, 'yuanpan_all.csv', ['path', 'size', 'kind', 'pack', 'top'], yall, 'utf-8-sig')
     # 同字节重复（A2 第二层）：全区文件（含保护区），缓存模式带 Sha1；保留档 / 守卫命中在这里先标好
     import sieve
@@ -315,7 +334,8 @@ def scan_inputs(cfg, workdir, progress):
                 continue
             hall.append({'path': vp, 'size': size, 'sha1': sha1.get(vp, ''), 'zone': z,
                          'root_depth': zroot_depth.get(root, 0),
-                         'tier': 1 if (protect_hit(vp, tier, unit_dirs) or listpack_hit(vp, cfg['listpack_names'], cfg)) else 0,
+                         'tier': 1 if (protect_hit(vp, tier, unit_dirs) or listpack_hit(vp, cfg['listpack_names'], cfg)
+                                       or skip_hit(vp, cfg)) else 0,
                          'guard': 1 if guard_hit(cfg, vp, unit_dirs) else 0})
     _write(workdir, 'hidden_all.csv', ['path', 'size', 'sha1', 'zone', 'root_depth', 'tier', 'guard'], hall, 'utf-8-sig')
     stats['hash_mode'] = 'sha1' if sha1 else 'size'
@@ -327,7 +347,7 @@ def scan_inputs(cfg, workdir, progress):
     for z in raw:
         kept = []
         for it in raw[z]:
-            n = protect_hit(it[2], blocked, unit_dirs)
+            n = protect_hit(it[2], blocked, unit_dirs) or skip_hit(it[2], cfg)
             if n:
                 skipped[n] += 1
                 skipped_bytes += it[3]

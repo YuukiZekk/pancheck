@@ -276,6 +276,9 @@ async def put_config(request: Request):
     old = C.load()
     # 保护词只能加不能减：内置词由 normalize 补回；用户已有的保护目录名不允许在面板里删
     removed = [x for x in old['protect_names'] if x not in (body.get('protect_names') or [])]
+    # 反馈 23：在向导里改成勾选模型时，保护名换成具体目录的「不勾」（skip_dirs），由向导「完成」这一下显式确认
+    if removed and body.get('tree_model') and body.get('skip_dirs') is not None and body.get('confirm_tree_model'):
+        removed = []
     if removed and not body.get('confirm_remove_protect'):
         raise HTTPException(400, '要移除保护目录名：%s。确认请勾选「我确认移除保护」' % '、'.join(removed))
     c = C.save(body)
@@ -295,6 +298,11 @@ async def setup_step(step: str, request: Request):
         return W.check_emby(str(body.get('emby_data') or c['emby_data']).strip(), c)
     if step == 'zones':
         return W.check_zones(c)
+    if step == 'children':
+        try:
+            return W.children(c, str(body.get('path') or '/'))
+        except OSError as e:
+            raise HTTPException(400, str(e))
     raise HTTPException(404, '没有这一步')
 
 
@@ -356,7 +364,8 @@ def exec_status():
             'exec_mode': mode, 'backend': 'mount' if mode == 'mount' or (mode == 'auto' and not has_tok) else 'cd2',
             'direct': direct,
             'trial_max': X.TRIAL_MAX,
-            'dirs': {'quarantine': c['quarantine_dir'], 'mainlib': c['main_lib_dir'], 'unique': c['unique_dir']},
+            'dirs': X.dest_dirs(c), 'dir_names': X.dest_names(c), 'staging_on': c['staging_on'], 'tree_model': c['tree_model'],
+            'main_lib': c['main_lib_dir'],
             'run_id': res and res['run_id'], 'stale': bool(res and res['stale']),
             'rejected': bool(res and res.get('rejected')), 'approvals': n}
 
@@ -387,7 +396,7 @@ async def approvals_put(request: Request):
     items = X.load_approvals(d, res['fingerprint'])
     errors = []
     for a in body.get('add') or []:
-        action, err = X.approvable(rows_by_path, a.get('path'), a.get('dest'))
+        action, err = X.approvable(rows_by_path, a.get('path'), a.get('dest'), C.load())
         if err:
             errors.append({'path': a.get('path'), 'reason': err})
         else:

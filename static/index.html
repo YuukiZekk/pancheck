@@ -879,6 +879,21 @@
       .tacts{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
       .tacts button{font-size:11.5px;padding:2px 9px;border:1px dashed var(--border);border-radius:999px;background:var(--card);color:var(--foreground);cursor:pointer;min-height:0;font-family:inherit}
       .wz-sec{margin-top:18px}
+      .place-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+      @media (max-width:760px){ .place-grid{grid-template-columns:1fr} }
+      .place{position:relative;border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:var(--card);min-width:0}
+      .place.empty{border-style:dashed}
+      .place-head{display:flex;gap:6px;align-items:center;font-size:13px}
+      .place-path{font-size:12.5px;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .place.empty .place-path{color:var(--amber-text)}
+      .place .zmove{position:absolute;top:8px;right:8px}
+      .choice-cards.slim{gap:6px;margin-top:8px;grid-template-columns:1fr 1fr!important}
+      .choice-cards.slim button.choice-card{padding:6px 9px}
+      .choice-cards.slim button.choice-card b{font-size:12.5px}
+      .choice-cards.slim button.choice-card span{font-size:11px}
+      .tree23{border:1px solid var(--border);border-radius:10px}
+      .tchk{flex:none;margin:3px 2px 0 0}
+      .tnode.chk .tname{font-weight:600}
       .wz-sec h3{margin:0 0 4px;font-size:13px}
       .wz-sec > p{margin:0 0 6px;font-size:12.5px;color:var(--muted-foreground)}
       .xchip{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:2px 4px 2px 9px;border-radius:999px;border:1px solid var(--border);background:var(--card);max-width:100%}
@@ -1007,7 +1022,7 @@
             </div>
             <div id="invNext"></div>
             <section class="stats" id="invStats" aria-label="扫描小结"></section>
-            <div class="ov-section-head"><h2>分区构成</h2><p>目录绑到分区后才进筛查；要改，展开页面最下面的「目录绑定与保护」</p></div>
+            <div class="ov-section-head"><h2>按内容归类</h2><p>勾上的目录按名字自动归类（原盘 / 合集 / REMUX），只影响同档时先留哪份；要改筛查范围，点最下面「改筛查范围」</p></div>
             <div class="part-grid" id="invParts"></div>
             <section class="card section-card" aria-label="缓存覆盖">
               <h2>缓存覆盖</h2>
@@ -1018,28 +1033,11 @@
               <h2>库存与数据源</h2>
               <div class="kv" id="invInfo"></div>
             </section>
-            <details class="card section-card fold" id="invBindFold">
-              <summary><span><b>目录绑定与保护</b><span class="sec-sub">偶尔才用：改某个目录的分区、加保护、按目录名找建议</span></span></summary>
-            <section class="fold-part" aria-label="目录绑定">
-              <h2>目录绑定</h2>
-              <p class="sec-sub">逐层浏览网盘目录，给目录选分区或加保护；命中保护的目录整个不看、不动。</p>
-              <div class="crumb" id="invCrumb"></div>
-              <div class="bind-wrap">
-                <table class="bind-table">
-                  <thead><tr><th>目录</th><th style="width:190px">分区</th><th style="width:120px">保护</th></tr></thead>
-                  <tbody id="invTree"></tbody>
-                </table>
-              </div>
-              <div class="sec-foot">
-                <button class="btn primary sm" type="button" id="btnSaveBind" disabled>保存绑定</button>
-                <span class="hint" id="bindHint">改动后记得保存；保存后重新扫描</span>
-              </div>
+            <section class="card section-card" aria-label="筛查范围">
+              <div class="ov-card-head"><div><h2>筛查范围</h2><p class="sec-sub">勾上的目录参与筛查，没勾的不筛；三个位置设一次。和首次设置第 3 步是同一份设置。</p></div>
+                <button class="btn sm" type="button" data-wizard="3">改筛查范围</button></div>
+              <div class="kv" id="invScope"></div>
             </section>
-            <section class="fold-part" aria-label="按目录名建议">
-              <div class="ov-card-head"><div><h2>按目录名建议</h2><p class="sec-sub">只看目录名（最多 3 层），不读文件</p></div><button class="btn sm" type="button" id="btnSuggest">生成建议</button></div>
-              <div id="invSuggest"></div>
-            </section>
-            </details>
           </section>
 
           <!-- ============ 清单 ============ -->
@@ -1057,7 +1055,7 @@
             <section class="stats" id="listStats" aria-label="筛查概览"></section>
             <section class="card approve-bar exec-only" id="approveBar" hidden aria-label="批准，送入执行">
               <div class="approve-actions" style="border-top:none;padding-top:0;margin-top:0">
-                <span class="approve-count">已批准 <b id="apprTotal">0</b> 项 · → 排查区 <b id="apprQ">0</b> · → 主库 <b id="apprM">0</b><span id="apprU"></span></span>
+                <span class="approve-count">已批准 <b id="apprTotal">0</b> 项 · → 查重区 <b id="apprQ">0</b> · → <span id="apprMName">主库</span> <b id="apprM">0</b><span id="apprU"></span></span>
                 <span class="tag" id="apprTrial" hidden>首批 ≤10 条</span>
                 <button class="btn primary" type="button" id="btnApprove" disabled>批准，送入执行</button>
               </div>
@@ -1172,15 +1170,16 @@
               </section>
               <section class="card set-card" aria-label="保护与榜单">
                 <h2><i data-ic="shield"></i>保护目录、榜单包与排除词</h2>
+                <p class="sec-sub" id="setTreeNote" hidden>筛查范围在「首次设置」第 3 步的目录树里勾：没勾 = 不筛，保护目录、榜单包不再单独设。<button class="btn sm" type="button" data-wizard="3" style="margin-left:6px">改筛查范围</button></p>
                 <p class="sec-sub">一行一个，只匹配目录名；内置词删不掉。</p>
                 <div class="field-row">
-                  <div class="field"><label>保护目录名（整个不看、不动）</label><textarea class="ta" id="c-protect_names"></textarea></div>
-                  <div class="field"><label>榜单包名（追加；内置规则已认豆瓣 / IMDb + Top N、Top 250、戛纳电影节…，评分字样不算）</label><textarea class="ta" id="c-listpack_names"></textarea></div>
+                  <div class="field" id="fProt"><label>保护目录名（整个不看、不动）</label><textarea class="ta" id="c-protect_names"></textarea></div>
+                  <div class="field" id="fLp"><label>榜单包名（追加；内置规则已认豆瓣 / IMDb + Top N、Top 250、戛纳电影节…，评分字样不算）</label><textarea class="ta" id="c-listpack_names"></textarea></div>
                   <div class="field"><label>排除词（命中的不进可清理，可当保留份）</label><textarea class="ta" id="c-exclude_names"></textarea></div>
                   <div class="field"><label>系列电影关键字（剧集识别时提示）</label><textarea class="ta" id="c-tv_keep_names"></textarea></div>
                   <div class="field"><label>重复时优先保留的目录名（只决定留哪份）</label><textarea class="ta" id="c-keep_first_names"></textarea></div>
                 </div>
-                <label class="field" style="display:flex;gap:8px;align-items:center;font-size:13px"><input type="checkbox" id="confirmRm">我确认移除保护（删掉已有保护目录名时需要）</label>
+                <label class="field" id="fRm" style="display:flex;gap:8px;align-items:center;font-size:13px"><input type="checkbox" id="confirmRm">我确认移除保护（删掉已有保护目录名时需要）</label>
               </section>
               <details class="card set-card fold" aria-label="特效字幕组">
                 <summary><span><b>特效字幕组</b><span class="sec-sub">已带默认名单，一般不用改。同分辨率里，命中这些作者的盘算「特效字幕版」，最优先留</span></span></summary>
@@ -1203,8 +1202,10 @@
                 <div class="field-row">
                   <div class="field"><label>执行方式</label><select class="sel" id="c-exec_mode"><option value="auto">自动（有 CD2 令牌走直连）</option><option value="cd2">CD2 直连（服务端改名，秒完）</option><option value="mount">挂载改名（慢，只适合小批量）</option></select></div>
                   <div class="field"><label>CD2 接口地址（直连）</label><input type="text" class="mono" id="c-cd2_api_addr" placeholder="192.168.1.10:19798"></div>
-                  <div class="field"><label>排查区（可清理搬到这里）</label><input type="text" class="mono" id="c-quarantine_dir" placeholder="/115/99-排查区"></div>
-                  <div class="field"><label>主库目录（主库缺口挪入这里）</label><input type="text" class="mono" id="c-main_lib_dir" placeholder="/115/00-主库"></div>
+                  <div class="field"><label>主媒体库（最终收藏所在；同档时最优先留这里的）</label><input type="text" class="mono" id="c-main_lib_dir" placeholder="/115/媒体库"></div>
+                  <div class="field"><label>查重区（可清理搬到这里，等你过目再删；它和下面都不扫）</label><input type="text" class="mono" id="c-quarantine_dir" placeholder="/115/99-查重区"></div>
+                  <div class="field"><label>待入库区（排重后留下、主库还没有的片挪到这里）</label><input type="text" class="mono" id="c-staging_dir" placeholder="/115/00-待入库"></div>
+                  <div class="field"><label>待入库区开关</label><select class="sel" id="c-staging_on"><option value="1">开：留下的统一挪进待入库区</option><option value="0">关：留下的留在原地，不搬</option></select></div>
                   <div class="field"><label>唯一副本目录（缺口 × 唯一副本的另一个去处）</label><input type="text" class="mono" id="c-unique_dir" placeholder="/115/98-唯一副本"></div>
                 </div>
                 <p class="field hint">三个目录都要和片子在同一个网盘里。直连用 CD2 配置目录里的 API 令牌（列目录 / 建文件夹 / 移动），只在内存里用。</p>
@@ -1219,7 +1220,7 @@
 
           <!-- ============ 首次设置向导 ============ -->
           <section data-view="wizard" hidden>
-            <div class="page-head"><div><h1 id="wzTitle">首次设置</h1><p>只要给两个目录：CD2 配置目录、Emby 数据目录。其余自动识别，你只负责确认。</p></div></div>
+            <div class="page-head"><div><h1 id="wzTitle">首次设置</h1><p id="wzLead">只要给两个目录：CD2 配置目录、Emby 数据目录。其余自动识别，你只负责确认。</p></div></div>
             <div class="steps-bar" id="wzSteps"></div>
             <section class="card set-card" id="wzBody"></section>
           </section>
@@ -1317,7 +1318,7 @@ const tierName = t => { if (!t) return '未知'; const base = {U: '4K', H: '1080
 const badge = b => `<span class="badge b-${TONE[b] || 'zinc'}"><i></i>${esc(bn(b))}</span>`;
 const FLAG_NAME = {infer: '原盘档为体积推断', roujiang: 'BDMV 肉酱盘', whole: '整夹搬', file: '只搬单文件'};
 const ZN = {yuanpan: '原盘区', heji: '合集区', remux: 'REMUX 区', pack: '整夹合集区'};
-const ACT_NAME = {quarantine: '排查区', mainlib: '主库', unique: '唯一副本目录'};
+const ACT_NAME = {quarantine: '查重区', mainlib: '主库', unique: '唯一副本目录'};       // mainlib 在勾选模型下是「待入库区」，loadCfg 里改
 
 /* ---------- 全局状态 ---------- */
 let CFG = null, AUTH = false, RES = null, EXS = null, APPR = {items: {}, overlap: []}, BATCHES = [];
@@ -1337,6 +1338,8 @@ function setExecOn() {
 async function loadCfg() {
   const r = await api('api/config');
   CFG = r.config; AUTH = r.auth_enabled;
+  ACT_NAME.mainlib = (CFG.tree_model || CFG.staging_dir) ? '待入库区' : '主库';
+  const am = $('#apprMName'); if (am) am.textContent = ACT_NAME.mainlib;
   $('#sidePw').hidden = !!AUTH;
   $('#sideSrc').textContent = '数据来源：' + ({cache: 'CD2 目录缓存', scan: '遍历挂载目录', csv: 'CSV 文件'}[CFG.data_source] || '');
 }
@@ -1536,7 +1539,7 @@ async function renderOverview() {
 const actName = a => (a || '').split(',').map(x => ACT_NAME[x] || x).join(' / ') || '—';
 
 /* ============================== 扫描 ============================== */
-let INV = null, PROBE = null, TREE_PATH = '/', BIND_DIRTY = false;
+let INV = null, PROBE = null;
 /* 扫描页的下一步：没扫过 → 扫描；扫完 → 去清单做决定；设置改过 → 重新扫描 */
 function nextStepHtml(inv) {
   const r = RES, sm = (r && r.summary) || {};
@@ -1560,7 +1563,7 @@ async function renderInventory() {
   const prot = Object.values(st.protected_skipped || {}).reduce((a, x) => a + x, 0);
   const kpi = (label, icon, num, sub, tone = '') => `<div class="card stat"><div class="stat-top"><span class="stat-label">${label}</span>${ic(icon)}</div><div class="stat-num ${tone}">${num}</div><div class="stat-sub">${sub}</div></div>`;
   $('#invStats').innerHTML = kpi('合集区电影', 'db', n((st.heji || {}).count), '合集区人口')
-    + kpi('已绑定目录', 'folder', n(roots), roots ? '要改就展开最下面「目录绑定」' : '<b>还没绑定任何目录</b>，不进筛查', roots ? '' : 't-amber')
+    + kpi('筛查的目录', 'folder', n(roots), roots ? '要改就点最下面「改筛查范围」' : '<b>还没勾任何目录</b>，不进筛查', roots ? '' : 't-amber')
     + kpi('缓存覆盖', 'refresh', src.kind === 'cache' ? (unlN ? n(unlN) : '全量') : '—', src.kind === 'cache' ? (unlN ? '个目录 CD2 没打开过，不在比对里' : '各分区目录都被 CD2 打开过') : '非缓存模式', unlN ? 't-amber' : '')
     + kpi('保护剔除', 'shield', n(prot), st.protected_gb ? fmtGB(st.protected_gb) + ' 整个不看不动' : '命中保护目录的条目');
   $('#invParts').innerHTML = Object.entries(ZN).map(([z, name]) => {
@@ -1569,7 +1572,7 @@ async function renderInventory() {
       <div class="part-num">${n(s.count)} <small>条 · ${fmtGB(s.gb)}</small></div>${rs.map(p => `<div class="part-path mono" title="${esc(p)}">${esc(p)}</div>`).join('') || '<div class="part-path">—</div>'}</div>`;
   }).join('');
   $('#invNext').innerHTML = nextStepHtml(inv);
-  await loadTree(TREE_PATH);
+  renderScope();
   // 覆盖
   const cov = Object.entries(unl).filter(([, x]) => x && x.count);
   $('#invCoverage').innerHTML = src.kind !== 'cache' ? '<div class="path-row muted">只有缓存模式才统计覆盖。</div>'
@@ -1582,8 +1585,8 @@ async function renderInventory() {
   let h = '';
   for (const z in ZN) h += kv(ZN[z], `${n((st[z] || {}).count)} 条 · ${fmtGB((st[z] || {}).gb)}`);
   if (st.heji_episodes) h += kv('分出的剧集', `${n(st.heji_episodes.count)} 个文件 · ${fmtGB(st.heji_episodes.gb)}`);
-  if (CFG.quarantine_dir) h += kv('排查区', `<span class="mono">${esc(CFG.quarantine_dir)}</span> · 不扫${st.quarantine_skipped ? '（这次跳过 ' + n(st.quarantine_skipped) + ' 条）' : ''}`);
-  else h += kv('排查区', '<span class="t-amber">还没指定</span> · 待删区可能被扫进来；在最下面「目录绑定」里把它设为排查区');
+  if (CFG.quarantine_dir) h += kv('查重区', `<span class="mono">${esc(CFG.quarantine_dir)}</span> · 不扫${st.quarantine_skipped ? '（这次跳过 ' + n(st.quarantine_skipped) + ' 条）' : ''}`);
+  else h += kv('查重区', '<span class="t-amber">还没指定</span> · 待删区可能被扫进来；点最下面「改筛查范围」在顶部设');
   if (st.listpack_kept && st.listpack_kept.count) h += kv('榜单包',`${n(st.listpack_kept.count)} 条 · 留在人口里，整包不筛`);
   const dh = (st.dropped || {}).heji || {};
   if (Object.keys(dh).length) h += kv('合集区未计入', Object.entries(dh).map(([k, v]) => (k === 'small' ? '小于体积门槛' : k.slice(3) + ' 格式') + ' ' + n(v)).join('，'));
@@ -1592,65 +1595,20 @@ async function renderInventory() {
   if (inv && inv.error_count) h += `<div class="warn-box">${n(inv.error_count)} 条提示：<br>${(inv.errors || []).slice(0, 12).map(esc).join('<br>')}</div>`;
   $('#invInfo').innerHTML = h || '<div class="muted">还没有扫描结果。点右上角「扫描」。</div>';
 }
-const OWN_KEY = {quarantine: 'quarantine_dir', mainlib: 'main_lib_dir', unique: 'unique_dir'};
-function zoneOf(p) { for (const k in OWN_KEY) if (CFG[OWN_KEY[k]] === p) return '@' + k; for (const z in ZN) if ((CFG.zones[z] || []).includes(p)) return z; return ''; }
-/* 与内核 sieve.LP_RE 同一条榜单包规则（反馈 19：「豆瓣8.3分」这类评分字样不算） */
-const LP_RE = /top\s*250|(?:豆瓣|imdb)[^/]{0,6}?(?:top\s*\d{2,3}|榜单|排行榜)|戛纳[^/]{0,4}?(?:电影节|影展|金棕榈|获奖|入围|参展|主竞赛|历届)/i;
-function isLocked(name, path) { return [...(CFG.protect_names || []), ...(CFG.listpack_names || [])].some(w => w && name.includes(w)) || (LP_RE.test(name) && !(CFG.listpack_off || []).includes(path)); }
-async function loadTree(path) {
-  TREE_PATH = path;
-  const parts = path.split('/').filter(Boolean);
-  $('#invCrumb').innerHTML = `<button type="button" data-p="/">根目录</button>` + parts.map((p, i) => `<span>/</span><button type="button" data-p="/${esc(parts.slice(0, i + 1).join('/'))}">${esc(p)}</button>`).join('');
-  $$('#invCrumb button').forEach(b => b.onclick = () => loadTree(b.dataset.p));
-  let r;
-  try { r = await api('api/tree?path=' + encodeURIComponent(path)); } catch (e) { $('#invTree').innerHTML = `<tr><td colspan="3" class="muted">${esc(e.message)}</td></tr>`; return; }
-  if (!r.dirs.length) { $('#invTree').innerHTML = '<tr><td colspan="3" class="muted">这一层没有子目录（或 CD2 还没打开过）。</td></tr>'; return; }
-  $('#invTree').innerHTML = r.dirs.map(d => {
-    const z = zoneOf(d.path), lock = isLocked(d.name, d.path), prot = (CFG.protect_names || []).includes(d.name);
-    return `<tr class="${lock ? 'locked' : ''}"><td data-l="目录"><button class="btn sm ghost" type="button" data-open="${esc(d.path)}">${ic('folder', 'sm')}${esc(d.name)}</button></td>
-      <td data-l="分区"><select class="sel sm" data-zone="${esc(d.path)}" ${lock ? 'disabled' : ''}><option value="">不绑定</option>${Object.entries(ZN).map(([k, v]) => `<option value="${k}" ${z === k ? 'selected' : ''}>${v}</option>`).join('')}<optgroup label="面板的去处（不当分区）">${Object.entries(OWN_LBL).map(([k, v]) => `<option value="@${k}" ${z === '@' + k ? 'selected' : ''}>${v}${k === 'quarantine' ? '（扫描不看）' : ''}</option>`).join('')}</optgroup></select></td>
-      <td data-l="保护">${lock && !prot ? '<span class="lock">' + ic('lock', 'sm') + '命中保护 / 榜单</span>' : `<button class="btn sm" type="button" data-prot="${esc(d.name)}">${prot ? '取消保护' : '加保护'}</button>`}</td></tr>`;
-  }).join('');
-  $$('#invTree [data-open]').forEach(b => b.onclick = () => loadTree(b.dataset.open));
-  $$('#invTree [data-zone]').forEach(s => s.onchange = () => {
-    const p = s.dataset.zone;
-    for (const z in ZN) CFG.zones[z] = (CFG.zones[z] || []).filter(x => x !== p);
-    for (const k in OWN_KEY) if (CFG[OWN_KEY[k]] === p) CFG[OWN_KEY[k]] = '';
-    if (s.value.startsWith('@')) CFG[OWN_KEY[s.value.slice(1)]] = p;      // 排查区 / 主库 / 唯一副本：和设置页、向导同一份
-    else if (s.value) CFG.zones[s.value].push(p);
-    s.closest('tr').classList.add('dirty'); markDirty();
-  });
-  $$('#invTree [data-prot]').forEach(b => b.onclick = () => {
-    const nm = b.dataset.prot, l = CFG.protect_names;
-    if (l.includes(nm)) { if (!confirm(`取消对「${nm}」的保护？保存时需要确认。`)) return; CFG.protect_names = l.filter(x => x !== nm); CFG._rmProtect = true; }
-    else l.push(nm);
-    markDirty(); loadTree(TREE_PATH);
-  });
+function renderScope() {
+  const el = $('#invScope'); if (!el) return;
+  const kv = (k, v, tone) => `<div class="kv-row"><span class="k">${k}</span><span class="v${tone ? ' t-' + tone : ''}">${v}</span></div>`;
+  const roots = Object.values(CFG.zones || {}).flat(), skip = CFG.skip_dirs || [];
+  const path = v => v ? `<span class="mono">${esc(v)}</span>` : '';
+  let h = kv('主媒体库', path(CFG.main_lib_dir) || '未指定', CFG.main_lib_dir ? '' : 'amber')
+    + kv('查重区', CFG.quarantine_dir ? path(CFG.quarantine_dir) + ' · 不扫' : '未指定 · 可清理的没地方搬', CFG.quarantine_dir ? '' : 'amber')
+    + kv('待入库区', CFG.staging_on === false ? '关：留下的片留在原地' : (path(CFG.staging_dir) || '未指定') + ' · 开', CFG.staging_on === false || CFG.staging_dir ? '' : 'amber')
+    + kv('筛查的目录', roots.length ? roots.map(r => path(r)).join('<br>') : '还没勾，不进筛查', roots.length ? '' : 'amber');
+  if (skip.length) h += kv('其中不筛', skip.map(r => path(r)).join('<br>'));
+  if (!CFG.tree_model && ((CFG.protect_names || []).length || (CFG.listpack_names || []).length))
+    h += kv('旧设置', '还在按名字保护：' + esc([...(CFG.protect_names || []), ...(CFG.listpack_names || [])].join('、')) + '。点「改筛查范围」换成勾选，没勾 = 不筛');
+  el.innerHTML = h;
 }
-function markDirty() { BIND_DIRTY = true; $('#btnSaveBind').disabled = false; $('#bindHint').innerHTML = '<span class="t-amber">有改动待保存</span>'; }
-$('#btnSaveBind').onclick = async () => {
-  try { await putCfg(CFG, !!CFG._rmProtect); BIND_DIRTY = false; $('#btnSaveBind').disabled = true; $('#bindHint').textContent = '已保存；重新扫描后生效'; toast('绑定已保存'); renderInventory(); }
-  catch (e) { toast(e.message); }
-};
-$('#btnSuggest').onclick = async () => {
-  $('#invSuggest').innerHTML = '<div class="muted" style="margin-top:10px">生成中…</div>';
-  let r; try { r = await api('api/suggest'); } catch (e) { $('#invSuggest').innerHTML = `<div class="err-box">${esc(e.message)}</div>`; return; }
-  let h = '';
-  for (const z in ZN) {
-    const ps = ((r.zones || {})[z] || []).filter(p => !(CFG.zones[z] || []).includes(p));
-    if (ps.length) h += `<div class="path-row"><b>${ZN[z]}</b></div>` + ps.map(p => `<label class="path-row"><input type="checkbox" data-sz="${z}" value="${esc(p)}" checked><span class="mono">${esc(p)}</span></label>`).join('');
-  }
-  const pf = (r.protect_found || []).filter(t => !CFG.protect_names.includes(t));
-  if (pf.length) h += `<div class="path-row"><b>常见保护目录</b></div>` + pf.map(t => `<label class="path-row"><input type="checkbox" data-sp value="${esc(t)}" checked>目录名含「${esc(t)}」的</label>`).join('');
-  $('#invSuggest').innerHTML = h ? `<div class="path-list">${h}</div><div class="sec-foot"><button class="btn sm primary" type="button" id="btnApplySug">应用建议</button><span class="hint">应用后记得保存绑定</span></div>`
-    : '<div class="muted" style="margin-top:10px">没有新的建议（像的目录都已经绑定了）。</div>';
-  const a = $('#btnApplySug');
-  if (a) a.onclick = () => {
-    $$('#invSuggest [data-sz]:checked').forEach(i => { for (const z in ZN) CFG.zones[z] = (CFG.zones[z] || []).filter(x => x !== i.value); CFG.zones[i.dataset.sz].push(i.value); });
-    $$('#invSuggest [data-sp]:checked').forEach(i => { if (!CFG.protect_names.includes(i.value)) CFG.protect_names.push(i.value); });
-    markDirty(); loadTree(TREE_PATH); toast('已填入，检查后点「保存绑定」');
-  };
-};
 async function putCfg(c, confirmRm) {
   const body = JSON.parse(JSON.stringify(c)); delete body._rmProtect;
   body.confirm_remove_protect = !!confirmRm;
@@ -1920,9 +1878,10 @@ function renderDlg() {
     const ap = APPR.items[x.path], pe = esc(JSON.stringify(x.path));
     let h;
     if (ap) h = `<span class="t-green">已批准 → ${esc(ACT_NAME[ap.action] || '')}</span> <button class="btn sm" type="button" onclick='dUnapprove(${pe})'>撤销批准</button>`;
-    else if (x.bucket === '可切') h = `<button class="btn sm primary" type="button" onclick='dApprove(${pe})'>批准：搬到排查区</button>`;
-    else if ((APPR.overlap || []).includes(x.path)) h = `同时是「唯一副本」，选去处：<button class="btn sm primary" type="button" onclick='dApprove(${pe}, "mainlib")'>挪入主库</button> <button class="btn sm" type="button" onclick='dApprove(${pe}, "unique")'>移到唯一副本目录</button>`;
-    else h = `<button class="btn sm primary" type="button" onclick='dApprove(${pe}, "mainlib")'>批准：挪入主库</button>`;
+    else if (x.bucket === '可切') h = `<button class="btn sm primary" type="button" onclick='dApprove(${pe})'>批准：搬到查重区</button>`;
+    else if (CFG.tree_model && CFG.staging_on === false) h = '<span class="muted">待入库区的开关关着：留下的片留在原地，不搬</span>';
+    else if ((APPR.overlap || []).includes(x.path)) h = `同时是「唯一副本」，选去处：<button class="btn sm primary" type="button" onclick='dApprove(${pe}, "mainlib")'>挪入${ACT_NAME.mainlib}</button> <button class="btn sm" type="button" onclick='dApprove(${pe}, "unique")'>移到唯一副本目录</button>`;
+    else h = `<button class="btn sm primary" type="button" onclick='dApprove(${pe}, "mainlib")'>批准：挪入${ACT_NAME.mainlib}</button>`;
     $('#dExec').innerHTML = h;
   }
   const picked = LIST.sel.has(x.path);
@@ -1976,8 +1935,10 @@ function readyRows(s, withTrial) {
     + kv('直连', direct.ok ? `可用 · 令牌「${esc(direct.name || '未命名')}」` : esc(direct.error || '不可用') + '（检查设置页「执行」卡片里的 CD2 接口地址和令牌权限）', direct.ok ? 'green' : 'amber');
   else h += kv('执行方式', s.exec_mode === 'mount' ? '挂载改名（经过系统文件夹改名，慢）' : '挂载改名（没找到 CloudDrive 令牌，兜底；慢）', s.exec_mode === 'mount' ? '' : 'amber')
     + kv('挂载', s.mount_writable ? '可写' : '只读或没挂：compose 里挂载那行 :ro 改成 :rw', s.mount_writable ? 'green' : 'amber');
-  h += kv('排查区目录', dirs.quarantine ? esc(dirs.quarantine) : '没填（设置页「执行」卡片里填）', dirs.quarantine ? 'green' : 'amber')
-    + kv('主库目录', dirs.mainlib ? esc(dirs.mainlib) : '没填（设置页「执行」卡片里填）', dirs.mainlib ? 'green' : 'amber');
+  const nm = s.dir_names || {quarantine: '查重区', mainlib: '主库目录'};
+  h += kv(nm.quarantine, dirs.quarantine ? esc(dirs.quarantine) : '没填（首次设置第 3 步顶部，或设置页「执行」卡片）', dirs.quarantine ? 'green' : 'amber');
+  if (s.tree_model && s.staging_on === false) h += kv(nm.mainlib, '开关关着：留下的片留在原地，不搬', 'green');
+  else h += kv(nm.mainlib, dirs.mainlib ? esc(dirs.mainlib) : '没填（首次设置第 3 步顶部，或设置页「执行」卡片）', dirs.mainlib ? 'green' : 'amber');
   if (withTrial) h += kv('试跑', s.trial_ok ? '小批量试跑已对账无误，放开批量' : `第一次只许 ≤${s.trial_max || 10} 条`, s.trial_ok ? 'green' : 'amber');
   return h;
 }
@@ -2089,7 +2050,7 @@ async function batchAct(kind, id, be) {
 }
 
 /* ============================== 设置 ============================== */
-const SCALARS = ['cd2_mount', 'cd2_config', 'cd2_api_name', 'cd2_api_user', 'emby_data', 'emby_prefix', 'csv_dir', 'min_video_mb', 'quarantine_dir', 'main_lib_dir', 'unique_dir', 'exec_mode', 'cd2_api_addr'];
+const SCALARS = ['cd2_mount', 'cd2_config', 'cd2_api_name', 'cd2_api_user', 'emby_data', 'emby_prefix', 'csv_dir', 'min_video_mb', 'quarantine_dir', 'main_lib_dir', 'staging_dir', 'unique_dir', 'exec_mode', 'cd2_api_addr'];
 const LISTS = ['protect_names', 'listpack_names', 'exclude_names', 'tv_keep_names', 'keep_first_names', 'subfx_groups'];
 const SRC_DESC = {cache: '读 CD2 自己的目录缓存（推荐）：快，不向网盘发请求；结果以缓存时刻为准。', scan: '遍历 CD2 挂载目录（兜底）：慢，每个目录都会经 CD2 向网盘发请求。', csv: '读现成的五张 CSV（对账用）。'};
 let SRC = 'cache';
@@ -2097,6 +2058,9 @@ async function renderSettings() {
   await loadExec();
   SCALARS.forEach(k => { const el = $('#c-' + k); if (el) el.value = CFG[k] ?? ''; });
   LISTS.forEach(k => $('#c-' + k).value = (CFG[k] || []).join('\n'));
+  $('#c-staging_on').value = CFG.staging_on === false ? '0' : '1';
+  ['#fProt', '#fLp', '#fRm'].forEach(x => { $(x).hidden = !!CFG.tree_model; });
+  $('#setTreeNote').hidden = !CFG.tree_model;
   SRC = CFG.data_source; renderSeg();
   const s = EXS || {};
   $('#setExecSwitch').innerHTML = readyRows(s, false);
@@ -2132,6 +2096,7 @@ function readForm() {
   const c = JSON.parse(JSON.stringify(CFG));
   SCALARS.forEach(k => { const el = $('#c-' + k); if (el) c[k] = el.value.trim(); });
   c.min_video_mb = parseInt(c.min_video_mb || '0', 10);
+  c.staging_on = $('#c-staging_on').value !== '0';
   LISTS.forEach(k => c[k] = $('#c-' + k).value.split('\n').map(s => s.trim()).filter(Boolean));
   c.data_source = SRC;
   return c;
@@ -2146,18 +2111,19 @@ document.addEventListener('click', e => { const b = e.target.closest('[data-wiza
 
 /* ============================== 首次设置向导 ============================== */
 let WZ = {step: 0};
-const WZ_STEPS = ['连 CD2', '连 Emby', '确认分区与保护'];
+const WZ_STEPS = ['连 CD2', '连 Emby', '确认筛查范围'];
 function renderWizard() {
   if (!WZ.step) WZ = {step: 1, mode: 'first'};
   const st = WZ.step;
-  $('#wzTitle').textContent = WZ.mode === 'edit' ? (st === 1 ? '更换 CD2 配置目录' : '更换 Emby 数据目录') : '首次设置';
+  $('#wzTitle').textContent = WZ.mode === 'edit' ? (st === 1 ? '更换 CD2 配置目录' : st === 2 ? '更换 Emby 数据目录' : '改筛查范围') : '首次设置';
+  $('#wzLead').hidden = WZ.mode === 'edit';
   $('#wzSteps').innerHTML = WZ.mode === 'edit' ? '' : WZ_STEPS.map((t, i) => `<span class="${i + 1 === st ? 'on' : i + 1 < st ? 'done' : ''}">${i + 1 < st ? '✓ ' : (i + 1) + ' · '}${t}</span>`).join('');
   const b = $('#wzBody');
   if (st === 1) b.innerHTML = `<h2>${ic('db')}连 CD2</h2><p class="sec-sub">只填 CD2 的配置目录（装 CD2 时指定的数据目录）。Docker 部署时就是 compose 里挂进来的 /cd2-config，一般不用改。</p>
       <div class="wz-in"><input type="text" id="wzPath" class="mono" value="${esc(CFG.cd2_config)}" placeholder="/cd2-config"><button class="btn" type="button" id="wzCheck">识别</button></div><div id="wzRes"></div><div class="sec-foot" id="wzNav"></div>`;
   else if (st === 2) b.innerHTML = `<h2>${ic('db')}连 Emby</h2><p class="sec-sub">只填 Emby 的数据目录（Emby 后台「关于」页能看到原样路径）。Docker 部署时就是 compose 里挂进来的 /emby-data。</p>
       <div class="wz-in"><input type="text" id="wzPath" class="mono" value="${esc(CFG.emby_data)}" placeholder="/emby-data"><button class="btn" type="button" id="wzCheck">识别</button></div><div id="wzRes"></div><div class="sec-foot" id="wzNav"></div>`;
-  else b.innerHTML = `<h2>${ic('folder')}确认分区与保护</h2><p class="sec-sub">勾哪些文件夹，哪些才进对应分区；没勾的一律不纳入。只有名字很明确的才帮你预勾，其余在「未归类」里自己指定。排查区、保护目录、榜单包也在这一步定，和扫描页最下面「目录绑定与保护」是同一份设置。</p><div id="wzRes" class="muted">读取目录…</div><div class="sec-foot" id="wzNav"></div>`;
+  else b.innerHTML = `<h2>${ic('folder')}确认筛查范围</h2><p class="sec-sub">上面定三个位置，下面勾要筛查的目录。都按名字预选好了，扫一眼没问题就点完成。</p><div id="wzRes" class="muted">读取目录…</div><div class="sec-foot" id="wzNav"></div>`;
   const c = $('#wzCheck'); if (c) c.onclick = wzCheck;
   wzCheck();
 }
@@ -2210,21 +2176,11 @@ async function wzCheck() {
     }
     h += '<p class="muted" style="font-size:12.5px">电影数和 Emby 后台对得上，就点下一步。</p>';
   } else {
-    const keep = WZ.refresh && WZ.prot; WZ.refresh = false;
-    if (keep) { h = '<div id="wzZones"></div><div id="wzMore"></div>'; } else {
-    WZ.zsel = {};
-    // 已经绑过分区（重走向导）：只按已绑的勾，不再按名字预勾——用户取消过的不能又冒回来
-    const bound = (r.candidates || []).some(c => c.current);
-    (r.candidates || []).forEach(c => { if (c.off) return; const z = bound ? c.current : c.strong; if (z) WZ.zsel[c.path] = {zone: z, on: true}; });
-    WZ.zopen = null; WZ.more = null;
-    // 保护 / 榜单包 / 去处：和扫描页、设置页共用同一份配置（protect_names、listpack_names、listpack_off、quarantine_dir…）
-    WZ.prot = [...(CFG.protect_names || [])]; WZ.protNew = new Set();
-    Object.keys(r.protect_where || {}).forEach(t => { if (!WZ.prot.includes(t)) { WZ.prot.push(t); WZ.protNew.add(t); } });
-    WZ.lpNames = [...(CFG.listpack_names || [])]; WZ.lpOff = [...(CFG.listpack_off || [])];
-    WZ.dirs = Object.assign({quarantine: '', mainlib: '', unique: ''}, r.dirs || {});
-    h = (r.candidates || []).some(c => !c.off) ? '' : '<div class="warn-box">没在网盘里找到够格当分区的目录（CD2 可能还没打开过）。下面灰色的目录写着原因；去 CD2 里把影视目录点开一遍，回来点「刷新」。</div>';
-    h += '<div id="wzZones"></div><div id="wzMore"></div>';
-    }
+    const keep = WZ.refresh && WZ.places; WZ.refresh = false;
+    if (!keep) { WZ.nodes = {}; WZ.byPath = {}; }
+    wzInit3(r, keep);
+    h = '<div class="wz-sec" style="margin-top:4px"><h3>三个位置（设一次）</h3><div id="wzPlaces"></div></div>'
+      + '<div class="wz-sec"><h3>勾选要筛查的目录</h3><p>勾上的参与筛查；勾父目录整枝生效，枝里不想筛的单独取消。没勾 = 不筛（系列合集、出品公司、榜单包这类已帮你预先取消）。灰字只是提示，不挡勾选。</p><div class="ztree tree23" id="wzTree"></div></div>';
   }
   res.innerHTML = h;
   if (st === 3) wzRender();
@@ -2249,157 +2205,150 @@ function shortPath(p) {
 }
 const ZDESC = {yuanpan: '高画质参照库，同档时优先留这里的', heji: '散放的合集，同一部片有更好的就可清理', remux: 'REMUX 单元，和其他区的副本一起比', pack: '整夹存放的合集（如 10-合集），按单元一起比'};
 const ZORDER = ['yuanpan', 'heji', 'remux', 'pack'];
-const OWN_LBL = {quarantine: '排查区', mainlib: '主库目录', unique: '唯一副本目录'};
-const OWN_WHY = {quarantine: '「可清理」搬到这里；它和下面都不扫，结果里也不会出现它的行', mainlib: '「主库缺口」挪到这里，不当分区', unique: '缺口 × 唯一副本的另一个去处，不当分区'};
-function wzRender() { renderWzZones(); renderWzMore(); wzNavHint(); }
-/* 指定为面板去处的目录（排查区 / 主库 / 唯一副本）：本身是 key，下面的 → 'under' */
-function wzOwn(p) {
-  for (const k in WZ.dirs) { const d = WZ.dirs[k]; if (!d) continue; if (p === d) return k; if (p.startsWith(d + '/')) return 'under'; }
-  return '';
+/* ===== 第 3 步「确认筛查范围」（反馈 23）：顶部三个位置 + 下面一棵只管勾选的目录树 =====
+   勾上的目录参与筛查（分区类型由面板按名字自动定，界面上不出现）；勾了父目录整枝生效，枝里不想筛的单独取消。
+   没勾 = 不筛：保护目录、榜单包都不再单独设。置灰只是提示，不挡勾选；查重区本身不能勾（它不进扫描）。 */
+const PLACES = [['mainlib', '主媒体库', '最终收藏所在；同档时最优先留这里的'],
+  ['quarantine', '查重区', '筛出的重复份搬到这里，等你过目再删；它和下面都不扫'],
+  ['staging', '待入库区', '排重后留下、主库还没有的片挪到这里，等你放进主媒体库']];
+const PLACE_LBL = Object.fromEntries(PLACES.map(([k, t]) => [k, t]));
+function wzInit3(r, keep) {
+  WZ.r = r;
+  (WZ.byPath = WZ.byPath || {}); WZ.nodes = WZ.nodes || {};
+  Object.entries(r.nodes || {}).forEach(([p, nd]) => { WZ.nodes[p] = nd; nd.dirs.forEach(e => { WZ.byPath[e.path] = e; }); });
+  if (keep) return;
+  WZ.places = Object.assign({mainlib: '', quarantine: '', staging: ''}, r.places || {});
+  WZ.guessed = new Set(r.guessed || []);
+  WZ.stagingOn = r.staging_on !== false;
+  WZ.inc = new Set(r.include || []);
+  WZ.skip = new Map((r.skip || []).map(s => [s.path, s.why || '']));
+  WZ.auto = Object.assign({}, r.auto || {});
+  WZ.more = null;
+  WZ.open = new Set(Object.keys(r.nodes || {}).filter(p => p !== '/'));
 }
-function wzIsLp(p) {
-  const nm = baseName(p);
-  if (WZ.lpNames.some(w => w && nm.includes(w))) return true;
-  return (WZ.r.listpacks || []).some(o => o.by === 'rule' && o.path === p && !WZ.lpOff.includes(p));
+const under = (p, d) => !!d && (p === d || p.startsWith(d + '/'));
+/* 一个目录现在算不算勾上：从自己往上找最近的「勾」或「不勾」标记 */
+function wzOn(p) {
+  if (under(p, WZ.places.quarantine)) return false;
+  let q = p;
+  while (q) {
+    if (WZ.skip.has(q)) return false;
+    if (WZ.inc.has(q)) return true;
+    q = q.slice(0, q.lastIndexOf('/'));
+  }
+  return false;
 }
-function wzAct(act, p) {
-  const nm = baseName(p);
-  if (act === 'prot') { if (!WZ.prot.includes(nm)) { WZ.prot.push(nm); WZ.protNew.add(nm); } }
-  else if (act === 'lp') {
-    const o = (WZ.r.listpacks || []).find(x => x.path === p);
-    if (o && o.by === 'rule') WZ.lpOff = WZ.lpOff.filter(x => x !== p);
-    else if (!WZ.lpNames.includes(nm)) WZ.lpNames.push(nm);
+const strictlyUnder = (p, d) => p.startsWith(d + '/');
+function wzToggle(p) {
+  const drop = set => { for (const x of [...(set.keys ? set.keys() : set)]) if (strictlyUnder(x, p)) set.delete(x); };
+  if (wzOn(p)) {
+    if (WZ.inc.has(p)) WZ.inc.delete(p); else WZ.skip.set(p, '');
+    drop(WZ.inc); drop(WZ.skip);
+    if (wzOn(p)) WZ.skip.set(p, '');
   } else {
-    for (const k in WZ.dirs) if (WZ.dirs[k] === p) WZ.dirs[k] = '';
-    WZ.dirs[act] = p;
-    // 立即生效：这个目录和下面的不再当分区
-    Object.keys(WZ.zsel).forEach(z => { if (z === p || z.startsWith(p + '/')) delete WZ.zsel[z]; });
+    if (WZ.skip.has(p)) WZ.skip.delete(p);
+    if (!wzOn(p)) { WZ.inc.add(p); drop(WZ.inc); }
+    const e = WZ.byPath[p]; if (e) WZ.auto[p] = e.auto;
+  }
+  wzRender();
+}
+function wzSetPlace(k, p) {
+  for (const x in WZ.places) if (WZ.places[x] === p) WZ.places[x] = '';
+  WZ.places[k] = p; WZ.guessed.delete(k);
+  if (k === 'quarantine') {                        // 查重区和下面不进扫描：勾也去掉
+    for (const x of [...WZ.inc]) if (under(x, p)) WZ.inc.delete(x);
+    for (const x of [...WZ.skip.keys()]) if (under(x, p)) WZ.skip.delete(x);
   }
   WZ.more = null; wzRender();
 }
-function renderWzZones() {
-  const r = WZ.r, all = r.candidates || [], cov = r.coverage || {}, sel = WZ.zsel;
-  const cands = all.filter(c => wzOwn(c.path) !== 'under');
-  const meta = c => {
-    const cv = cov[c.path];
-    return `<div class="zmeta">${c.units != null ? '约 ' + n(c.units) + ' 部片' : n(c.subdirs) + ' 个下层文件夹'}${c.hint ? ` · 名字里有「${esc(c.hint)}」` : ''}</div>`
-      + (cv && cv.count ? `<div class="zmeta t-amber">${n(cv.count)} 个目录 CD2 还没打开过，那部分不在比对范围内</div>` : '');
-  };
-  let h = ZORDER.map(z => {
-    const rows = cands.filter(c => sel[c.path] && sel[c.path].zone === z);
-    const k = rows.filter(c => sel[c.path].on).length;
-    return `<div class="zgroup"><div class="zgroup-head"><b>${esc(ZN[z])}</b><span>${esc(ZDESC[z])}</span><span class="zcount">已勾 ${n(k)}</span></div>`
-      + (rows.length ? rows.map(c => `<label class="zrow${sel[c.path].on ? '' : ' off'}"><input type="checkbox" data-zon="${esc(c.path)}" ${sel[c.path].on ? 'checked' : ''}>
-          <div class="zmain"><div class="mono">${esc(c.path)}</div>${meta(c)}</div><button type="button" class="zmove" data-zout="${esc(c.path)}" title="放回未归类">移出</button></label>`).join('')
-        : `<div class="zempty">${z === 'pack' ? '没有。像「10-合集」这种整夹存放的，从下面「未归类」里指定到这里。' : '没有。从下面「未归类」里指定。'}</div>`) + '</div>';
-  }).join('');
-  h += `<div class="zgroup"><div class="zgroup-head"><b>未归类</b><span>网盘目录一层层展开，需要的指定一个分区；不指定就不纳入。灰色的不能当分区，后面写着原因。每行的「⋯」可以设为保护 / 榜单包 / 排查区</span></div>`
-    + `<div class="ztree">${wzTreeHtml(cands, sel, meta)}</div></div>`;
-  $('#wzZones').innerHTML = h;
-  $$('#wzZones [data-zon]').forEach(i => i.onchange = () => { sel[i.dataset.zon].on = i.checked; renderWzZones(); });
-  $$('#wzZones [data-zout]').forEach(b => b.onclick = e => { e.preventDefault(); delete sel[b.dataset.zout]; renderWzZones(); });
-  $$('#wzZones [data-zin]').forEach(b => b.onclick = () => { sel[b.dataset.zin] = {zone: b.dataset.z, on: true}; renderWzZones(); });
-  $$('#wzZones [data-ztog]').forEach(b => b.onclick = () => { const p = b.dataset.ztog; WZ.zopen.has(p) ? WZ.zopen.delete(p) : WZ.zopen.add(p); renderWzZones(); });
-  $$('#wzZones [data-tmore]').forEach(b => b.onclick = () => { WZ.more = WZ.more === b.dataset.tmore ? null : b.dataset.tmore; renderWzZones(); });
-  $$('#wzZones [data-tact]').forEach(b => b.onclick = () => wzAct(b.dataset.tact, b.dataset.p));
-  $$('#wzZones [data-unown]').forEach(b => b.onclick = () => { WZ.dirs[b.dataset.unown] = ''; wzRender(); });
-}
-/* 未归类目录树：候选 + 置灰的目录（写原因）+ 它们的上层目录（只当路标）。父目录已归某区的，子孙收起只报个数。 */
-function wzTreeHtml(cands, sel, meta) {
-  const byPath = {}, kids = {}, add = (par, ch) => { (kids[par] = kids[par] || new Set()).add(ch); };
-  cands.forEach(c => {
-    byPath[c.path] = c;
-    const segs = c.path.split('/').filter(Boolean);
-    for (let i = 1; i <= segs.length; i++) add(i === 1 ? '' : '/' + segs.slice(0, i - 1).join('/'), '/' + segs.slice(0, i).join('/'));
-  });
-  Object.values(WZ.dirs).forEach(d => { if (d && !byPath[d]) { byPath[d] = {path: d, off: 'own'}; const segs = d.split('/').filter(Boolean); for (let i = 1; i <= segs.length; i++) add(i === 1 ? '' : '/' + segs.slice(0, i - 1).join('/'), '/' + segs.slice(0, i).join('/')); } });
-  if (!WZ.zopen) { WZ.zopen = new Set(); (kids[''] || []).forEach(p => WZ.zopen.add(p)); }
-  const sortK = ps => [...ps].sort((a, b) => baseName(a).localeCompare(baseName(b), 'zh', {numeric: true}));
-  const candUnder = p => cands.filter(c => !c.off && c.path.startsWith(p + '/')).length;
-  const acts = (p, hidden) => {
-    const a = hidden ? [['quarantine', '设为排查区']]
-      : [['prot', '设为保护'], ['lp', '按榜单包处理'], ['quarantine', '设为排查区'], ['mainlib', '设为主库目录'], ['unique', '设为唯一副本目录']];
-    return `<div class="tacts">${a.map(([k, t]) => `<button type="button" data-tact="${k}" data-p="${esc(p)}">${t}</button>`).join('')}</div>`;
-  };
-  const moreBtn = p => `<button type="button" class="tmore" data-tmore="${esc(p)}" aria-expanded="${WZ.more === p}" title="设为保护 / 榜单包 / 排查区…">⋯</button>`;
-  const row = (p, depth) => {
-    const c = byPath[p], ch = kids[p] ? sortK(kids[p]) : [], s = sel[p], open = WZ.zopen.has(p);
-    const pad = `style="padding-left:${10 + depth * 18}px"`;
-    const name = `<div class="tname" title="${esc(p)}">${ic('folder', 'sm')}${esc(baseName(p))}</div>`;
-    const own = wzOwn(p);
-    if (own && own !== 'under') {
-      return `<div class="tnode mark" ${pad}><span class="ttog"></span><div class="zmain">${name}<span class="ztag">${OWN_LBL[own]}</span><div class="zmeta">${esc(OWN_WHY[own])}</div></div><button type="button" class="zmove" data-unown="${own}">取消</button></div>`;
-    }
-    const prot = WZ.prot.some(w => w && baseName(p).includes(w));
-    const marks = (prot ? '<span class="ztag">保护</span>' : '') + (wzIsLp(p) ? '<span class="ztag">榜单包</span>' : '');
-    const mb = depth === 0 && !c ? '' : moreBtn(p);                       // 网盘根（/115）本身不给操作
-    if (c && s && s.on) {
-      const k = candUnder(p);
-      return `<div class="tnode in" ${pad}><span class="ttog"></span><div class="zmain">${name}<span class="ztag">已归 ${esc(ZN[s.zone])}</span>${marks}${k ? `<div class="zmeta">下面 ${n(k)} 个已被上层包含，不再单列</div>` : ''}${WZ.more === p ? acts(p) : ''}</div>${moreBtn(p)}<button type="button" class="zmove" data-zout="${esc(p)}">移出</button></div>`;
-    }
-    const tog = ch.length ? `<button type="button" class="ttog" data-ztog="${esc(p)}" aria-expanded="${open}" aria-label="${open ? '收起' : '展开'}">${open ? '▾' : '▸'}</button>` : '<span class="ttog"></span>';
-    const off = c && c.off;
-    let inner = '';
-    if (off) {
-      const why = ['quarantine', 'mainlib', 'unique', 'own'].includes(off) ? '已取消指定；完成向导后再进来，它下面的目录才会重新列出' : c.why;
-      inner = `${marks}<div class="zwhy">${off === 'few' && c.units ? '约 ' + n(c.units) + ' 部片 · ' : ''}${esc(why || '')}</div>`;
-    } else if (c) {
-      inner = marks + meta(c) + (s ? `<div class="zmeta">在「${esc(ZN[s.zone])}」组里，没勾</div>`
-        : prot ? '<div class="zmeta">保护目录整个不扫，不用再指定分区</div>'
-        : `<div class="zassign">${ZORDER.map(z => `<button type="button" data-zin="${esc(p)}" data-z="${z}">${esc(ZN[z])}</button>`).join('')}</div>`);
-    } else inner = marks;
-    if (WZ.more === p) inner += acts(p, off === 'hidden');
-    const cls = off ? ' off' + (off === 'unknown' ? ' unknown' : '') : c ? '' : ' sign';
-    return `<div class="tnode${cls}" ${pad}>${tog}<div class="zmain">${name}${inner}</div>${mb}</div>` + (open ? ch.map(x => row(x, depth + 1)).join('') : '');
-  };
-  const roots = sortK(kids[''] || []);
-  return roots.length ? roots.map(p => row(p, 0)).join('') : '<div class="zempty">缓存里没有网盘目录。</div>';
-}
-/* 分区下面三块：排查区与去处、保护目录、榜单包 */
-function renderWzMore() {
-  const r = WZ.r, el = $('#wzMore'); if (!el) return;
-  let h = `<div class="wz-sec"><h3>排查区与去处</h3><p>排查区是「可清理」搬去的地方：指定后它和下面都不扫，免得把待删的那份当成保留份。主库、唯一副本目录这一步可以不填，执行前在设置里补也行。</p>`
-    + Object.keys(OWN_LBL).map(k => `<div class="dirrow"><b>${OWN_LBL[k]}</b><span class="mono${WZ.dirs[k] ? '' : ' muted'}">${esc(WZ.dirs[k] || '未指定')}</span>${WZ.dirs[k] ? `<button type="button" class="zmove" data-unown="${k}">清除</button>` : ''}</div>`).join('');
-  if (!WZ.dirs.quarantine) {
-    const g = (r.quarantine_guess || []);
-    h += `<div class="warn-box">还没指定排查区，首次扫描可能把待删区扫进来。${g.length ? '像是排查区的：' + g.map(p => `<button type="button" class="btn sm" data-tact="quarantine" data-p="${esc(p)}">用 ${esc(p)}</button>`).join(' ') + '；或' : ''}在上面目录树里点「⋯ → 设为排查区」。</div>`;
+async function wzExpand(p) {
+  if (WZ.open.has(p)) { WZ.open.delete(p); wzRender(); return; }
+  WZ.open.add(p);
+  if (!WZ.nodes[p]) {
+    try {
+      const nd = await api('api/setup/children', P({path: p}));
+      WZ.nodes[p] = nd; nd.dirs.forEach(e => { WZ.byPath[e.path] = e; });
+    } catch (e) { toast(e.message); WZ.open.delete(p); }
   }
-  h += '</div>';
-  // 保护目录
-  const pw = r.protect_where || {};
-  h += `<div class="wz-sec"><h3>保护目录（整个不看、不动）</h3><p>路径里有目录名含这些字的，整个不扫、不动。系列合集、出品公司这类多在分区里面一层，已经往下多看了两层。</p>`;
-  if (WZ.prot.length) h += `<div class="chipset">${WZ.prot.map(t => `<span class="xchip"><span>含「${esc(t)}」${pw[t] ? ' · ' + esc(shortPath(pw[t][0])) : ''}</span>${WZ.protNew.has(t) ? `<button type="button" data-unprot="${esc(t)}" aria-label="不保护「${esc(t)}」">×</button>` : ''}</span>`).join('')}</div>`
-    + (WZ.prot.some(t => !WZ.protNew.has(t)) ? '<p class="muted" style="font-size:12px;margin:6px 0 0">没有 × 的是之前存过的，取消要到扫描页「目录绑定与保护」里确认。</p>' : '');
-  else h += '<p class="muted" style="font-size:12.5px;margin:0">前几层没认出常见的保护目录（系列合集、出品公司这类多在分区里面一层，CD2 没打开过的认不出）。有的话在上面目录树里点「⋯ → 设为保护」，或在下面手动加名字。</p>';
-  h += `<div class="wz-add"><input type="text" id="wzProtIn" placeholder="手动加目录名，如：系列电影合集"><button type="button" class="btn sm" id="wzProtAdd">加</button></div></div>`;
-  // 榜单包
-  const lps = r.listpacks || [];
-  h += `<div class="wz-sec"><h3>榜单包（留在统计里，整包不筛）</h3><p>内置规则：${esc(r.listpack_rule || '')}。认错的点「不算」。</p>`;
-  h += lps.length ? '<div>' + lps.map(o => {
-    const off = o.by === 'rule' ? WZ.lpOff.includes(o.path) : !WZ.lpNames.includes(o.word);
-    return `<div class="lprow${off ? ' off' : ''}"><span class="mono" title="${esc(o.path)}">${esc(o.path)}</span><span class="muted" style="font-size:11.5px;flex:none">${o.word ? (o.by === 'rule' ? '规则：' : '你加的：') + esc(o.word) : '规则'}</span>`
-      + `<button type="button" class="zmove" data-lp="${esc(o.path)}">${off ? '恢复' : '不算'}</button></div>`;
-  }).join('') + '</div>' : '<p class="muted" style="font-size:12.5px;margin:0">没认出榜单包。</p>';
-  if (WZ.lpNames.length) h += `<div class="chipset">${WZ.lpNames.map(t => `<span class="xchip"><span>名字含「${esc(t)}」的包</span><button type="button" data-unlp="${esc(t)}" aria-label="去掉「${esc(t)}」">×</button></span>`).join('')}</div>`;
-  h += `<div class="wz-add"><input type="text" id="wzLpIn" placeholder="手动加榜单包名，如：IMDB Top 250"><button type="button" class="btn sm" id="wzLpAdd">加</button></div></div>`;
+  wzRender();
+}
+function wzRender() { renderWzPlaces(); renderWzTree(); wzNavHint(); }
+function renderWzPlaces() {
+  const el = $('#wzPlaces'); if (!el) return;
+  let h = '<div class="place-grid">' + PLACES.map(([k, t, d]) => {
+    const v = WZ.places[k];
+    return `<div class="place${v ? '' : ' empty'}"><div class="place-head"><b>${t}</b>${WZ.guessed.has(k) ? '<span class="ztag">按名字猜的</span>' : ''}</div>
+      <div class="place-path mono" title="${esc(v)}">${v ? esc(v) : '未指定'}</div><div class="zmeta">${d}</div>
+      ${k === 'staging' ? `<div class="choice-cards slim" role="radiogroup" aria-label="待入库区开关">
+        <button type="button" class="choice-card${WZ.stagingOn ? ' on' : ''}" role="radio" aria-checked="${WZ.stagingOn}" data-son="1"><b>开</b><span>留下的统一挪进来</span></button>
+        <button type="button" class="choice-card${WZ.stagingOn ? '' : ' on'}" role="radio" aria-checked="${!WZ.stagingOn}" data-son="0"><b>关</b><span>留在原地，不搬</span></button></div>` : ''}
+      ${v ? `<button type="button" class="zmove" data-unplace="${k}">清除</button>` : ''}</div>`;
+  }).join('') + '</div><p class="muted" style="font-size:12px;margin:6px 0 0">要换位置：在下面目录树里点那一行的「⋯」。</p>';
+  if (!WZ.places.quarantine) h += '<div class="warn-box">还没指定查重区：可清理的没地方搬；它要是在勾上的目录里，第一次扫描还会把待删的那份扫进来。</div>';
+  const lg = (WZ.r.legacy || {}).protect_names || [];
+  if (lg.length) h += `<p class="muted" style="font-size:12px;margin:8px 0 0">原来按名字设的保护（${lg.map(esc).join('、')}）和榜单包，换成了下面具体目录的「没勾」；点完成后按名字的保护不再单独生效。</p>`;
   el.innerHTML = h;
-  $$('#wzMore [data-unown]').forEach(b => b.onclick = () => { WZ.dirs[b.dataset.unown] = ''; wzRender(); });
-  $$('#wzMore [data-tact]').forEach(b => b.onclick = () => wzAct(b.dataset.tact, b.dataset.p));
-  $$('#wzMore [data-unprot]').forEach(b => b.onclick = () => { const t = b.dataset.unprot; WZ.prot = WZ.prot.filter(x => x !== t); WZ.protNew.delete(t); wzRender(); });
-  $$('#wzMore [data-unlp]').forEach(b => b.onclick = () => { WZ.lpNames = WZ.lpNames.filter(x => x !== b.dataset.unlp); wzRender(); });
-  $$('#wzMore [data-lp]').forEach(b => b.onclick = () => {
-    const o = lps.find(x => x.path === b.dataset.lp);
-    if (o.by === 'rule') WZ.lpOff = WZ.lpOff.includes(o.path) ? WZ.lpOff.filter(x => x !== o.path) : [...WZ.lpOff, o.path];
-    else WZ.lpNames = WZ.lpNames.includes(o.word) ? WZ.lpNames.filter(x => x !== o.word) : [...WZ.lpNames, o.word];
-    wzRender();
-  });
-  const addTo = (inp, fn) => { const v = $(inp).value.trim(); if (v) { fn(v); wzRender(); } };
-  $('#wzProtAdd').onclick = () => addTo('#wzProtIn', v => { if (!WZ.prot.includes(v)) { WZ.prot.push(v); WZ.protNew.add(v); } });
-  $('#wzLpAdd').onclick = () => addTo('#wzLpIn', v => { if (!WZ.lpNames.includes(v)) WZ.lpNames.push(v); });
+  $$('#wzPlaces [data-unplace]').forEach(b => b.onclick = () => { WZ.places[b.dataset.unplace] = ''; WZ.guessed.delete(b.dataset.unplace); wzRender(); });
+  $$('#wzPlaces [data-son]').forEach(b => b.onclick = () => { WZ.stagingOn = b.dataset.son === '1'; wzRender(); });
+}
+function renderWzTree() {
+  const el = $('#wzTree'); if (!el) return;
+  const placeOf = p => Object.keys(WZ.places).filter(k => WZ.places[k] === p);
+  const count = (set, p) => [...(set.keys ? set.keys() : set)].filter(x => strictlyUnder(x, p)).length;
+  const row = (e, depth) => {
+    const p = e.path, on = wzOn(p), qz = under(p, WZ.places.quarantine), open = WZ.open.has(p);
+    const pls = placeOf(p), skipWhy = WZ.skip.get(p);
+    let meta = [];
+    if (e.units != null && !e.off) meta.push('约 ' + n(e.units) + ' 部片');
+    if (qz) meta.push(WZ.places.quarantine === p ? '查重区：它和下面都不扫' : '在查重区里，不扫');
+    else {
+      if (on && count(WZ.skip, p)) meta.push(`下面 ${n(count(WZ.skip, p))} 处没勾`);
+      if (!on && count(WZ.inc, p)) meta.push(`下面勾了 ${n(count(WZ.inc, p))} 处`);
+      if (skipWhy) meta.push('预选没勾：' + skipWhy);
+    }
+    const why = e.off && !qz ? `<div class="zwhy">${e.off === 'few' && e.units ? '约 ' + n(e.units) + ' 部片 · ' : ''}${esc(e.why)}</div>` : '';
+    const tog = e.kids ? `<button type="button" class="ttog" data-ztog="${esc(p)}" aria-expanded="${open}" aria-label="${open ? '收起' : '展开'}">${open ? '▾' : '▸'}</button>` : '<span class="ttog"></span>';
+    const acts = WZ.more === p ? `<div class="tacts">${PLACES.map(([k, t]) => `<button type="button" data-place="${k}" data-p="${esc(p)}">设为${t}</button>`).join('')}</div>` : '';
+    const cls = (e.off ? ' off' + (e.off === 'unknown' ? ' unknown' : '') : '') + (on ? ' chk' : '');
+    let h = `<div class="tnode${cls}" style="padding-left:${8 + depth * 18}px">${tog}
+      <input type="checkbox" class="tchk" data-chk="${esc(p)}" ${on ? 'checked' : ''} ${qz ? 'disabled' : ''} aria-label="筛查 ${esc(e.name)}">
+      <div class="zmain"><div class="tname" title="${esc(p)}">${ic('folder', 'sm')}${esc(e.name)}${pls.map(k => `<span class="ztag">${PLACE_LBL[k]}</span>`).join('')}</div>
+      ${meta.length ? `<div class="zmeta">${meta.map(esc).join(' · ')}</div>` : ''}${why}${acts}</div>
+      <button type="button" class="tmore" data-tmore="${esc(p)}" aria-expanded="${WZ.more === p}" title="设为主媒体库 / 查重区 / 待入库区">⋯</button></div>`;
+    if (open) {
+      const nd = WZ.nodes[p];
+      if (!nd) h += `<div class="zempty" style="padding-left:${30 + depth * 18}px">读取中…</div>`;
+      else {
+        h += nd.dirs.map(c => row(c, depth + 1)).join('');
+        if (nd.more) h += `<div class="zempty" style="padding-left:${30 + depth * 18}px">还有 ${n(nd.more)} 个目录没列出</div>`;
+      }
+    }
+    return h;
+  };
+  // 网盘根（/115）下面才是用户的目录；网盘根自己不给勾
+  const roots = (WZ.nodes['/'] || {dirs: []}).dirs;
+  let h = '';
+  roots.forEach(t => { const nd = WZ.nodes[t.path]; h += nd ? nd.dirs.map(e => row(e, 0)).join('') : row(t, 0); });
+  el.innerHTML = h || '<div class="zempty">缓存里没有网盘目录。</div>';
+  $$('#wzTree [data-chk]').forEach(i => i.onchange = () => wzToggle(i.dataset.chk));
+  $$('#wzTree [data-ztog]').forEach(b => b.onclick = () => wzExpand(b.dataset.ztog));
+  $$('#wzTree [data-tmore]').forEach(b => b.onclick = () => { WZ.more = WZ.more === b.dataset.tmore ? null : b.dataset.tmore; renderWzTree(); });
+  $$('#wzTree [data-place]').forEach(b => b.onclick = () => wzSetPlace(b.dataset.place, b.dataset.p));
+}
+/* 存的时候：skip 只留落在某个勾上的根下面的；查重区和下面的勾去掉 */
+function wzScope() {
+  const q = WZ.places.quarantine;
+  const inc = [...WZ.inc].filter(p => !under(p, q));
+  const skip = [...WZ.skip.keys()].filter(p => !under(p, q) && inc.some(r => strictlyUnder(p, r)));
+  return {inc, skip};
 }
 function wzNavHint() {
-  const el = $('#wzNavHint'); if (!el || !WZ.dirs) return;
-  el.innerHTML = WZ.dirs.quarantine ? '' : '<span class="t-amber">还没指定排查区</span>';
+  const b = $('#wzNext'); if (!b || WZ.step !== 3 || !WZ.places) return;
+  const {inc, skip} = wzScope();
+  const miss = PLACES.filter(([k]) => !WZ.places[k] && !(k === 'staging' && !WZ.stagingOn)).map(([, t]) => t);
+  b.textContent = `${WZ.mode === 'edit' ? '保存' : '完成'}：筛查 ${inc.length} 个目录、排除 ${skip.length} 处、${miss.length ? '还差' + miss.join('、') : '三位置已定'}${WZ.mode === 'edit' ? '' : ' → 去扫描'}`;
+  b.disabled = !inc.length;
+  const el = $('#wzNavHint'); if (el) el.innerHTML = inc.length ? '' : '<span class="t-amber">至少勾一个目录</span>';
 }
 async function wzNext() {
   const st = WZ.step, c = JSON.parse(JSON.stringify(CFG));
@@ -2407,19 +2356,19 @@ async function wzNext() {
     if (st === 1) { c.cd2_config = $('#wzPath').value.trim(); c.cd2_api_name = WZ.api || c.cd2_api_name; c.cd2_api_user = ''; }
     if (st === 2) { c.emby_data = $('#wzPath').value.trim(); if (WZ.prefix != null) c.emby_prefix = WZ.prefix; WZ.prefix = undefined; }
     if (st === 3) {
-      // 勾选结果整组覆盖：已绑定的分区都在候选里（默认勾着），取消勾选 = 不再纳入
+      // 反馈 23：勾上的目录 = 筛查范围（分区类型按名字自动定）；根下面没勾的记 skip_dirs；保护名 / 榜单包换成「没勾」
+      const {inc, skip} = wzScope();
       const z = {heji: [], yuanpan: [], remux: [], pack: []};
-      Object.entries(WZ.zsel || {}).forEach(([p, v]) => { if (v.on) z[v.zone].push(p); });
-      if (WZ.r && WZ.r.candidates) c.zones = z;
-      // 保护只加不减（之前存过的在这里删不掉）；榜单包、去处按这一步的结果整份覆盖
-      WZ.prot.forEach(t => { if (!c.protect_names.includes(t)) c.protect_names.push(t); });
-      c.listpack_names = WZ.lpNames; c.listpack_off = WZ.lpOff;
-      c.quarantine_dir = WZ.dirs.quarantine; c.main_lib_dir = WZ.dirs.mainlib; c.unique_dir = WZ.dirs.unique;
+      inc.forEach(p => z[WZ.auto[p] || (WZ.byPath[p] || {}).auto || 'heji'].push(p));
+      c.zones = z; c.skip_dirs = skip; c.tree_model = true; c.confirm_tree_model = true;
+      c.protect_names = []; c.listpack_names = []; c.listpack_off = [];
+      c.main_lib_dir = WZ.places.mainlib; c.quarantine_dir = WZ.places.quarantine; c.staging_dir = WZ.places.staging;
+      c.staging_on = WZ.stagingOn;
       c.setup_done = true;
     }
     await putCfg(c, false);
   } catch (e) { $('#wzRes').insertAdjacentHTML('afterbegin', `<div class="err-box">保存没成功：${esc(e.message)}</div>`); return; }
-  if (WZ.mode === 'edit') { WZ = {step: 0}; go('settings'); return; }
+  if (WZ.mode === 'edit') { const back = st === 3 ? 'inventory' : 'settings'; WZ = {step: 0}; go(back); return; }
   if (st < 3) { WZ.step++; renderWizard(); return; }
   WZ = {step: 0};
   go('inventory'); runJob('inventory');

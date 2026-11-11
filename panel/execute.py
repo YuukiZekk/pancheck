@@ -4,7 +4,7 @@
   - 搬移只有两种后端：挂载改名（os.rename）或 CD2 直连（gRPC MoveFile，服务端改名）。没有任何删除调用，
     失败不退回复制；直连出错就停批，不悄悄改用挂载（用户选了才换）。
   - 执行入口：环境变量 PANEL_ALLOW_MOVE=1 必须开；挂载改名还要挂载可写，直连要有带「移动」权限的 CD2 令牌。
-  - 只有「可清理」能批准移到排查区；「主库缺口」能批准挪入主库；同时是「唯一副本」的由用户选去处。
+  - 只有「可清理」能批准移到查重区；「主库缺口」能批准挪入待入库区（老配置是主库目录）；同时是「唯一副本」的由用户选去处。
   - 整夹搬运前验纯度：夹内视频只属于这一部片、且都被批准，才整夹搬；否则逐文件搬；多片夹拒绝整夹。
     搬完后对账夹内视频数，不等就停（成龙夹教训）。
   - 每条操作先写「打算」再动手，动完写结果；中途崩了按日志续，判不清的不动、报出来。
@@ -67,16 +67,30 @@ def save_approvals(run_dir, fp, items):
     os.replace(tmp, f)
 
 
-def approvable(rows_by_path, path, dest):
-    """返回 (动作, 错误)。动作：quarantine（排查区）/ mainlib（主库）/ unique（唯一副本目录）。"""
+def dest_dirs(cfg):
+    """各去处的目录。mainlib 这个动作名沿用（批准记录兼容），新模型下指「待入库区」（反馈 23：不直进主媒体库）。"""
+    ml = cfg.get('staging_dir') or ('' if cfg.get('tree_model') else cfg.get('main_lib_dir') or '')
+    return {'quarantine': cfg.get('quarantine_dir') or '', 'mainlib': ml, 'unique': cfg.get('unique_dir') or ''}
+
+
+def dest_names(cfg):
+    return {'quarantine': '查重区', 'mainlib': '待入库区' if (cfg.get('tree_model') or cfg.get('staging_dir')) else '主库目录',
+            'unique': '唯一副本目录'}
+
+
+def approvable(rows_by_path, path, dest, cfg=None):
+    """返回 (动作, 错误)。动作：quarantine（查重区）/ mainlib（待入库区；老配置是主库目录）/ unique（唯一副本目录）。"""
     rs = rows_by_path.get(path) or []
     buckets = {r['bucket'] for r in rs}
     if '可切' in buckets:
         return 'quarantine', None
     if '缺口' in buckets:
+        if cfg and cfg.get('tree_model') and not cfg.get('staging_on', True):
+            return None, '待入库区的开关关着：留下的片留在原地，不搬'
         if '孤本' in buckets:
             if dest not in ('mainlib', 'unique'):
-                return None, '这条同时是「主库缺口」和「唯一副本」，要你选去处：挪入主库，还是移到唯一副本目录'
+                return None, '这条同时是「主库缺口」和「唯一副本」，要你选去处：挪入%s，还是移到唯一副本目录' % (
+                    dest_names(cfg or {})['mainlib'].replace('目录', ''))
             return dest, None
         return 'mainlib', None
     return None, '只有「可清理」和「主库缺口」能批准'
@@ -260,15 +274,13 @@ def plan(cfg, rows, approvals, batch_id, fs=None):
     rows_by_path = {}
     for r in rows:
         rows_by_path.setdefault(r['path'], []).append(r)
-    dirs = {'quarantine': cfg.get('quarantine_dir') or '', 'mainlib': cfg.get('main_lib_dir') or '',
-            'unique': cfg.get('unique_dir') or ''}
-    names = {'quarantine': '排查区', 'mainlib': '主库目录', 'unique': '唯一副本目录'}
+    dirs, names = dest_dirs(cfg), dest_names(cfg)
     roots = set(_zone_roots(cfg))
     refused, ops = [], []
     by_parent = {}
     approved = set(approvals)
     for path, a in sorted(approvals.items()):
-        action, err = approvable(rows_by_path, path, a.get('dest'))
+        action, err = approvable(rows_by_path, path, a.get('dest'), cfg)
         if err:
             refused.append({'path': path, 'reason': err}); continue
         if a.get('action') and a['action'] != action:
@@ -276,9 +288,9 @@ def plan(cfg, rows, approvals, batch_id, fs=None):
         if not dirs[action]:
             refused.append({'path': path, 'reason': '设置里还没填%s' % names[action]}); continue
         if any(path == d.rstrip('/') or path.startswith(d.rstrip('/') + '/') for d in dirs.values() if d):
-            refused.append({'path': path, 'reason': '已经在排查区 / 主库 / 唯一副本目录里了'}); continue
+            refused.append({'path': path, 'reason': '已经在%s里了' % ' / '.join(names[k] for k in dirs if dirs[k])}); continue
         if S.guard_hit(cfg, path, set()):
-            refused.append({'path': path, 'reason': '落在保护目录 / 榜单包里（守卫拒绝）'}); continue
+            refused.append({'path': path, 'reason': '落在没勾的目录 / 保护目录 / 榜单包里（守卫拒绝）'}); continue
         if not _same_drive(path, dirs[action]):
             refused.append({'path': path, 'reason': '%s和这条不在同一个网盘上，同盘改名才是秒搬，跨盘会变成复制，拒绝' % names[action]}); continue
         if not fs.exists(path):
@@ -491,7 +503,7 @@ def rollback(bdir):
         src, dst = op['src'], op['dst']
         _emit('回滚：%s' % op['src'].rsplit('/', 1)[1])
         if not fs.exists(dst):
-            problems.append({'op': op['id'], 'reason': '排查区里找不到这份了，不动'}); continue
+            problems.append({'op': op['id'], 'reason': '查重区里找不到这份了，不动'}); continue
         if fs.exists(src):
             problems.append({'op': op['id'], 'reason': '原位置已经有东西了，不覆盖'}); continue
         size = fs.size(dst)

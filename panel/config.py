@@ -23,6 +23,10 @@ DEFAULTS = {
     # 分区映射（虚拟路径，如 /115/01-好康的/01-电影合集）
     # pack = 整夹合集区（如 10-合集）：按「单元」只参加跨区比对，不进内核三刀
     'zones': {'heji': [], 'yuanpan': [], 'remux': [], 'pack': []},
+    # 反馈 23：向导里一棵目录树只管勾选。勾上的目录 = 上面 zones 里的根（分区类型由面板按名字自动定，界面上不出现）；
+    # 根下面没勾的子目录记在 skip_dirs，不筛。tree_model=True 后保护名 / 榜单包不再单独生效——没勾 = 不筛
+    'skip_dirs': [],
+    'tree_model': False,
     # 保护（只能加；按目录组件匹配，扫描时剔除，可切里命中则整批拒绝）
     'protect_names': [],                                # 系列合集 / 出品公司 / 已刮削 等目录名
     # 榜单包：内置规则在内核 sieve.LP_RE（豆瓣/IMDb + Top N、Top 250、戛纳电影节…，评分字样不算）；这里是用户追加的名字
@@ -38,8 +42,10 @@ DEFAULTS = {
                      'Nimbus@Sunny', 'Breeze@Sunny', 'LINMENG@CHDBits', 'nn@CHDBits', 'sh@CHDBits', 'BHYS@OurBits',
                      '至尊宝', 'WCL碟影'],
     # 第二期用
-    'quarantine_dir': '',                               # 排查区（「可清理」搬到这里；同一网盘内）
-    'main_lib_dir': '',                                 # 主库目录（「主库缺口」挪入这里）
+    'quarantine_dir': '',                               # 查重区（「可清理」搬到这里；同一网盘内）
+    'main_lib_dir': '',                                 # 主媒体库（最终收藏所在；新模型下同档时最优先留这里的，老配置里是缺口的去处）
+    'staging_dir': '',                                  # 待入库区（反馈 23：排重后留下、主库还没有的片挪到这里，等你放进主媒体库）
+    'staging_on': True,                                 # 关 = 留下的片留在原地，不搬
     'unique_dir': '',                                   # 唯一副本目录（缺口 × 唯一副本时可选的另一个去处）
     'exec_mode': 'auto',                                # 执行方式：auto（有 CD2 令牌走直连）/ cd2 / mount
     'cd2_api_addr': os.environ.get('CD2_API_ADDR', ''),  # CD2 接口地址（gRPC），如 192.168.1.10:19798
@@ -81,7 +87,10 @@ def normalize(cfg):
         c[k] = _merge_unique([], c.get(k))
     c['listpack_names'] = [x for x in c['listpack_names'] if x not in LEGACY_LISTPACK]
     c['listpack_off'] = _merge_unique([], ['/' + str(p).strip().strip('/') for p in (c.get('listpack_off') or []) if str(p).strip().strip('/')])
-    for k in ('quarantine_dir', 'main_lib_dir', 'unique_dir'):
+    c['skip_dirs'] = _merge_unique([], ['/' + str(p).strip().strip('/') for p in (c.get('skip_dirs') or []) if str(p).strip().strip('/')])
+    c['tree_model'] = bool(c.get('tree_model'))
+    c['staging_on'] = c.get('staging_on') is not False
+    for k in ('quarantine_dir', 'main_lib_dir', 'unique_dir', 'staging_dir'):
         v = str(c.get(k) or '').strip().strip('/')
         c[k] = '/' + v if v else ''
     c['exclude_names'] = _merge_unique(BUILTIN_EXCLUDE, c['exclude_names'])
@@ -116,6 +125,6 @@ def fingerprint(cfg):
     """影响判定的配置指纹：变了旧清单即作废。"""
     keys = ('data_source', 'cd2_mount', 'cd2_config', 'cd2_api_name', 'cd2_api_user', 'emby_data', 'emby_prefix', 'csv_dir', 'min_video_mb', 'zones',
             'protect_names', 'listpack_names', 'listpack_off', 'exclude_names', 'tv_keep_names', 'keep_first_names', 'subfx_groups',
-            'quarantine_dir')
+            'quarantine_dir', 'skip_dirs', 'tree_model', 'main_lib_dir')
     blob = json.dumps({k: cfg.get(k) for k in keys}, ensure_ascii=False, sort_keys=True)
     return hashlib.sha1(blob.encode('utf-8')).hexdigest()[:12]

@@ -202,7 +202,7 @@ ZONE_R = {'yuanpan': 3, 'remux': 2, 'pack': 1, 'heji': 0}   # 同分辨率同来
 
 
 def rank(c):
-    return (RES_R[c['res']], KIND_R[c['kind']], ZONE_R[c['zone']], name_score(c), c['gb'])
+    return (RES_R[c['res']], KIND_R[c['kind']], ZONE_R[c['zone']] + (10 if c.get('main') else 0), name_score(c), c['gb'])
 
 
 # ---------------- 人口 ----------------
@@ -356,6 +356,8 @@ def copies(cfg, gone=frozenset()):
             out.append(dict(zone=u['分区'], path=u['路径'], name=u['电影'], main_name=mn, form=form, gb=g, mgb=g, vh=None))
     extra = [x for x in cfg['exclude_names']]
     S.LP_OFF = tuple(cfg.get('listpack_off') or ())
+    S.LP_ON = not cfg.get('tree_model')
+    ml = (cfg.get('main_lib_dir') or '').rstrip('/') if cfg.get('tree_model') else ''
     hit = subfx_matcher(cfg.get('subfx_groups') or [])
     res = []
     gone_dirs = {g.rsplit('/', 1)[0] for g in gone}            # 被判掉的文件所在的夹：整夹那一份也不再参与
@@ -363,6 +365,7 @@ def copies(cfg, gone=frozenset()):
         if c['path'] in gone or c['path'] in gone_dirs:
             continue
         p = c['path']
+        c['main'] = bool(ml) and p.startswith(ml + '/')               # 反馈 23：主媒体库里的，同档时最优先留
         c['locked'] = bool(sources.lp_path(p, cfg) or any(e in p for e in S.EXCL) or sources.hit_any(p, extra))
         c['multi'] = bool(_MULTI.search(S.SPEC_CUT.sub(' ', c['name'])))           # 一份里装着几部片（红气球+白鬃野马）：可当保留份，自己不搬
         c['locked'] = c['locked'] or c['multi']

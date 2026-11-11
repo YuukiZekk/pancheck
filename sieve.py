@@ -113,6 +113,7 @@ DIY_PACKS = ('至尊宝', 'SGNB', 'Blucook', '不撸酷客')
 LP_RE = re.compile(r'(?i)top\s*250|(?:豆瓣|imdb)[^/]{0,6}?(?:top\s*\d{2,3}|榜单|排行榜)'
                    r'|戛纳[^/]{0,4}?(?:电影节|影展|金棕榈|获奖|入围|参展|主竞赛|历届)')
 LP_OFF = ()          # 用户在面板里点过「不算榜单包」的目录（路径），面板跑判定前设
+LP_ON = True         # 反馈 23 的勾选模型下关掉：没勾 = 不筛，勾上的榜单包就照常筛
 
 
 def listpack_word(text):
@@ -121,6 +122,8 @@ def listpack_word(text):
 
 
 def is_listpack(path):
+    if not LP_ON:
+        return False
     if any(path == o or path.startswith(o.rstrip('/') + '/') for o in LP_OFF):
         return False
     return bool(LP_RE.search(path or ''))
