@@ -123,6 +123,30 @@ def unit_dirs(cfg):
     return dirs
 
 
+# 季 / 集 / 分碟夹：算到上一层那部作品（反馈 11：一部剧按季累积单元数，轻松过「≥5」那道线）
+_PART = re.compile(r'(?i)(^|[^a-z0-9])(season\s*\d{1,2}|s\d{1,2}(e\d{1,4})?|specials?|e[pk]?\s*\d{1,4}|cd\s*\d|dis[ck]\s*\d|'
+                   r'part\s*\d)([^a-z0-9]|$)|第\s*[\d一二三四五六七八九十百]+\s*[季部辑期集话話]|^\s*\d{1,3}\s*$|^特典|^花絮|^sp$')
+
+
+def work_dirs(dirs):
+    """unit_dirs 的结果按「作品」去重：名字里带季 / 集 / CD1 / Disc 2 标记的夹，截掉标记及其后面的部分当作品名；
+    截完什么都不剩（纯「Season 1」「第1期」）就收到上一层。排好序、无重复。只给向导数「约几部」用。"""
+    out = set()
+    for d in dirs:
+        parts = d.split('/')
+        while len(parts) > 2:
+            m = _PART.search(parts[-1])
+            if not m:
+                break
+            stem = re.sub(r'[\W_]+', ' ', parts[-1][:m.start()]).strip().lower()
+            if stem:
+                parts = parts[:-1] + ['~' + stem]       # 同一部剧的各季夹并成一个虚拟作品
+                break
+            parts = parts[:-1]
+        out.add('/'.join(parts))
+    return sorted(out)
+
+
 def count_units(dirs, root):
     """dirs（unit_dirs 的结果）里落在 root 自己或其下面的个数。"""
     import bisect

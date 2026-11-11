@@ -19,6 +19,7 @@ SEO = re.compile(r'[\s\.\-_]+')
 CJK = re.compile(r'[一-鿿]+')
 AUTHOR = re.compile(r'@(\w+)$')
 PURE = {'至尊宝', '雅典娜', '碟影'}
+from sieve import _title2, title_suspect      # noqa: E402  片名提取与规格短语判定和内核共用一份
 
 
 def keyof(name):
@@ -28,14 +29,7 @@ def keyof(name):
     s = re.sub(r'\.(iso|mkv|mp4|m2ts|ts|avi|wmv|mov|rmvb|flv)$', '', s, flags=re.I)
     ys = YEAR.findall(s)
     year = ys[-1] if ys else ''
-    head = re.split(r'(?i)(2160p|1080p|720p|480p|uhd|remux|blu-?ray|bdrip|web-?dl|hdtv)', s)[0]
-    head = LEAD.sub('', head)
-    cjk = CJK.findall(head)
-    if cjk:
-        longest = max(cjk, key=len)
-        title = longest if len(longest) >= 2 else ''.join(cjk)
-    else:
-        title = SEO.sub(' ', head).strip().lower()
+    title = _title2(s)                          # 反馈 13：先挖掉规格短语再取最长片段（同内核 keyof2）
     if title in PURE:
         title = ''
     return (('T' + tm) if tm else ''), title + '|' + year
@@ -82,6 +76,8 @@ def _keymap(items, use_main=False):
 def _credible(a, b):
     if a['tm'] and b['tm']:
         return a['tm'] == b['tm']
+    if title_suspect(*a['key'].split('|', 1)) or title_suspect(*b['key'].split('|', 1)):
+        return False
 
     def cjk4(x):
         mm = CJK.findall(x['key'].split('|')[0])
@@ -190,7 +186,7 @@ def _tier_s(name, vh=None):
 
 
 TIER_RANK_S = {'U': 3, 'H': 2, 'S': 1, '?': 0}
-U_NAME = re.compile(r'(?i)2160p|uhd|ultra hd|(?<![a-z0-9])4k(?![a-z0-9])')
+U_NAME = re.compile(r'(?i)2160p|\buhd\b|ultra hd|(?<![a-z0-9])4k(?![a-z0-9])')
 
 
 def tier_v2(main_name, kind, gb, vh=None):

@@ -48,22 +48,59 @@ LEAD = re.compile(r'^[#\d\s\.\-_、：:【】\[\]（）()]+')
 CJK = re.compile(r'[一-鿿]+')
 PURE = {'至尊宝', '雅典娜', '碟影'}
 
+# 规格短语（反馈 13，2026-11-11 修）：字幕/音轨/盘型词，片名里不会出现。
+# 原先取「最长中文片段」时不挖掉它们，DIY 盘的「双语特效字幕」比片名长，就被当成了片名，
+# 同年两张无关的 DIY 盘因此撞键（神偷奶爸4 × 沙丘2、十二怒汉 × 第七封印……）。
+SPEC_CUT = re.compile(r'(字幕|特效|双语|三语|多语|简繁|繁简|简中|繁中|简体|繁体|中字|双字|中英|国英|国粤|'
+                      r'国配|国语|粤语|台配|粤配|音轨|花絮|菜单|原盘|导评|全景声|次世代|内封|蓝光|杜比|上译|长影|内参|公映|译制|正片|高清|'
+                      # 版本 / 地区版词（「奇蹟(完整版)」「W的悲剧 日角川版」里比片名还长的那段）
+                      r'导演剪辑版|剪辑版|加长版|未删减版|无删减版|删减版|完整版|终极版|收藏版|典藏版|珍藏版|纪念版|'
+                      r'修复版|重制版|特别版|国际版|影院版|公映版|标准版|豪华版|角川版|北美版|大陆版|'
+                      r'国版|港版|台版|美版|日版|韩版|欧版|英版|法版|德版|意版|俄版)')
+# 判「片名其实是规格短语」用的词表：规格短语 + 少量只在规格里出现的词。不放「修复 / 导演 / 终极」这类
+# 也会出现在片名里的词（真库里有《修复体》《终极标靶》）。挖掉这些后剩不到两个字的，不当片名用
+SPEC_ALL = re.compile(SPEC_CUT.pattern[:-1] + r'|版本|无中字|中文|英文|版)', re.I)
+# 方括号里的网站广告（【高清MP4电影www.xxx.com】[BD影视分享bd2020.co]）：整段不算片名
+SITE_TAG = re.compile(r'[【\[][^】\]]*(?:www\.|\.com|\.co\b|\.net|\.cc|\.org|\.top|\.vip)[^】\]]*[】\]]', re.I)
+_SPEC_LAT = re.compile(r'(?i)\b(4k|diy|uhd|hdr\d*|dv|bd|iso|remux|v\d)\b')
+
+def _norm(x):
+    return re.sub(r'[\s\W_]+', '', x or '').lower()
+
+def title_suspect(title, year=''):
+    """分组键里的片名不像片名 → 整组不可信（反馈 13 修复要求 2）：
+    空、只是年份本身、或挖掉规格词后才剩不到两个字（「双语特效字幕」「导演剪辑版」）。
+    本来就是一个字（洞、影）或纯数字（2012、1917）的片名不算。"""
+    t0 = _norm(title)
+    if not t0 or t0 == year:
+        return True
+    t1 = _norm(_SPEC_LAT.sub(' ', SPEC_ALL.sub(' ', title)))
+    return t1 != t0 and len(re.sub(r'\d', '', t1)) < 2
+
+def _title2(s):
+    """第二刀片名：先切到首个分辨率/来源词之前，再挖掉规格短语，最后取最长中文片段。
+    片名就是一个数字的（2012 (2009)、1917(2019)），前导数字会被 LEAD 一并切掉，这里把它找回来。"""
+    head0 = re.split(r'(?i)(2160p|1080p|720p|480p|uhd|remux|blu-?ray|bdrip|web-?dl|hdtv)', SITE_TAG.sub(' ', s))[0]
+    head = SPEC_CUT.sub(' ', LEAD.sub('', head0))
+    cjk = CJK.findall(head)
+    if cjk:
+        longest = max(cjk, key=len)
+        return longest if len(longest) >= 2 else ''.join(cjk)
+    t = re.sub(r'[\s\.\-_]+', ' ', head).strip().lower()
+    if not t:
+        m = re.match(r'\s*(\d{1,4})(?!\d)', head0)
+        t = m.group(1) if m else ''
+    return t
+
 def keyof2(name):
-    """第二刀键：TMDB 优先；片名取首个规格词之前的最大中文片段。"""
+    """第二刀键：TMDB 优先；片名取首个规格词之前、挖掉规格短语后的最大中文片段。"""
     m = TMDB2.search(name)
     tm = m.group(1) if m else ''
     s = re.sub(r'@\w+$', '', name)
     s = re.sub(r'\.(iso|mkv|mp4|m2ts|ts|avi|wmv|mov|rmvb|flv)$', '', s, flags=re.I)
     ys = YEAR2.findall(s)
     year = ys[-1] if ys else ''
-    head = re.split(r'(?i)(2160p|1080p|720p|480p|uhd|remux|blu-?ray|bdrip|web-?dl|hdtv)', s)[0]
-    head = LEAD.sub('', head)
-    cjk = CJK.findall(head)
-    if cjk:
-        longest = max(cjk, key=len)
-        title = longest if len(longest) >= 2 else ''.join(cjk)
-    else:
-        title = re.sub(r'[\s\.\-_]+', ' ', head).strip().lower()
+    title = _title2(s)
     if title in PURE or (title and all(w in PURE for w in CJK.findall(title))):
         title = ''
     return (('T' + tm) if tm else ''), title + '|' + year
@@ -201,6 +238,8 @@ def stage2(cut1):
     def credible(ms):
         if len({m['tm'] for m in ms if m['tm']}) == 1 and any(m['tm'] for m in ms):
             return True
+        if any(title_suspect(*m['key'].split('|', 1)) for m in ms):   # 片名是规格短语/空：整组不可信
+            return False
         def cjk4(m):
             mm = CJK.findall(m['key'].split('|')[0])
             return mm[0][:4] if mm else m['key'][:6]
@@ -240,13 +279,7 @@ def keyof3(name):
     s = re.sub(r'\.(iso|mkv|mp4|m2ts|ts|avi|wmv|mov|rmvb|flv)$', '', s, flags=re.I)
     ys = YEAR2.findall(s)
     year = ys[-1] if ys else ''
-    head = LEAD.sub('', re.split(r'(?i)(2160p|1080p|720p|480p|uhd|remux|blu-?ray|bdrip|web-?dl|hdtv)', s)[0])
-    cjk = CJK.findall(head)
-    if cjk:
-        longest = max(cjk, key=len)
-        title = longest if len(longest) >= 2 else ''.join(cjk)
-    else:
-        title = re.sub(r'[\s\.\-_]+', ' ', head).strip().lower()
+    title = _title2(s)
     if title in PURE:
         title = ''
     return tm, title + '|' + year
@@ -287,6 +320,8 @@ def stage3(s1_rows, s2_rows, emby_tmdb):
     def credible(ms):
         if len({m['tm'] for m in ms if m['tm']}) == 1 and any(m['tm'] for m in ms):
             return True
+        if any(title_suspect(*m['key'].split('|', 1)) for m in ms):   # 片名是规格短语/空：整组不可信
+            return False
         def cjk4(m):
             mm = CJK.findall(m['key'].split('|')[0])
             return mm[0][:4] if mm else m['key'][:6]

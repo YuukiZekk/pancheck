@@ -142,12 +142,12 @@ def guess_emby_prefix(cfg, movies):
 # 只列「装着电影的目录」，不列「本身就是一部电影的目录」；只有高置信的名字才预勾，含糊的放「未归类」等用户自己勾。
 # 改的只是向导的呈现和预填；判定内核、配置结构（zones 仍是四组路径列表）不动。
 _NUM = re.compile(r'^\s*\d+\s*[-_.、·\s]\s*')
-JUNK = ('删除', '回收', 'recycle', 'trash', '@eadir')                 # 别的工具的工作区 / 回收站：本身和下面都不列
-NOT_ZONE = ('未整理', '待整理', '下载', '临时', 'incoming', 'download', 'temp', 'tmp')   # 本身不当分区，下面的放「未归类」
+JUNK = ('删除', '回收', '排查', 'recycle', 'trash', '@eadir')         # 别的工具的工作区 / 回收站 / 排查区：本身和下面都不列
+NOT_ZONE = ('未整理', '待整理', '归档失败', '下载', '临时', 'incoming', 'download', 'temp', 'tmp')   # 本身不当分区，下面的放「未归类」
 QUALIFIERS = ('动漫', '动画', 'uhd', '测试', '样片', 'bdmv', '未整理', '待整理', '下载', '临时', '剧', '纪录', '演唱会')
 _TOKEN_Q = re.compile(r'(^|[^a-z])(pt|mv)([^a-z]|$)')
 STRONG = (('remux', ('remux',)), ('yuanpan', ('原盘',)), ('heji', ('电影合集', '电影包')))   # REMUX 优先
-MIN_UNITS = 5                       # 子树里影片单元少于这个数的，当成「一部片 / 一季剧」的夹，不进候选
+MIN_UNITS = 5                       # 子树里作品少于这个数的（季 / 集夹并成一部），当成「一部片 / 一部剧」的夹，不进候选
 
 
 def _core(name):
@@ -210,7 +210,7 @@ def zone_candidates(cfg, max_depth=3):
     units, tops = None, None
     if cache:
         from . import cd2cache
-        units = cd2cache.unit_dirs(cfg)
+        units = cd2cache.work_dirs(cd2cache.unit_dirs(cfg))
         tops = cd2cache.api_tops(cfg)
     current = {p: z for z, ps in cfg['zones'].items() for p in ps}
     # 面板自己的去处（排查区 / 主库 / 唯一副本目录）绝不能当分区：本身和下面都不列

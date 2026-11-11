@@ -1,11 +1,16 @@
 """A1 对差：用数据包原始输入（heji_films.csv、union_units.csv、moves*）跑面板模块 panel.cross，逐对对 A1-金标准逐对明细.csv。
-用法：python tools/verify_a1.py <面板目录> <A1-数据包目录>
-期望：422 对，A 29 · B 112 · C 29 · D 202 · E 50，面板独有 0、金标准独有 0。"""
+用法：python tools/verify_a1.py <面板目录> <A1-数据包目录> [--legacy-keys]
+期望（--legacy-keys，按修复前的片名键复现当轮手工）：422 对，A 29 · B 112 · C 29 · D 202 · E 50，面板独有 0、金标准独有 0。
+不带开关（反馈 13 修复后的键）：金标准 422 对里 421 对照旧，1 对（心理游戏）换成同片另一份 REMUX；
+另多出 68 对，都是名字里的「双语特效字幕」「终极版」、网站广告前缀之类曾被当成片名、修复后才对上的同片。"""
 import csv, glob, os, sys
 from collections import Counter
 APP, PKG = sys.argv[1:3]
 sys.path.insert(0, APP)
 from panel import cross
+if '--legacy-keys' in sys.argv:
+    from panel import keydiff
+    keydiff._set_mode(True)
 os.chdir(PKG)
 moved = set()
 for fn in ['moves.tsv'] + sorted(glob.glob('moves*.txt')):

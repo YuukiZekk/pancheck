@@ -361,7 +361,8 @@
       }
       .chip.hot{color:var(--foreground);border-color:var(--border);background:var(--muted);font-weight:700}
       .keep-name{font-size:12.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      .size{font-variant-numeric:tabular-nums;font-weight:600;font-size:13px;white-space:nowrap}
+      .size{font-variant-numeric:tabular-nums;font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:clip}
+      .list-table td.cell-size{overflow:hidden}
       .size small{display:block;font-weight:400;color:var(--muted-foreground);font-size:11px}
       .zone{font-size:12.5px;color:var(--muted-foreground);white-space:nowrap}
       .chev{color:var(--muted-foreground)}
@@ -801,8 +802,9 @@
       body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",Inter,sans-serif}
       .readonly-card.exec .ic{color:var(--amber-text);background:var(--amber-bg);border-color:var(--amber-border)}
       .readonly-card.warn .ic{color:var(--red-text);background:var(--red-bg);border-color:var(--red-border)}
-      .job-bar{margin-top:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;border:1px solid var(--border);background:var(--card);border-radius:var(--radius);padding:10px 14px;box-shadow:var(--shadow-xs);font-size:13px}
+      .job-bar{margin:0 0 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;border:1px solid var(--border);background:var(--card);border-radius:var(--radius);padding:10px 14px;box-shadow:var(--shadow-xs);font-size:13px}
       .job-bar .progress{flex:1 1 200px;margin-top:0;height:8px}
+      .job-bar .muted{min-width:0;overflow-wrap:anywhere}
       .job-bar b{font-variant-numeric:tabular-nums}
       .b-red{background:var(--red-bg);color:var(--red-text);border-color:var(--red-border)} .b-red i{background:var(--red-text)}
       .pager{display:flex;align-items:center;gap:6px}
@@ -858,6 +860,26 @@
       .zassign button,.zmove{font-size:11.5px;padding:2px 9px;border:1px solid var(--border);border-radius:999px;background:var(--card);color:var(--foreground);cursor:pointer;min-height:0;font-family:inherit}
       .zmove{margin-left:auto;flex:none;color:var(--muted-foreground)}
       .zempty{padding:10px 12px;font-size:12px;color:var(--muted-foreground)}
+      .ztree{max-height:460px;overflow:auto}
+      .tnode{display:flex;gap:6px;align-items:flex-start;padding:7px 12px 7px 10px;border-bottom:1px dashed var(--border);font-size:12.5px}
+      .tnode:last-child{border-bottom:none}
+      .tnode .zmain{min-width:0;flex:1}
+      .tnode .tname{display:flex;gap:5px;align-items:center;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .tnode.sign .tname{color:var(--muted-foreground);font-weight:400}
+      .tnode.in{background:var(--muted)}
+      .ttog{flex:none;width:20px;height:20px;padding:0;border:none;background:none;color:var(--muted-foreground);cursor:pointer;font-size:12px;min-height:0;line-height:20px;text-align:center}
+      .ztag{display:inline-block;font-size:11.5px;padding:1px 8px;border-radius:999px;background:var(--card);border:1px solid var(--border);margin-right:6px}
+      .next-card{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:18px 0 4px;padding:16px 18px;border:1px solid var(--border);border-left:4px solid var(--primary);border-radius:var(--radius);background:var(--card);box-shadow:var(--shadow-xs)}
+      .next-card .nc-text{flex:1 1 260px;min-width:0}
+      .next-card .nc-text b{display:block;font-size:15px}
+      .next-card .nc-text span{display:block;margin-top:3px;font-size:12.5px;color:var(--muted-foreground)}
+      .next-card .btn{flex:none}
+      details.fold > summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px}
+      details.fold > summary::-webkit-details-marker{display:none}
+      details.fold > summary::before{content:'▸';color:var(--muted-foreground);font-size:12px}
+      details.fold[open] > summary::before{content:'▾'}
+      details.fold > summary .sec-sub{display:block;margin:2px 0 0}
+      .fold-part{margin-top:18px;padding-top:16px;border-top:1px solid var(--border)}
       .zmore{display:block;width:100%;padding:8px 12px;border:none;border-top:1px dashed var(--border);background:var(--card);color:var(--muted-foreground);font:inherit;font-size:12px;cursor:pointer;min-height:0}
       .search-overlay{position:fixed;inset:0;background:rgb(0 0 0 / .35);z-index:70;display:flex;justify-content:center;padding-top:14vh}
       .search-overlay input{width:min(560px,calc(100vw - 32px));height:46px;border-radius:12px;border:1px solid var(--border);background:var(--popover);color:var(--foreground);padding:0 16px;font:inherit;font-size:15px;box-shadow:var(--shadow-lg)}
@@ -946,10 +968,22 @@
                 <button class="btn primary" type="button" data-run="full"><i data-ic="play" class="sm"></i>开始跑筛</button>
               </div>
             </div>
+            <div id="invNext"></div>
             <section class="stats" id="invStats" aria-label="盘点小结"></section>
-            <div class="ov-section-head"><h2>分区构成</h2><p>目录绑到分区后才进筛查；分区在下方目录表里改</p></div>
+            <div class="ov-section-head"><h2>分区构成</h2><p>目录绑到分区后才进筛查；要改，展开页面最下面的「目录绑定与保护」</p></div>
             <div class="part-grid" id="invParts"></div>
-            <section class="card section-card" aria-label="目录绑定">
+            <section class="card section-card" aria-label="缓存覆盖">
+              <h2>缓存覆盖</h2>
+              <p class="sec-sub">CD2 从没打开过的目录不在缓存里，那部分不参与比对；要全量就先在 CD2 里点开。</p>
+              <div id="invCoverage" class="path-list"></div>
+            </section>
+            <section class="card section-card" aria-label="库存与数据源">
+              <h2>库存与数据源</h2>
+              <div class="kv" id="invInfo"></div>
+            </section>
+            <details class="card section-card fold" id="invBindFold">
+              <summary><span><b>目录绑定与保护</b><span class="sec-sub">偶尔才用：改某个目录的分区、加保护、按目录名找建议</span></span></summary>
+            <section class="fold-part" aria-label="目录绑定">
               <h2>目录绑定</h2>
               <p class="sec-sub">逐层浏览网盘目录，给目录选分区或加保护；命中保护的目录整个不看、不动。</p>
               <div class="crumb" id="invCrumb"></div>
@@ -964,19 +998,11 @@
                 <span class="hint" id="bindHint">改动后记得保存；保存后重新盘点</span>
               </div>
             </section>
-            <section class="card section-card" aria-label="按目录名建议">
+            <section class="fold-part" aria-label="按目录名建议">
               <div class="ov-card-head"><div><h2>按目录名建议</h2><p class="sec-sub">只看目录名（最多 3 层），不读文件</p></div><button class="btn sm" type="button" id="btnSuggest">生成建议</button></div>
               <div id="invSuggest"></div>
             </section>
-            <section class="card section-card" aria-label="缓存覆盖">
-              <h2>缓存覆盖</h2>
-              <p class="sec-sub">CD2 从没打开过的目录不在缓存里，那部分不参与比对；要全量就先在 CD2 里点开。</p>
-              <div id="invCoverage" class="path-list"></div>
-            </section>
-            <section class="card section-card" aria-label="库存与数据源">
-              <h2>库存与数据源</h2>
-              <div class="kv" id="invInfo"></div>
-            </section>
+            </details>
           </section>
 
           <!-- ============ 清单 ============ -->
@@ -1023,7 +1049,7 @@
               </div>
               <div class="tbl-scroll">
                 <table class="list-table">
-                  <colgroup><col style="width:46px"><col style="width:134px"><col style="width:212px"><col><col style="width:240px"><col style="width:98px"><col style="width:82px"><col style="width:50px"></colgroup>
+                  <colgroup><col style="width:46px"><col style="width:134px"><col style="width:212px"><col><col style="width:228px"><col style="width:96px"><col style="width:84px"><col style="width:50px"></colgroup>
                   <thead><tr>
                     <th><button type="button" class="pick pick-all" id="pickAll" role="checkbox" aria-checked="false" aria-label="全选当前筛选的全部条目"><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><svg class="minus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><path d="M5 12h14"/></svg></button></th>
                     <th>判定</th><th>影片</th><th>待处理文件</th><th>保留版本</th><th class="cell-size">大小</th><th>分区</th><th></th>
@@ -1240,6 +1266,7 @@ const TONE = {'可切': 'green', '待定': 'amber', '版本型': 'sky', '不动'
 const bn = b => (LB.buckets[b] || {}).name || b;
 const sn = s => (LB.stages[s] || {}).name || s;
 const cn = (s, c) => LB.classes[s + '|' + c] || c;
+const shortLb = (s, c) => (LB.short || {})[s + '|' + c] || cn(s, c);
 const tierName = t => { if (!t) return '未知'; const base = {U: '4K', H: '1080p', S: '720p 及以下', '?': '未知'}[t.replace('*', '')] || t; return t.endsWith('*') ? base + '*' : base; };
 const badge = b => `<span class="badge b-${TONE[b] || 'zinc'}"><i></i>${esc(bn(b))}</span>`;
 const FLAG_NAME = {infer: '原盘档为体积推断', roujiang: 'BDMV 肉酱盘', whole: '整夹搬', file: '只搬单文件'};
@@ -1441,6 +1468,19 @@ const actName = a => (a || '').split(',').map(x => ACT_NAME[x] || x).join(' / ')
 
 /* ============================== 盘点 ============================== */
 let INV = null, PROBE = null, TREE_PATH = '/', BIND_DIRTY = false;
+/* 任务完成后的下一步：盘点完 → 开始跑筛；跑筛完 → 直达清单 */
+function nextStepHtml(inv) {
+  const r = RES, sm = (r && r.summary) || {};
+  const card = (t, sub, btn) => `<div class="next-card" role="status"><div class="nc-text"><b>${t}</b><span>${sub}</span></div>${btn}</div>`;
+  if (r && r.run_id && !r.stale && (!inv || (r.finished || 0) >= (inv.finished || 0))) {
+    const cut = (sm['可切'] || {}).count || 0, tbd = (sm['待定'] || {}).count || 0;
+    return card('跑筛完成', `${esc(r.run_id)} · ${fmtTime(r.finished)}。结果在「清单」页：先看「可清理」，再看「需人工确认」`,
+      `<a class="btn primary" href="#/list">查看清单（可清理 ${n(cut)} 条 · 需人工确认 ${n(tbd)} 条）${ic('chev', 'sm')}</a>`);
+  }
+  if (inv) return card('盘点完成', '下一步：跑一遍筛查，出清单。只出清单，不动任何文件。',
+    `<button class="btn primary" type="button" data-run="full">${ic('play', 'sm')}开始跑筛</button>`);
+  return card('还没有盘点', '先盘点一遍，看看各分区里有多少东西。', `<button class="btn primary" type="button" data-run="inventory">${ic('refresh', 'sm')}开始盘点</button>`);
+}
 async function renderInventory() {
   const [inv] = await Promise.all([api('api/inventory').catch(() => null)]);
   INV = inv;
@@ -1451,7 +1491,7 @@ async function renderInventory() {
   const prot = Object.values(st.protected_skipped || {}).reduce((a, x) => a + x, 0);
   const kpi = (label, icon, num, sub, tone = '') => `<div class="card stat"><div class="stat-top"><span class="stat-label">${label}</span>${ic(icon)}</div><div class="stat-num ${tone}">${num}</div><div class="stat-sub">${sub}</div></div>`;
   $('#invStats').innerHTML = kpi('合集区电影', 'db', n((st.heji || {}).count), '合集区人口')
-    + kpi('已绑定目录', 'folder', n(roots), roots ? '分区在下方目录表里改' : '<b>还没绑定任何目录</b>，不进筛查', roots ? '' : 't-amber')
+    + kpi('已绑定目录', 'folder', n(roots), roots ? '要改就展开最下面「目录绑定」' : '<b>还没绑定任何目录</b>，不进筛查', roots ? '' : 't-amber')
     + kpi('缓存覆盖', 'refresh', src.kind === 'cache' ? (unlN ? n(unlN) : '全量') : '—', src.kind === 'cache' ? (unlN ? '个目录 CD2 没打开过，不在比对里' : '各分区目录都被 CD2 打开过') : '非缓存模式', unlN ? 't-amber' : '')
     + kpi('保护剔除', 'shield', n(prot), st.protected_gb ? fmtGB(st.protected_gb) + ' 整个不看不动' : '命中保护目录的条目');
   $('#invParts').innerHTML = Object.entries(ZN).map(([z, name]) => {
@@ -1459,6 +1499,7 @@ async function renderInventory() {
     return `<div class="card part-card ${rs.length ? '' : 'unbound'}"><div class="part-top"><span class="part-name">${name}</span><span class="tag ${rs.length ? 'ok' : ''}">${rs.length ? '已绑定 ' + rs.length : '未绑定'}</span></div>
       <div class="part-num">${n(s.count)} <small>条 · ${fmtGB(s.gb)}</small></div>${rs.map(p => `<div class="part-path mono" title="${esc(p)}">${esc(p)}</div>`).join('') || '<div class="part-path">—</div>'}</div>`;
   }).join('');
+  $('#invNext').innerHTML = nextStepHtml(inv);
   await loadTree(TREE_PATH);
   // 覆盖
   const cov = Object.entries(unl).filter(([, x]) => x && x.count);
@@ -1651,10 +1692,10 @@ function renderTable() {
     return `<tr class="${picked ? 'picked' : ''}" data-i="${i}" tabindex="0">
       <td><button type="button" class="pick ${picked ? 'on' : ''}" data-pick="${i}" role="checkbox" aria-checked="${picked}" aria-label="勾选">${PICK}</button></td>
       <td class="cell-badge">${badge(x.bucket)}</td>
-      <td><div class="movie-name" title="${esc(baseName(x.path))}">${esc(stripExt(baseName(x.path)))}</div><div class="movie-meta">${esc(sn(x.stage))} · ${esc(cn(x.stage, x.cls))}</div></td>
+      <td><div class="movie-name" title="${esc(baseName(x.path))}">${esc(stripExt(baseName(x.path)))}</div><div class="movie-meta" title="${esc(sn(x.stage) + ' · ' + cn(x.stage, x.cls))}">${esc(shortLb(x.stage, x.cls))}</div></td>
       <td><div class="path mono" title="${esc(x.path)}">${esc(parentOf(x.path))}</div><div class="chips">${rowChips(x)}</div></td>
       <td>${keep ? `<div class="keep-name" title="${esc(keep)}">${esc(keep.startsWith('/') ? baseName(keep) : keep)}</div>${keep.startsWith('/') ? `<div class="path mono" title="${esc(keep)}">${esc(parentOf(keep))}</div>` : ''}` : '<span class="muted">—</span>'}</td>
-      <td class="cell-size"><div class="size">${fmtGB(x.gb)}${x.keep_gb ? `<small>留 ${fmtGB(x.keep_gb)}</small>` : ''}</div></td>
+      <td class="cell-size"><div class="size notranslate" translate="no">${fmtGB(x.gb)}${x.keep_gb ? `<small>留 ${fmtGB(x.keep_gb)}</small>` : ''}</div></td>
       <td><span class="zone">${esc(zoneOfPath(x.path))}</span></td>
       <td class="cell-chev">${ic('chev', 'sm chev')}</td></tr>`;
   }).join('');
@@ -1759,11 +1800,11 @@ function renderDlg() {
   $('#dDropTag').textContent = x.bucket === '可切' ? '待清理' : x.bucket === '缺口' ? '主库缺口' : '这一份';
   $('#dDropFile').textContent = baseName(x.path);
   const li = (k, v) => `<li><span>${k}</span><b>${v}</b></li>`;
-  $('#dDropSpecs').innerHTML = li('大小', fmtGB(x.gb)) + li('分区', esc(zoneOfPath(x.path))) + (x.move ? li('搬运方式', x.move === '整夹' ? '整夹搬' : '只搬这个文件') : '') + (x.flag ? li('标记', esc(x.flag)) : '');
+  $('#dDropSpecs').innerHTML = li('大小', '<span translate="no">' + fmtGB(x.gb) + '</span>') + li('分区', esc(zoneOfPath(x.path))) + (x.move ? li('搬运方式', x.move === '整夹' ? '整夹搬' : '只搬这个文件') : '') + (x.flag ? li('标记', esc(x.flag)) : '');
   $('#dDropPath').textContent = x.path;
   const keep = x.keep || '';
   $('#dKeepFile').textContent = keep ? (keep.startsWith('/') ? baseName(keep) : keep) : '—';
-  $('#dKeepSpecs').innerHTML = keep.startsWith('/') ? li('分区', esc(zoneOfPath(keep))) + (x.keep_gb ? li('大小', fmtGB(x.keep_gb)) : '') : '';
+  $('#dKeepSpecs').innerHTML = keep.startsWith('/') ? li('分区', esc(zoneOfPath(keep))) + (x.keep_gb ? li('大小', '<span translate="no">' + fmtGB(x.keep_gb) + '</span>') : '') : '';
   $('#dKeepPath').textContent = keep.startsWith('/') ? keep : '';
   $('#dReason').textContent = x.basis || '—';
   const B = LB.buckets[x.bucket] || {};
@@ -2070,7 +2111,7 @@ async function wzCheck() {
     // 已经绑过分区（重走向导）：只按已绑的勾，不再按名字预勾——用户取消过的不能又冒回来
     const bound = (r.candidates || []).some(c => c.current);
     (r.candidates || []).forEach(c => { const z = bound ? c.current : c.strong; if (z) WZ.zsel[c.path] = {zone: z, on: true}; });
-    WZ.zmore = false;
+    WZ.zopen = null;
     h = (r.candidates || []).length ? '<div id="wzZones"></div>'
       : '<div class="warn-box">没在网盘里找到装着电影的目录（CD2 可能还没打开过）。点「完成」后在盘点页的目录树里手动绑定就行。</div>';
     h += '<h3 style="margin:16px 0 6px;font-size:13px">保护目录（整个不看、不动）</h3>' + (r.protect_found.length ? r.protect_found.map(t => `<label class="path-row"><input type="checkbox" class="wzProt" value="${esc(t)}" checked>目录名含「${esc(t)}」的</label>`).join('')
@@ -2113,21 +2154,41 @@ function renderWzZones() {
           <div class="zmain"><div class="mono">${esc(c.path)}</div>${meta(c)}</div><button type="button" class="zmove" data-zout="${esc(c.path)}" title="放回未归类">移出</button></label>`).join('')
         : `<div class="zempty">${z === 'pack' ? '没有。像「10-合集」这种整夹存放、只想参加跨区比对的，从下面「未归类」里指定到这里。' : '没有。从下面「未归类」里指定。'}</div>`) + '</div>';
   }).join('');
-  const under = c => on.some(p => c.path.startsWith(p + '/'));
-  const rest = cands.filter(c => !sel[c.path]);
-  const vis = rest.filter(c => !under(c)), hid = rest.length - vis.length;
-  const shown = WZ.zmore ? vis : vis.slice(0, 12);
-  h += `<div class="zgroup"><div class="zgroup-head"><b>未归类</b><span>不勾就不纳入；名字含糊（只叫「合集」、BDMV、UHD原盘、动漫原盘、未整理 / PT 下面的）都在这里，需要的指定一个分区</span></div>`
-    + (shown.length ? shown.map(c => `<div class="zrow"><div class="zmain"><div class="mono">${esc(c.path)}</div>${meta(c)}
-        <div class="zassign">${ZORDER.map(z => `<button type="button" data-zin="${esc(c.path)}" data-z="${z}">${esc(ZN[z])}</button>`).join('')}</div></div></div>`).join('')
-      : '<div class="zempty">没有了。</div>')
-    + (vis.length > shown.length ? `<button type="button" class="zmore" id="wzMore">展开其余 ${n(vis.length - shown.length)} 个</button>` : '')
-    + (hid ? `<div class="zempty">另有 ${n(hid)} 个在已勾目录下面，已省略（整个上层已经纳入）。</div>` : '') + '</div>';
+  h += `<div class="zgroup"><div class="zgroup-head"><b>未归类</b><span>按网盘目录一层层展开，需要的指定一个分区；不指定就不纳入。灰色的是路过的目录，本身不能当分区</span></div>`
+    + `<div class="ztree">${wzTreeHtml(cands, sel, meta)}</div></div>`;
   $('#wzZones').innerHTML = h;
   $$('#wzZones [data-zon]').forEach(i => i.onchange = () => { sel[i.dataset.zon].on = i.checked; renderWzZones(); });
   $$('#wzZones [data-zout]').forEach(b => b.onclick = e => { e.preventDefault(); delete sel[b.dataset.zout]; renderWzZones(); });
   $$('#wzZones [data-zin]').forEach(b => b.onclick = () => { sel[b.dataset.zin] = {zone: b.dataset.z, on: true}; renderWzZones(); });
-  const m = $('#wzMore'); if (m) m.onclick = () => { WZ.zmore = true; renderWzZones(); };
+  $$('#wzZones [data-ztog]').forEach(b => b.onclick = () => { const p = b.dataset.ztog; WZ.zopen.has(p) ? WZ.zopen.delete(p) : WZ.zopen.add(p); renderWzZones(); });
+}
+/* 未归类目录树：候选 + 它们的上层目录（上层只当路标）。父目录已归某区的，子孙收起只报个数。 */
+function wzTreeHtml(cands, sel, meta) {
+  const byPath = {}, kids = {}, add = (par, ch) => { (kids[par] = kids[par] || new Set()).add(ch); };
+  cands.forEach(c => {
+    byPath[c.path] = c;
+    const segs = c.path.split('/').filter(Boolean);
+    for (let i = 1; i <= segs.length; i++) add(i === 1 ? '' : '/' + segs.slice(0, i - 1).join('/'), '/' + segs.slice(0, i).join('/'));
+  });
+  if (!WZ.zopen) { WZ.zopen = new Set(); (kids[''] || []).forEach(p => WZ.zopen.add(p)); }
+  const nm = p => p.slice(p.lastIndexOf('/') + 1);
+  const sortK = ps => [...ps].sort((a, b) => nm(a).localeCompare(nm(b), 'zh', {numeric: true}));
+  const candUnder = p => cands.filter(c => c.path.startsWith(p + '/')).length;
+  const row = (p, depth) => {
+    const c = byPath[p], ch = kids[p] ? sortK(kids[p]) : [], s = sel[p], open = WZ.zopen.has(p);
+    const pad = `style="padding-left:${10 + depth * 18}px"`;
+    const name = `<div class="tname" title="${esc(p)}">${ic('folder', 'sm')}${esc(nm(p))}</div>`;
+    if (c && s && s.on) {
+      const k = candUnder(p);
+      return `<div class="tnode in" ${pad}><span class="ttog"></span><div class="zmain">${name}<span class="ztag">已归 ${esc(ZN[s.zone])}</span>${k ? `<div class="zmeta">下面 ${n(k)} 个已被上层包含，不再单列</div>` : ''}</div><button type="button" class="zmove" data-zout="${esc(p)}">移出</button></div>`;
+    }
+    const tog = ch.length ? `<button type="button" class="ttog" data-ztog="${esc(p)}" aria-expanded="${open}" aria-label="${open ? '收起' : '展开'}">${open ? '▾' : '▸'}</button>` : '<span class="ttog"></span>';
+    const inner = !c ? '' : meta(c) + (s ? `<div class="zmeta">在「${esc(ZN[s.zone])}」组里，没勾</div>`
+      : `<div class="zassign">${ZORDER.map(z => `<button type="button" data-zin="${esc(p)}" data-z="${z}">${esc(ZN[z])}</button>`).join('')}</div>`);
+    return `<div class="tnode${c ? '' : ' sign'}" ${pad}>${tog}<div class="zmain">${name}${inner}</div></div>` + (open ? ch.map(x => row(x, depth + 1)).join('') : '');
+  };
+  const roots = sortK(kids[''] || []);
+  return roots.length ? roots.map(p => row(p, 0)).join('') : '<div class="zempty">没有找到装着电影的目录。</div>';
 }
 async function wzNext() {
   const st = WZ.step, c = JSON.parse(JSON.stringify(CFG));
