@@ -103,7 +103,7 @@ docker compose down                          # 停止
   再按 ISO / 盘片夹体积推断（≥55 GB 为 4K，带 * 标注）；其他区看名字，名字没写的 ISO 同样按体积推断、普通文件 ≥40 GB 推断为 4K。
 - **特效字幕版**：名字里写了「…特效…字幕」（简繁特效字幕、国配简繁英特效四字幕…），或命中设置里的「特效字幕组」名单
   （默认带号主确认的名单：SGNB、Thor@HDSky、雅典娜 / Athena@HDSky、x-man@HDSky、DIY@HDSky、Nest@ADWeb / Nest@ADE、Nimbus@Sunny、
-  Breeze@Sunny、LINMENG@CHDBits、nn@CHDBits、sh@CHDBits、BHYS@OurBits、至尊宝、碟影）。英文不分大小写、只认整段；中文名出现在片名里不算，
+  Breeze@Sunny、LINMENG@CHDBits、nn@CHDBits、sh@CHDBits、BHYS@OurBits、至尊宝、WCL碟影）。英文不分大小写、只认整段；中文名出现在片名里不算，
   写成发布标签（-雅典娜、雅典娜小组@…）的才算。清单里带「特效字幕」标记和「特效字幕版」标签，详情写明是凭字样还是凭名单哪一项认出的。
 - **组内其余每份**：
   - DIY / 特效字幕版与原版是一对，两份都留（保留份不是这两类时，最好的一份 DIY / 特效字幕版也留；保留份是这两类时，最好的原版也留）；

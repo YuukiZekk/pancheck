@@ -30,10 +30,11 @@ DEFAULTS = {
     'tv_keep_names': ['系列', '三部曲', '部曲'],          # 剧集分流时：路径含这些的视为系列电影，不分流
     'keep_first_names': [],                             # 重复时优先留这里（与保护目录同属一档）；只影响 A2，不剔除
     # 特效字幕组（反馈 16 / 18，号主确认的名单 + 查证过的别名）：名字命中即算特效字幕版，同分辨率内最优先留。
-    # 明确不放：cXcY@FRDS、Yobee@Sunny、LGNB@oSpecialCN、泛化的 DIY@站点 标签
+    # 明确不放：cXcY@FRDS、Yobee@Sunny、LGNB@oSpecialCN、泛化的 DIY@站点 标签；
+    # 也不放裸「碟影」——会命中「碟影版原盘 / 碟影传媒」这类官方国版发行盘，只认做特效字幕的 WCL碟影
     'subfx_groups': ['SGNB', 'Thor@HDSky', '雅典娜', 'Athena@HDSky', 'x-man@HDSky', 'DIY@HDSky', 'Nest@ADWeb', 'Nest@ADE',
                      'Nimbus@Sunny', 'Breeze@Sunny', 'LINMENG@CHDBits', 'nn@CHDBits', 'sh@CHDBits', 'BHYS@OurBits',
-                     '至尊宝', '碟影'],
+                     '至尊宝', 'WCL碟影'],
     # 第二期用
     'quarantine_dir': '',                               # 排查区（「可清理」搬到这里；同一网盘内）
     'main_lib_dir': '',                                 # 主库目录（「主库缺口」挪入这里）
