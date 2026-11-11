@@ -281,8 +281,9 @@ def gb(b):
     return round(b / GB, 3)
 
 
-def scan_inputs(cfg, workdir, progress):
-    """扫 CD2 挂载目录 + 读 Emby，生成内核要的五张 CSV。返回 (盘点统计, 文件清单, 错误)。"""
+def scan_inputs(cfg, tab, progress):
+    """tab：这一轮的中间表（panel.tables.Tables，或轮次目录）。扫 CD2 挂载目录 + 读 Emby，生成内核要的五张 CSV。返回 (盘点统计, 文件清单, 错误)。"""
+    tab = _as_tables(tab)
     errors = []
     files = []                     # [(zone, vpath, gb, form)]
     stats = {}
@@ -322,9 +323,8 @@ def scan_inputs(cfg, workdir, progress):
         yall.append({'path': vp, 'size': size, 'kind': kind, 'pack': rel[0] if len(rel) > 1 else '',
                      'top': 1 if (protect_hit(vp, keep_first, unit_dirs) or listpack_hit(vp, cfg['listpack_names'], cfg)
                                   or skip_hit(vp, cfg)) else 0})
-    _write(workdir, 'yuanpan_all.csv', ['path', 'size', 'kind', 'pack', 'top'], yall, 'utf-8-sig')
+    _write(tab, 'yuanpan_all.csv', ['path', 'size', 'kind', 'pack', 'top'], yall, 'utf-8-sig')
     # 同字节重复（A2 第二层）：全区文件（含保护区），缓存模式带 Sha1；保留档 / 守卫命中在这里先标好
-    import sieve
     tier = list(cfg['protect_names']) + list(cfg['keep_first_names'])
     hall = []
     for z in raw:
@@ -337,7 +337,7 @@ def scan_inputs(cfg, workdir, progress):
                          'tier': 1 if (protect_hit(vp, tier, unit_dirs) or listpack_hit(vp, cfg['listpack_names'], cfg)
                                        or skip_hit(vp, cfg)) else 0,
                          'guard': 1 if guard_hit(cfg, vp, unit_dirs) else 0})
-    _write(workdir, 'hidden_all.csv', ['path', 'size', 'sha1', 'zone', 'root_depth', 'tier', 'guard'], hall, 'utf-8-sig')
+    _write(tab, 'hidden_all.csv', ['path', 'size', 'sha1', 'zone', 'root_depth', 'tier', 'guard'], hall, 'utf-8-sig')
     stats['hash_mode'] = 'sha1' if sha1 else 'size'
     # 提取层只剔保护区。榜单包留在人口里（与金标准同口径），由内核判定层整包不筛，守卫兜底整批拒绝
     blocked = list(cfg['protect_names'])
@@ -374,8 +374,8 @@ def scan_inputs(cfg, workdir, progress):
             files.append(('yuanpan', vp, gb(size), os.path.splitext(vp)[1][1:].upper()))
     for folder, size in folder_tot.items():
         units.append({'path': folder, 'name': folder.rsplit('/', 1)[-1], 'kind': 'FILES', 'totGB': gb(size)})
-    _write(workdir, 'yuanpan_units.csv', ['path', 'name', 'kind', 'totGB'], units, 'utf-8')
-    _write(workdir, 'yuanpan_files.csv', ['path', 'GB'], yfiles, 'utf-8')
+    _write(tab, 'yuanpan_units.csv', ['path', 'name', 'kind', 'totGB'], units, 'utf-8')
+    _write(tab, 'yuanpan_files.csv', ['path', 'GB'], yfiles, 'utf-8')
 
     # 合集区 → heji_films.csv（大包 = 分区根下第一级目录）
     # 带集号的文件（手工 heji_film.py 口径：SxxExx / 第N集，只看文件名）在提取层分出去，归「混入的剧集」
@@ -393,7 +393,7 @@ def scan_inputs(cfg, workdir, progress):
         heji.append({'大包': top, '片名(文件名)': name, 'GB': gb(size), '形态': form, '路径': vp})
         files.append(('heji', vp, gb(size), form))
     stats['heji_episodes'] = {'count': ep_n, 'gb': round(ep_bytes / GB, 1)}
-    _write(workdir, 'heji_films.csv', ['大包', '片名(文件名)', 'GB', '形态', '路径'], heji, 'utf-8-sig')
+    _write(tab, 'heji_films.csv', ['大包', '片名(文件名)', 'GB', '形态', '路径'], heji, 'utf-8-sig')
 
     # REMUX 区 / 整夹合集区：按「单元」出 cross_units.csv，给跨区比对模块用（口径同 union_units.csv）
     from . import cross
@@ -408,13 +408,13 @@ def scan_inputs(cfg, workdir, progress):
                 area = 'REMUX' if z == 'remux' else (rel[0] if len(rel) > 1 else root.rsplit('/', 1)[-1])
                 urows.append({'分区': z, '来源区域': area, '电影': u['name'], '主视频文件': u['main'],
                               '单元总GB': u['gb'], '路径': u['path']})
-    _write(workdir, 'cross_units.csv', CROSS_UNIT_COLS, urows, 'utf-8-sig')
+    _write(tab, 'cross_units.csv', CROSS_UNIT_COLS, urows, 'utf-8-sig')
     stats['cross_units'] = {'remux': sum(1 for u in urows if u['分区'] == 'remux'),
                             'pack': sum(1 for u in urows if u['分区'] == 'pack')}
 
     # Emby → emby_yp.csv / emby_titles.csv
     progress('读取 Emby 片库')
-    emby_info = write_emby_csvs(cfg, workdir, errors, [u['path'] for u in units] + [f['path'] for f in yfiles])
+    emby_info = write_emby_csvs(cfg, tab, errors, [u['path'] for u in units] + [f['path'] for f in yfiles])
 
     for z, _ in C.ZONES:
         fz = [f for f in files if f[0] == z]
@@ -429,8 +429,9 @@ def scan_inputs(cfg, workdir, progress):
     return stats, files, errors
 
 
-def csv_inputs(cfg, workdir, progress):
-    """CSV 模式：从 csv_dir 拷五张表进工作目录（不改内容）。"""
+def csv_inputs(cfg, tab, progress):
+    """CSV 模式：从 csv_dir 把五张表读进这一轮的中间表（不改内容）。tab：panel.tables.Tables（或轮次目录）。"""
+    tab = _as_tables(tab)
     errors = []
     src = cfg['csv_dir']
     need = ['yuanpan_units.csv', 'yuanpan_files.csv', 'emby_yp.csv', 'heji_films.csv', 'emby_titles.csv']
@@ -439,14 +440,12 @@ def csv_inputs(cfg, workdir, progress):
         raise FileNotFoundError('CSV 目录 %s 缺少：%s' % (src, '、'.join(missing)))
     for n in need:
         progress('载入 ' + n)
-        shutil.copyfile(os.path.join(src, n), os.path.join(workdir, n))
+        tab.load(os.path.join(src, n), n)
     files = []
-    with open(os.path.join(workdir, 'heji_films.csv'), encoding='utf-8-sig') as f:
-        for r in csv.DictReader(f):
-            files.append(('heji', r['路径'], float(r['GB']), r['形态']))
-    with open(os.path.join(workdir, 'yuanpan_files.csv'), encoding='utf-8') as f:
-        for r in csv.DictReader(f):
-            files.append(('yuanpan', r['path'], float(r['GB']), os.path.splitext(r['path'])[1][1:].upper()))
+    for r in tab.rows('heji_films.csv'):
+        files.append(('heji', r['路径'], float(r['GB']), r['形态']))
+    for r in tab.rows('yuanpan_files.csv'):
+        files.append(('yuanpan', r['path'], float(r['GB']), os.path.splitext(r['path'])[1][1:].upper()))
     stats = {z: {'count': sum(1 for x in files if x[0] == z),
                  'gb': round(sum(x[2] for x in files if x[0] == z), 1)} for z in ('heji', 'yuanpan')}
     stats['remux'] = {'count': 0, 'gb': 0}
@@ -463,7 +462,7 @@ def csv_inputs(cfg, workdir, progress):
                 seen.add(r['路径'])
                 urows.append({'分区': 'remux' if r['来源区域'] == 'REMUX' else 'pack', '来源区域': r['来源区域'],
                               '电影': r['电影'], '主视频文件': r['主视频文件'], '单元总GB': r['单元总GB'], '路径': r['路径']})
-        _write(workdir, 'cross_units.csv', CROSS_UNIT_COLS, urows, 'utf-8-sig')
+        _write(tab, 'cross_units.csv', CROSS_UNIT_COLS, urows, 'utf-8-sig')
         for z in ('remux', 'pack'):
             us = [u for u in urows if u['分区'] == z]
             stats[z] = {'count': len(us), 'gb': round(sum(float(u['单元总GB']) for u in us) * 1e9 / GB, 1)}
@@ -474,11 +473,15 @@ def csv_inputs(cfg, workdir, progress):
 CROSS_UNIT_COLS = ['分区', '来源区域', '电影', '主视频文件', '单元总GB', '路径']
 
 
-def _write(workdir, name, header, rows, enc):
-    with open(os.path.join(workdir, name), 'w', newline='', encoding=enc) as f:
-        w = csv.DictWriter(f, fieldnames=header)
-        w.writeheader()
-        w.writerows(rows)
+def _as_tables(tab):
+    """老调用传的是轮次目录：当成「只写调试 CSV 的空中间表」。"""
+    from .tables import Tables
+    return tab if isinstance(tab, Tables) else Tables(dump_dir=tab)
+
+
+def _write(tab, name, header, rows, enc):
+    """放进这一轮的中间表（内存，供后面各模块读）；中间表带 dump_dir 时顺带写一份 CSV，只当调试输出。"""
+    _as_tables(tab).put(name, header, rows, enc)
 
 
 # ---------------- SQLite 只读 ----------------
@@ -692,11 +695,12 @@ def tmdb_of_path(vp):
     return ''
 
 
-def write_emby_csvs(cfg, workdir, errors, yuanpan_paths=()):
+def write_emby_csvs(cfg, tab, errors, yuanpan_paths=()):
     """emby_titles.csv：电影条目。emby_yp.csv：原盘区实测分辨率，两种配对方式——
     ① 路径直配：Emby 路径去掉前缀 = 库存路径（直挂库成立）；
     ② TMDB 兜底：路径配不上时（如 strm 镜像库），从原盘路径里取 TMDB 编号，取 Emby 同编号电影的分辨率
        （同编号多个版本取最高，与 titles 的 max_vh 同口径）。行仍按原盘路径写，内核按原样查表即可。"""
+    tab = _as_tables(tab)
     pre = cfg['emby_prefix'].rstrip('/')
     try:
         items, meta = emby_items(cfg)
@@ -737,8 +741,8 @@ def write_emby_csvs(cfg, workdir, errors, yuanpan_paths=()):
     if items and not yp:
         errors.append('原盘实测分辨率修正未生效：Emby 路径不在前缀 %s 下，原盘路径里也没有能配上的 TMDB 编号；'
                       '原盘档位只按文件名/体积判断' % (pre or '（空）'))
-    _write(workdir, 'emby_yp.csv', ['source_path', 'width', 'height'], yp, 'utf-8')
-    _write(workdir, 'emby_titles.csv', ['tmdb', 'name', 'year', 'max_vh'], titles, 'utf-8-sig')
+    _write(tab, 'emby_yp.csv', ['source_path', 'width', 'height'], yp, 'utf-8')
+    _write(tab, 'emby_titles.csv', ['tmdb', 'name', 'year', 'max_vh'], titles, 'utf-8-sig')
     return {'items': len(items), 'movies': len(titles), 'matched_paths': path_hits, 'matched_tmdb': tmdb_hits,
             'yuanpan_paths': len(yuanpan_paths), 'yuanpan_tmdb_tagged': tmdb_tagged,
             'movie_rule': meta.get('movie_rule'), 'table': meta.get('table')}

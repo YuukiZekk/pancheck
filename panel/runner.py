@@ -1,9 +1,8 @@
 """跑筛子进程：python -m panel.runner <mode> <run_dir>
 mode = inventory（只盘点）| full（扫描：盘点 + 重复副本归组 + 主库对比 + 孤本 + 剧集分流）
 进度以 "@@P <json>" 行写 stdout；结果写 run_dir/result.json 与各类 CSV。
-内核 sieve.py 原样 import，读写都在 run_dir 里（内核按相对路径读五张 CSV）。
+中间表（panel.tables.Tables）在内存里传给各模块，不切当前目录；run_dir 里的 CSV 只是调试输出。
 """
-import csv
 import json
 import os
 import sys
@@ -13,6 +12,7 @@ from collections import defaultdict
 from . import config as C
 from . import labels as L
 from . import sources
+from .tables import Tables
 
 sys.path.insert(0, str(C.APP_DIR))
 
@@ -72,14 +72,14 @@ GIB = 1024 ** 3
 DUPE_STAGE = '重复副本'          # 原盘区同名同大小：独立一条线，结果归到「重复副本」，带标签
 
 
-def yuanpan_dupes(result):
+def yuanpan_dupes(result, tab):
     """A2 第一层：原盘区同名同大小精确重复（口径见 panel/dupes.py）。"""
     from . import dupes
-    if not os.path.isfile('yuanpan_all.csv'):
+    if not tab.has('yuanpan_all.csv'):
         result['dupes'] = {'skipped': '这个数据来源没有原盘区全量清单（CSV 模式不支持）'}
         return []
     items = [{'path': r['path'], 'size': int(r['size']), 'kind': r['kind'], 'pack': r['pack'], 'top': r['top'] == '1'}
-             for r in csv.DictReader(open('yuanpan_all.csv', encoding='utf-8-sig'))]
+             for r in tab.rows('yuanpan_all.csv')]
     top = {x['path'] for x in items if x['top']}
     pack_of = {x['path']: x['pack'] for x in items}
     pack_size = defaultdict(int)
@@ -102,12 +102,12 @@ B7_BUCKET = {'A': '可切', 'D1': '待定', 'D2': '待定', 'W': '提醒'}
 TR = {'U': 3, 'H': 2, 'S': 1}
 
 
-def remux_vs_mainlib(cfg, rows, result):
+def remux_vs_mainlib(cfg, rows, result, tab):
     """B7 纵向扩展到 REMUX 区（规则 2：主库已有、且不差于这份 → 多余）。用当下的 Emby 与缓存判。
     「主库里的原盘版」= Emby 电影条目，路径去掉主库挂载前缀后落在原盘区（strm 镜像保留目录结构）。
     配对：TMDB 编号相同，或片名 + 年份都相同 → 确认是同一部；只有片名相同 → 疑似。"""
     from . import cross
-    if not os.path.isfile('cross_units.csv'):
+    if not tab.has('cross_units.csv'):
         result['b7'] = {'skipped': '没有 REMUX 单元清单'}
         return []
     try:
@@ -146,7 +146,7 @@ def remux_vs_mainlib(cfg, rows, result):
             c = c.rsplit('/', 1)[0]
             touched.add(c)
     out, cnt, skipped = [], {}, 0
-    for u in csv.DictReader(open('cross_units.csv', encoding='utf-8-sig')):
+    for u in tab.rows('cross_units.csv'):
         p = u['路径']
         if p in touched or sources.guard_hit(cfg, p, set()):
             skipped += 1
@@ -186,17 +186,17 @@ def remux_vs_mainlib(cfg, rows, result):
 HIDDEN_STAGE = '重复副本'        # 同字节：独立一条线（口径不变），结果归到「重复副本」，带标签
 
 
-def hidden_dupes(cfg, rows, result):
+def hidden_dupes(cfg, rows, result, tab):
     """A2 第二层：内容完全相同、名字不同的隐藏重复（缓存模式按 Sha1，否则按字节数）。
     已被前面各模块判可清理的份视同已搬走（当轮 build16b 也是先扣掉已搬集合）。"""
     import sieve
     from . import cross, dupes
-    if not os.path.isfile('hidden_all.csv'):
+    if not tab.has('hidden_all.csv'):
         result['hidden'] = {'skipped': '这个数据来源没有全区文件清单（CSV 模式不支持）'}
         return []
     use_sha1 = result['stats'].get('hash_mode') == 'sha1'
     items = []
-    for r in csv.DictReader(open('hidden_all.csv', encoding='utf-8-sig')):
+    for r in tab.rows('hidden_all.csv'):
         items.append({'path': r['path'], 'size': int(r['size']), 'zone': r['zone'], 'root_depth': int(r['root_depth']),
                       'tier': r['tier'] == '1', 'guard': r['guard'] == '1',
                       'key': (r['sha1'] if use_sha1 else r['size'])})
@@ -229,11 +229,12 @@ def main(mode, run_dir):
     fp = C.fingerprint(cfg)
     t0 = time.time()
     emit('prepare', '准备数据（%s）' % {'cache': '读 CD2 目录缓存', 'scan': '遍历挂载目录', 'csv': '读现成 CSV'}[cfg['data_source']], 2)
-    os.chdir(run_dir)
+    # 中间表在内存里传给各模块；run_dir 里的 CSV 只是调试输出（反馈：去掉对当前目录的依赖）
+    tab = Tables(dump_dir=run_dir)
     if cfg['data_source'] == 'csv':
-        stats, files, errors = sources.csv_inputs(cfg, run_dir, lambda m: emit('prepare', m))
+        stats, files, errors = sources.csv_inputs(cfg, tab, lambda m: emit('prepare', m))
     else:
-        stats, files, errors = sources.scan_inputs(cfg, run_dir, lambda m: emit('prepare', m))
+        stats, files, errors = sources.scan_inputs(cfg, tab, lambda m: emit('prepare', m))
     result = {'mode': mode, 'fingerprint': fp, 'started': t0, 'stats': stats, 'errors': errors[:200],
               'source': stats.get('source') or {'kind': cfg['data_source']},
               'error_count': len(errors)}
@@ -249,11 +250,11 @@ def main(mode, run_dir):
     sieve.LP_ON = not cfg.get('tree_model')                      # 勾选模型：没勾 = 不筛，不再另认榜单包
     rows = []
     emit('dupes', '查找原盘区完全重复', 20)
-    rows += yuanpan_dupes(result)
+    rows += yuanpan_dupes(result, tab)
     l1 = {r['path'] for r in rows}
 
     emit('groups', '把同一部片的副本归组', 35)
-    grows, gout, gst, gs = G.scan(cfg, gone=l1)
+    grows, gout, gst, gs = G.scan(cfg, gone=l1, tab=tab)
     rows += grows
     result['groups'] = gst
     result['stats']['groups'] = gst
@@ -261,10 +262,10 @@ def main(mode, run_dir):
         json.dump(gout, f, ensure_ascii=False)
 
     emit('vertical', '对比 Emby 片库', 60)
-    emby_tmdb, emby_title = sieve.load_emby()
+    emby_tmdb, emby_title = sieve.load_emby(tab.rows('emby_titles.csv'))
     cut_all = {r['path'] for r in rows if r['bucket'] == '可切'}
     vert_cut = set()
-    for cls, path, g, note in sieve.vertical(cut_all, emby_tmdb, emby_title):
+    for cls, path, g, note in sieve.vertical(cut_all, emby_tmdb, emby_title, tab.rows('heji_films.csv')):
         # 主库（Emby）已有、且不差于这份（TMDB 精确命中、同档或更好）→ 多余；库里没有 → 主库缺口
         if cls == '库内已有同档+':
             vert_cut.add(path)
@@ -278,10 +279,10 @@ def main(mode, run_dir):
         rows.append(row(LONE_STAGE, '孤本', '孤本', x['path'], x['gb'], basis='原盘区、合集、REMUX 区、Emby 片库里都没有别的副本'))
 
     emit('hidden', '查找改了名的完全重复', 75)
-    rows += hidden_dupes(cfg, rows, result)
+    rows += hidden_dupes(cfg, rows, result, tab)
 
     emit('b7', '比对 REMUX 与主库', 82)
-    rows += remux_vs_mainlib(cfg, rows, result)
+    rows += remux_vs_mainlib(cfg, rows, result, tab)
 
     emit('tvsplit', '识别混入的剧集', 85)
     rows += tv_split(cfg, files)

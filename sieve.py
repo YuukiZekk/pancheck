@@ -305,9 +305,14 @@ def keyof3(name):
 # ================= 第三刀：小文件低质层 =================
 LOWMARK = re.compile(r'(?i)(720p|480p|dvdrip|webrip|hdtv|标清|\bSD\b|576p|540p)')
 
-def load_emby():
+def _rows(rows, name):
+    """面板传进来的表（内存里，值和读 CSV 一样都是字符串）；单独跑内核时没传，就读当前目录的 CSV。"""
+    return rows if rows is not None else csv.DictReader(open(name, encoding='utf-8-sig'))
+
+
+def load_emby(rows=None):
     by_tmdb, by_title = {}, {}
-    for r in csv.DictReader(open('emby_titles.csv', encoding='utf-8-sig')):
+    for r in _rows(rows, 'emby_titles.csv'):
         vh = int(r['max_vh'] or 0)
         if r['tmdb']:
             by_tmdb[r['tmdb']] = max(vh, by_tmdb.get(r['tmdb'], 0))
@@ -380,10 +385,10 @@ def stage3(s1_rows, s2_rows, emby_tmdb):
 # ================= 纵向轴：合集剩余片 × Emby 库 =================
 NOMINAL = {'U': 2160, 'H': 1080, 'S': 720, 'U*': 2160, 'H*': 1080, '?': 0}
 
-def vertical(cut_paths, emby_tmdb, emby_title):
+def vertical(cut_paths, emby_tmdb, emby_title, heji=None):
     """只读提醒，不写 Emby：TMDB 精确才出提醒；片名疑似只标注；库里没有的出入库提醒。"""
     out = []
-    for r in csv.DictReader(open('heji_films.csv', encoding='utf-8-sig')):
+    for r in _rows(heji, 'heji_films.csv'):
         path = r['路径']
         if path in cut_paths or is_listpack(path) or any(e in path for e in EXCL):
             continue

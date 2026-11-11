@@ -18,13 +18,13 @@
 不碰：榜单包、内置排除词（金庸/动漫/ADWEB）与用户追加的排除 / 榜单词命中的副本——可以当保留份，自己永远不进可清理。
 挂起：合集区里 ≥3 份在同一个夹、或 ≥2 份带集号 → 像剧集，整组不判（只计数）。原盘区一个夹里平铺很多 ISO 是常态，不算。
 """
-import csv
 import os
 import re
 from collections import Counter, defaultdict
 
 import sieve as S
-from . import cross, sources
+from . import sources
+from .tables import tables_of
 
 GIB = 1024 ** 3
 STAGE = '重复副本'
@@ -206,9 +206,9 @@ def rank(c):
 
 
 # ---------------- 人口 ----------------
-def _yuanpan_copies(meas):
-    units = [dict(r, totGB=float(r['totGB'])) for r in csv.DictReader(open('yuanpan_units.csv', encoding='utf-8'))]
-    files = [dict(r, GB=float(r['GB'])) for r in csv.DictReader(open('yuanpan_files.csv', encoding='utf-8'))]
+def _yuanpan_copies(meas, tab):
+    units = [dict(r, totGB=float(r['totGB'])) for r in tab.rows('yuanpan_units.csv')]
+    files = [dict(r, GB=float(r['GB'])) for r in tab.rows('yuanpan_files.csv')]
     un = {u['path']: u for u in units}
     out = []
     for u in units:
@@ -332,24 +332,26 @@ def merge_sets(cs):
     return [c for c in cs if id(c) not in drop] + add
 
 
-def copies(cfg, gone=frozenset()):
-    """全部副本。gone：已被别的线判掉的路径（原盘同名同大小），不再参与。"""
+def copies(cfg, gone=frozenset(), tab=None):
+    """全部副本。gone：已被别的线判掉的路径（原盘同名同大小），不再参与。
+    tab：这一轮的中间表（panel.tables.Tables）；不给就读当前目录的 CSV（老结果复算 / 对账脚本）。"""
+    tab = tables_of(tab)
     meas = {}
-    if os.path.isfile('emby_yp.csv'):
-        for r in csv.DictReader(open('emby_yp.csv', encoding='utf-8')):
+    if tab.has('emby_yp.csv'):
+        for r in tab.rows('emby_yp.csv'):
             try:
                 meas[r['source_path'].replace('/CloudNAS/CloudDrive', '')] = min(int(r['width']), int(r['height']))
             except (ValueError, KeyError):
                 pass
     out = []
-    for r in csv.DictReader(open('heji_films.csv', encoding='utf-8-sig')):
+    for r in tab.rows('heji_films.csv'):
         nm = r['片名(文件名)']
         out.append(dict(zone='heji', path=r['路径'], name=nm, main_name='', form=r['形态'], gb=float(r['GB']),
                         mgb=float(r['GB']), vh=None, pack=r['大包']))
-    if os.path.isfile('yuanpan_units.csv'):
-        out += _yuanpan_copies(meas)
-    if os.path.isfile('cross_units.csv'):
-        for u in csv.DictReader(open('cross_units.csv', encoding='utf-8-sig')):
+    if tab.has('yuanpan_units.csv'):
+        out += _yuanpan_copies(meas, tab)
+    if tab.has('cross_units.csv'):
+        for u in tab.rows('cross_units.csv'):
             mn = u['主视频文件']
             form = 'ISO' if mn.lower().endswith('.iso') else ('BDMV' if '.' not in mn[-6:] else 'FILE')
             g = float(u['单元总GB']) * 1e9 / GIB                 # 单元体积是 1000 进制，换回 115 口径
@@ -535,9 +537,9 @@ def judge(ms):
     return keep, out
 
 
-def scan(cfg, gone=frozenset()):
+def scan(cfg, gone=frozenset(), tab=None):
     """→ (rows, groups_out, stats)。rows 用 runner.row 的字段；groups_out = {组号: 成员摘要}。"""
-    cs = copies(cfg, gone)
+    cs = copies(cfg, gone, tab)
     gs = group(cs)
     rows, gout = [], {}
     st = Counter()
