@@ -81,6 +81,17 @@ async function loadCfg() {
   $('#sidePw').hidden = !!AUTH;
   $('#sideSrc').textContent = '数据来源：' + ({cache: 'CD2 目录缓存', scan: '遍历挂载目录', csv: 'CSV 文件'}[CFG.data_source] || '');
 }
+/* 版本（反馈 24）：页面头里写着这页是哪一版；服务器已经换版、这页还是旧的 → 自己刷新一次（只刷一次，防循环） */
+const PAGE_VER = ((document.querySelector('meta[name="pancheck-version"]') || {}).content || '').split(' ');
+function verText() { return PAGE_VER[0] ? `版本 ${PAGE_VER[0]} · 前端 ${PAGE_VER[1] || '—'}` : ''; }
+async function checkVersion() {
+  const el = $('#sideVer'); if (el) el.textContent = verText();
+  let v; try { v = await api('api/version'); } catch (e) { return; }
+  if (PAGE_VER[1] && v.static && v.static !== PAGE_VER[1]) {
+    if (store.get('pc.reloadedFor') !== v.static) { store.set('pc.reloadedFor', v.static); location.reload(); return; }
+    toast('面板已换版，请强制刷新页面（Ctrl+F5）');
+  }
+}
 async function loadExec() { try { EXS = await api('api/exec/status'); } catch (e) { EXS = null; } setExecOn(); }
 /* 重跑后上轮批准带过来的报数（反馈 9 进阶） */
 function carryNote() {
@@ -433,7 +444,7 @@ function rowChips(x) {
   if (ap) c.push(`<span class="chip hot">已批准 → ${esc(ACT_NAME[ap.action] || '')}</span>`);
   if (x.move) c.push(`<span class="chip">${x.move === '整夹' ? '整夹' : '单文件'}</span>`);
   if (x.flag) c.push(`<span class="chip">${esc(x.flag)}</span>`);
-  if (x.subfx) c.push(`<span class="chip" title="${esc(x.subfx)}">特效字幕</span>`);
+  if (x.subfx && !(x.ntags || []).includes('特效字幕')) c.push(`<span class="chip" title="${esc(x.subfx)}">特效字幕版</span>`);
   if ((x.basis || '').includes('按体积推断')) c.push('<span class="chip">体积推断*</span>');
   return c.join('');
 }
@@ -441,9 +452,26 @@ const ROLE_SHORT = {keep: '保留', '版本型': '也留（版本对）', '可�
 function memberLine(m) {
   return `${esc(ZONE_SHORT[m.zone] || m.zone)} · ${esc(KIND_SHORT[m.kind] || m.kind)} · ${esc(RES_SHORT[m.res] || m.res)}${m.res_src === '体积推断' ? '*' : ''}`;
 }
-function fitem(path, cls, meta, extra) {
-  return `<div class="fitem ${cls || ''}"><div class="fn" title="${esc(path)}">${esc(stripExt(baseName(path)))}</div><div class="fp mono" title="${esc(path)}">${esc(parentOf(path))}</div>`
-    + `<div class="fm">${meta || ''}</div>${extra || ''}</div>`;
+/* 长名字从中间截：尾巴（DISC 1、-HDHome、@CHDBits）往往是同组几行唯一的不同点，不能切掉（反馈 25） */
+function midTrunc(t, max = 46) { return t.length <= max ? t : t.slice(0, max - 21) + '…' + t.slice(-20); }
+/* 碟号：新结果有 disc_no；老结果从依据里「多碟装第 n / N 张」读 */
+function discOf(x) {
+  if (x.disc_no && x.disc_set) return `第 ${x.disc_no}/${x.disc_set} 张`;
+  const m = /多碟装第 (\d+) \/ (\d+) 张/.exec(x.basis || '');
+  return m ? `第 ${m[1]}/${m[2]} 张` : '';
+}
+/* 名字里的标签（制作组 / 版本 / 语言字幕）：一行最多 5 个，其余收进「+N」（悬停看全） */
+function tagChips(list) {
+  const t = [...new Set(list.filter(Boolean))];
+  if (!t.length) return '';
+  const show = t.slice(0, 5), rest = t.slice(5);
+  return `<div class="chips">${show.map(x => `<span class="chip${x.startsWith('第 ') ? ' hot' : x.startsWith('组 ') ? ' grp' : ''}">${esc(x)}</span>`).join('')}`
+    + (rest.length ? `<span class="chip more" title="${esc(rest.join(' · '))}">+${rest.length}</span>` : '') + '</div>';
+}
+function fitem(path, cls, meta, extra, tags) {
+  const nm = stripExt(baseName(path));
+  return `<div class="fitem ${cls || ''}"><div class="fn" title="${esc(nm)}">${esc(midTrunc(nm))}</div><div class="fp mono" title="${esc(path)}">${esc(parentOf(path))}</div>`
+    + `<div class="fm">${meta || ''}</div>${tagChips(tags || [])}${extra || ''}</div>`;
 }
 function cardActions(c) {
   const rs = c.idx.map(i => LIST.rows[i]);
@@ -472,7 +500,8 @@ function renderTable() {
     let left = '', right = '', more = '';
     if (c.members) {
       const keeps = c.members.filter(m => m.role === 'keep' || m.role === '版本型');
-      left = keeps.map(m => fitem(m.path, 'keep', `<b>${esc(ROLE_SHORT[m.role])}</b> · ${memberLine(m)} · <span translate="no">${fmtGB(m.gb)}</span>${m.subfx ? ' · 特效字幕版' : ''}${(m.parts || []).length ? ` · 多碟装 ${m.parts.length} 张` : ''}`)).join('');
+      left = keeps.map(m => fitem(m.path, 'keep', `<b>${esc(ROLE_SHORT[m.role])}</b> · ${memberLine(m)} · <span translate="no">${fmtGB(m.gb)}</span>${m.subfx ? ' · 特效字幕版' : ''}`,
+        '', [(m.parts || []).length ? `多碟装 ${m.parts.length} 张` : '', ...(m.ntags || [])])).join('');
       const rest = c.members.filter(m => !keeps.includes(m) && !isMine(m));
       if (rest.length) more = `<div class="fmore">同组另有 ${n(rest.length)} 份：${[...new Set(rest.map(m => ROLE_SHORT[m.role] || m.role))].map(esc).join('、')}（点详情看全）</div>`;
     } else {
@@ -483,7 +512,9 @@ function renderTable() {
     right = rs.map(x => {
       const m = (c.members || []).find(mm => mm.path === x.path || (mm.parts || []).includes(x.path));
       const ap = APPR.items[x.path];
-      return fitem(x.path, '', `${badge(x.bucket)}${m ? ' ' + memberLine(m) : ''} · <span translate="no">${fmtGB(x.gb)}</span>${ap ? ` · <span class="t-green">已批准</span>` : ''}`, `<div class="chips">${rowChips(x)}</div>`);
+      const rc = rowChips(x);
+      return fitem(x.path, '', `${badge(x.bucket)}${m ? ' ' + memberLine(m) : ''} · <span translate="no">${fmtGB(x.gb)}</span>${ap ? ` · <span class="t-green">已批准</span>` : ''}`,
+        rc ? `<div class="chips">${rc}</div>` : '', [discOf(x), ...(x.ntags || [])]);
     }).join('');
     const lh = c.members ? '留' : (first.bucket === '缺口' ? '主库里' : '参照');
     const rh = first.bucket === '可切' ? '可清理' : first.bucket === '缺口' ? '这份等着入库' : first.bucket === '待定' ? '要你定' : '这一份';
@@ -901,6 +932,7 @@ function renderWizard() {
   const st = WZ.step;
   $('#wzTitle').textContent = WZ.mode === 'edit' ? (st === 1 ? '更换 CD2 配置目录' : st === 2 ? '更换 Emby 数据目录' : '改筛查范围') : '首次设置';
   $('#wzLead').hidden = WZ.mode === 'edit';
+  $('#wzTitle').insertAdjacentHTML('beforeend', verText() ? ` <span class="wz-ver">${esc(verText())}</span>` : '');
   $('#wzSteps').innerHTML = WZ.mode === 'edit' ? '' : WZ_STEPS.map((t, i) => `<span class="${i + 1 === st ? 'on' : i + 1 < st ? 'done' : ''}">${i + 1 < st ? '✓ ' : (i + 1) + ' · '}${t}</span>`).join('');
   const b = $('#wzBody');
   if (st === 1) b.innerHTML = `<h2>${ic('db')}连 CD2</h2><p class="sec-sub">只填 CD2 的配置目录（装 CD2 时指定的数据目录）。Docker 部署时就是 compose 里挂进来的 /cd2-config，一般不用改。</p>
@@ -1162,7 +1194,7 @@ async function wzNext() {
 (async () => {
   hydrate();
   try { LB = await api('api/labels'); } catch (e) {}
-  await loadCfg();
+  await loadCfg(); checkVersion();
   await Promise.all([loadExec(), loadAppr()]);
   if (!location.hash) location.replace('#/overview');
   await route();

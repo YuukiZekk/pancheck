@@ -250,22 +250,49 @@ def healthz():
     return {'ok': True}
 
 
+# 反馈 24：换版后浏览器还拿着旧前端。index.html 一律不缓存；app.css / app.js 带内容指纹（?v=），
+# 换版 = 换地址，旧缓存自然用不上；带对指纹的请求可以放心长缓存。页面上显示版本号，方便对版。
+NO_CACHE = {'Cache-Control': 'no-cache, must-revalidate'}
+APP_VERSION = (os.environ.get('PANCHECK_VERSION') or 'dev')[:7]
+
+
+def _static_ver():
+    import hashlib
+    h = hashlib.sha1()
+    for n in ('index.html', 'app.css', 'app.js'):
+        h.update((STATIC / n).read_bytes())
+    return h.hexdigest()[:10]
+
+
+STATIC_VER = _static_ver()
+
+
 @app.get('/')
 def index():
-    return FileResponse(STATIC / 'index.html', headers=NO_CACHE)
+    html = (STATIC / 'index.html').read_text(encoding='utf-8')
+    html = html.replace('href="app.css"', 'href="app.css?v=%s"' % STATIC_VER).replace('src="app.js"', 'src="app.js?v=%s"' % STATIC_VER)
+    html = html.replace('<title>', '<meta name="pancheck-version" content="%s %s" />\n    <title>' % (APP_VERSION, STATIC_VER), 1)
+    return Response(html, media_type='text/html; charset=utf-8', headers=NO_CACHE)
 
 
-NO_CACHE = {'Cache-Control': 'no-cache'}          # 每次都跟服务器核对（ETag 没变就 304），升级后不会拿到旧页面
+def _asset(name, media, v):
+    hdr = {'Cache-Control': 'public, max-age=31536000, immutable'} if v == STATIC_VER else NO_CACHE
+    return FileResponse(STATIC / name, media_type=media, headers=hdr)
 
 
 @app.get('/app.css')
-def app_css():
-    return FileResponse(STATIC / 'app.css', media_type='text/css', headers=NO_CACHE)
+def app_css(v: str = ''):
+    return _asset('app.css', 'text/css', v)
 
 
 @app.get('/app.js')
-def app_js():
-    return FileResponse(STATIC / 'app.js', media_type='text/javascript', headers=NO_CACHE)
+def app_js(v: str = ''):
+    return _asset('app.js', 'text/javascript', v)
+
+
+@app.get('/api/version')
+def version():
+    return {'version': APP_VERSION, 'static': STATIC_VER}
 
 
 @app.get('/api/config')
@@ -705,10 +732,14 @@ def cards(bucket: str = '', stage: str = '', cls: str = '', q: str = '', flag: s
     limit = max(1, min(limit, 200))
     page = cs[offset:offset + limit]
     gs = load_groups(d) if any(c['grp'] for c in page) else {}
+    from panel import nametags
+    ex = C.load().get('subfx_groups') or []
     for c in page:
         g = gs.get(c['grp']) if c['grp'] else None
         if g:
-            c['title'], c['members'] = g.get('title') or '', g.get('members') or []
+            c['title'] = g.get('title') or ''
+            c['members'] = [dict(m, ntags=nametags.tags(m['path'], ex)) for m in g.get('members') or []]
+        c['rows'] = [dict(r, ntags=nametags.tags(r['path'], ex)) for r in c['rows']]     # 反馈 25：名字里的标签，只做展示
     out = {'total': len(cs), 'rows_total': len(rs), 'gb': round(sum(r['gb'] for r in rs), 1), 'cards': page,
            'all': len(allrows), 'kept_hidden': _hidden_info(hidden)}
     if facets:

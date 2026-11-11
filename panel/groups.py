@@ -587,6 +587,7 @@ def scan(cfg, gone=frozenset(), tab=None):
                     if x.get('parts'):
                         note = '；'.join(z for z in (fx, '多碟装第 %d / %d 张，整套一起处理' % (i + 1, len(x['parts']))) if z)
                         extra['disc_set'] = len(x['parts'])
+                        extra['disc_no'] = i + 1            # 第几张（清单上标「第 n/N 张」，反馈 25）
                     rows.append(dict(stage=STAGE, cls=cls, bucket=b, path=pp, gb=round(pg, 2), keep=k['path'],
                                      basis=basis + ('。' + note if note else ''), tags=tags + (['多碟装'] if x.get('parts') else []),
                                      grp=g, keep_gb=round(k['gb'], 2), **extra))
