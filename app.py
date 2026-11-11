@@ -252,7 +252,20 @@ def healthz():
 
 @app.get('/')
 def index():
-    return FileResponse(STATIC / 'index.html')
+    return FileResponse(STATIC / 'index.html', headers=NO_CACHE)
+
+
+NO_CACHE = {'Cache-Control': 'no-cache'}          # 每次都跟服务器核对（ETag 没变就 304），升级后不会拿到旧页面
+
+
+@app.get('/app.css')
+def app_css():
+    return FileResponse(STATIC / 'app.css', media_type='text/css', headers=NO_CACHE)
+
+
+@app.get('/app.js')
+def app_js():
+    return FileResponse(STATIC / 'app.js', media_type='text/javascript', headers=NO_CACHE)
 
 
 @app.get('/api/config')
@@ -649,6 +662,55 @@ def rows(bucket: str = '', stage: str = '', cls: str = '', q: str = '', flag: st
     limit = max(1, min(limit, 1000))
     out = {'total': len(rs), 'gb': round(sum(r['gb'] for r in rs), 1), 'rows': rs[offset:offset + limit], 'all': len(allrows),
            'kept_hidden': _hidden_info(hidden)}
+    if facets:
+        out['facets'] = facet_counts(allrows, bucket, stage, cls, q, flag, tag)
+    return out
+
+
+_groups_cache = {}
+
+
+def load_groups(d):
+    key = str(d)
+    if key not in _groups_cache:
+        _groups_cache.clear()
+        f = d / 'groups.json'
+        _groups_cache[key] = json.loads(f.read_text(encoding='utf-8')) if f.exists() else {}
+    return _groups_cache[key]
+
+
+@app.get('/api/cards')
+def cards(bucket: str = '', stage: str = '', cls: str = '', q: str = '', flag: str = '', offset: int = 0, limit: int = 50,
+          sort: str = 'gb', run_id: str = '', facets: int = 0, tag: str = ''):
+    """清单按片展示：同一组（同一部片）的行合成一张卡，留的那份和要清的并排；没有组的行（主库缺口、孤本…）一行一张卡。
+    筛选口径和 /api/rows 完全一样，只是按卡分页；每张卡带上整组成员（保留份、版本对、不碰的也在里面）。"""
+    res, d = load_run(run_id or None)
+    if not res:
+        return {'total': 0, 'rows_total': 0, 'gb': 0, 'cards': [], 'all': 0, 'facets': {}, 'kept_hidden': {'count': 0, 'gb': 0}}
+    allrows, hidden = shown_rows(d)
+    rs = filter_rows(allrows, bucket, stage, cls, q, flag, tag)
+    by = {}
+    for r in rs:
+        k = ('g:' + r['grp']) if r.get('grp') else ('p:' + r['path'] + '|' + r['stage'])
+        by.setdefault(k, []).append(r)
+    cs = [{'key': k, 'grp': v[0].get('grp') or '', 'rows': v, 'gb': round(sum(r['gb'] for r in v), 3)} for k, v in by.items()]
+    if sort in ('gb', 'gb_desc'):
+        cs.sort(key=lambda c: -c['gb'])
+    elif sort == 'gb_asc':
+        cs.sort(key=lambda c: c['gb'])
+    elif sort == 'path':
+        cs.sort(key=lambda c: c['rows'][0]['path'])
+    elif sort == 'name':
+        cs.sort(key=lambda c: (_name_key(c['rows'][0]), c['rows'][0]['path']))
+    limit = max(1, min(limit, 200))
+    page = cs[offset:offset + limit]
+    gs = load_groups(d) if any(c['grp'] for c in page) else {}
+    for c in page:
+        g = gs.get(c['grp']) if c['grp'] else None
+        if g:
+            c['title'], c['members'] = g.get('title') or '', g.get('members') or []
+    out = {'total': len(cs), 'rows_total': len(rs), 'gb': round(sum(r['gb'] for r in rs), 1), 'cards': page,
+           'all': len(allrows), 'kept_hidden': _hidden_info(hidden)}
     if facets:
         out['facets'] = facet_counts(allrows, bucket, stage, cls, q, flag, tag)
     return out

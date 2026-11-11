@@ -87,7 +87,7 @@ def approvable(rows_by_path, path, dest, cfg=None):
     if '缺口' in buckets:
         if cfg and cfg.get('tree_model') and not cfg.get('staging_on', True):
             return None, '待入库区的开关关着：留下的片留在原地，不搬'
-        if '孤本' in buckets:
+        if '孤本' in buckets and not (cfg and not cfg.get('unique_dir')):      # 没设唯一副本目录：只有待入库区一个去处
             if dest not in ('mainlib', 'unique'):
                 return None, '这条同时是「主库缺口」和「唯一副本」，要你选去处：挪入%s，还是移到唯一副本目录' % (
                     dest_names(cfg or {})['mainlib'].replace('目录', ''))
