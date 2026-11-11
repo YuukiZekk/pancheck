@@ -734,12 +734,15 @@ def cards(bucket: str = '', stage: str = '', cls: str = '', q: str = '', flag: s
     gs = load_groups(d) if any(c['grp'] for c in page) else {}
     from panel import nametags
     ex = C.load().get('subfx_groups') or []
+    def tagged(x):                     # 反馈 25 / 26：名字里的标签（只做展示）；nfx = 其中特效字幕组名单上的，淡色标
+        t = nametags.tags(x['path'], ex)
+        return dict(x, ntags=t, nfx=nametags.listed(t, ex))
     for c in page:
         g = gs.get(c['grp']) if c['grp'] else None
         if g:
             c['title'] = g.get('title') or ''
-            c['members'] = [dict(m, ntags=nametags.tags(m['path'], ex)) for m in g.get('members') or []]
-        c['rows'] = [dict(r, ntags=nametags.tags(r['path'], ex)) for r in c['rows']]     # 反馈 25：名字里的标签，只做展示
+            c['members'] = [tagged(m) for m in g.get('members') or []]
+        c['rows'] = [tagged(r) for r in c['rows']]
     out = {'total': len(cs), 'rows_total': len(rs), 'gb': round(sum(r['gb'] for r in rs), 1), 'cards': page,
            'all': len(allrows), 'kept_hidden': _hidden_info(hidden)}
     if facets:

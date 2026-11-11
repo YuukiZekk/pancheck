@@ -961,5 +961,5 @@
       }
       .side-ver{font-size:11px;color:var(--muted-foreground);padding:2px 4px 0}
       .wz-ver{font-size:11.5px;color:var(--muted-foreground)}
-      .chip.grp{border-color:var(--sky-border, var(--border));color:var(--foreground)}
+      .chip.fx{background:var(--violet-bg);border-color:var(--violet-border);color:var(--violet-text);font-weight:500}
       .chip.more{cursor:help}

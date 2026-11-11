@@ -496,6 +496,55 @@ def _partial(c):
     return bool(PARTIAL_MARK.search((c['main_name'] if single and c['main_name'] else c['name']) or ''))
 
 
+# ---------------- 片源（反馈 26）----------------
+# 地区版（美版 / 港版 / 法版 …，也认 USA / HK / FRA 这类发行代码）和发行商（CC / KINO / Arrow / Eureka …）。
+# 两份都写了、而且对不上 → 不是同一张碟；有一边没写 → 拿不准，当同源（宁可两边都留）。
+_REGION = [('us', r'美版|美国版|(?<![A-Za-z])USA(?![A-Za-z])'), ('eu', r'欧版|(?<![A-Za-z])EUR(?![A-Za-z])'),
+           ('jp', r'日版|(?<![A-Za-z])JPN(?![A-Za-z])'), ('hk', r'港版|(?<![A-Za-z])HKG?(?![A-Za-z])'),
+           ('tw', r'台版|(?<![A-Za-z])TWN?(?![A-Za-z])'), ('kr', r'韩版|(?<![A-Za-z])KOR(?![A-Za-z])'),
+           ('uk', r'英版|(?<![A-Za-z])(GBR|UK)(?![A-Za-z])'), ('fr', r'法版|(?<![A-Za-z])FRA(?![A-Za-z])'),
+           ('de', r'德版|(?<![A-Za-z])GER(?![A-Za-z])'), ('it', r'意版|(?<![A-Za-z])ITA(?![A-Za-z])'),
+           ('es', r'西班牙版|西版|(?<![A-Za-z])ESP(?![A-Za-z])'), ('nordic', r'北欧版'), ('au', r'澳版|(?<![A-Za-z])AUS(?![A-Za-z])'),
+           ('cn', r'国版|大陆版|(?<![A-Za-z])CHN(?![A-Za-z])'), ('th', r'泰版'), ('ru', r'俄版'), ('in', r'印度版')]
+_REGION = [(k, re.compile(p)) for k, p in _REGION]
+_EUROPE = {'uk', 'fr', 'de', 'it', 'es', 'nordic'}          # 「欧版」可能就是其中哪一国的盘：和它们不算冲突
+_LABEL = [('CC', r'(?i)criterion|(?<![A-Za-z])CC(?=版|标准|[\s._\-\]】)]|$)'), ('KINO', r'(?i)(?<![A-Za-z])kino(?![A-Za-z])'),
+          ('Arrow', r'(?i)(?<![A-Za-z])arrow(?![A-Za-z])'), ('Eureka', r'(?i)(?<![A-Za-z])eureka(?![A-Za-z])|尤里卡'),
+          ('BFI', r'(?<![A-Za-z])BFI(?![A-Za-z])'), ('Spectrum', r'(?i)(?<![A-Za-z])spectrum(?![A-Za-z])'),
+          ('88 Films', r'(?i)88\s*films'), ('Shout Factory', r'(?i)shout\s*factory'), ('Vinegar Syndrome', r'(?i)vinegar\s*syndrome'),
+          ('CEE', r'(?<![A-Za-z])CEE(?![A-Za-z])'), ('碟影', r'碟影'), ('新索', r'新索')]
+_LABEL = [(k, re.compile(p)) for k, p in _LABEL]
+_REGION_WORD = {'us': '美版', 'eu': '欧版', 'jp': '日版', 'hk': '港版', 'tw': '台版', 'kr': '韩版', 'uk': '英版', 'fr': '法版',
+                'de': '德版', 'it': '意版', 'es': '西班牙版', 'nordic': '北欧版', 'au': '澳版', 'cn': '国版', 'th': '泰版', 'ru': '俄版',
+                'in': '印度版'}
+
+
+def _sources(c):
+    if '_src' not in c:
+        t = (c.get('name') or '') + ' ' + (c.get('main_name') or '')
+        c['_src'] = ({k for k, rx in _REGION if rx.search(t)}, {k for k, rx in _LABEL if rx.search(t)})
+    return c['_src']
+
+
+def source_words(c):
+    r, l = _sources(c)
+    return [_REGION_WORD[x] for x in sorted(r)] + sorted(l) or ['片源没写']
+
+
+def _region_ok(a, b):
+    return bool(a & b) or ('eu' in a and b & _EUROPE) or ('eu' in b and a & _EUROPE)
+
+
+def source_rel(a, b):
+    """两份是不是同一片源 → 'same'（标注对得上）/ 'diff'（两边都写了、对不上）/ '?'（有一边没写）。"""
+    (ra, la), (rb, lb) = _sources(a), _sources(b)
+    if (ra and rb and not _region_ok(ra, rb)) or (la and lb and not la & lb):
+        return 'diff'
+    if (ra and rb) or (la and lb):
+        return 'same'
+    return '?'
+
+
 def judge(ms):
     """一组（同片、同剪辑版本）→ [(副本, 类, 保留份, 依据)]，保留份本身不出行。"""
     ms = sorted(ms, key=rank, reverse=True)
@@ -505,11 +554,19 @@ def judge(ms):
     if keep['kind'] not in DIY_FAMILY:
         partner = next((m for m in rest if m['kind'] in DIY_FAMILY), None)
     else:
-        partner = next((m for m in rest if m['kind'] == 'I'), None)
+        # 反馈 26：特效字幕版 / DIY 和原盘成一对、两边都留。照旧取排在最前的那份原盘；只有它的片源标注明确对不上（港版 × 法版）、
+        # 而另有一份同分辨率、片源对得上的原盘（同一张碟）时，改配那一份。没有对得上的也照样留一份——不因为片源对不上就把原盘清掉
+        cands = [m for m in rest if m['kind'] == 'I']
+        partner = cands[0] if cands else None
+        if partner is not None and (partner['res'] != keep['res'] or source_rel(partner, keep) == 'diff'):
+            partner = next((m for m in cands if m['res'] == keep['res'] and source_rel(m, keep) == 'same'), partner)
     out = []
     for x in rest:
         if x is partner:
-            out.append((x, 'V', keep, '%s 和 %s 是一对版本（加了中文字幕的和原版），两份都留' % (KIND_NAME[keep['kind']], KIND_NAME[x['kind']])))
+            rel = source_rel(x, keep)
+            out.append((x, 'V', keep, '%s 和 %s 是一对版本（加了中文字幕的和原版%s），两份都留' % (
+                KIND_NAME[keep['kind']], KIND_NAME[x['kind']],
+                '，同一片源 %s' % '/'.join(source_words(x)) if rel == 'same' else '')))
             continue
         # 和版本对里同一家的那份比（多出来的 DIY / 特效字幕版跟留下的那份比），否则跟保留份比
         k = partner if (partner is not None and fam(x) == fam(partner)) else keep

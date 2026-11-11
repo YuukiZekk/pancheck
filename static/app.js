@@ -360,7 +360,7 @@ async function renderList(params) {
   await Promise.all([loadResult(), loadExec(), loadAppr()]);
   const r = RES;
   $('#listBanners').innerHTML = banners(r) + carryNote() + (r ? `<div class="alert">${ic('info')}<div>结果以 CD2 缓存时刻为准${execOn ? ' · 勾选后「批准，送入执行」，到执行页预演、执行' : ' · 现在是只读模式：可以筛选和导出清单。开启执行后，这里会出现批准按钮。'}</div></div>` : '');
-  $('#listSub').innerHTML = r ? `${esc(r.run_id)}<span class="dot-sep">·</span>${fmtTime(r.finished)}<span class="dot-sep">·</span>一张卡是一部片：左边留的，右边要清 / 要你定的` : '还没有扫描结果';
+  $('#listSub').innerHTML = r ? `${esc(r.run_id)}<span class="dot-sep">·</span>${fmtTime(r.finished)}<span class="dot-sep">·</span>一张卡是一部片：左边是留下的，右边是同片的其他份` : '还没有扫描结果';
   const nA = Object.keys(APPR.items || {}).length, ge = $('#btnGoExec');
   if (ge) { ge.hidden = !(execOn && nA); ge.innerHTML = `${ic('play', 'sm')}去执行（已批准 ${n(nA)} 条）`; }
   await loadRows();
@@ -460,18 +460,19 @@ function discOf(x) {
   const m = /多碟装第 (\d+) \/ (\d+) 张/.exec(x.basis || '');
   return m ? `第 ${m[1]}/${m[2]} 张` : '';
 }
-/* 名字里的标签（制作组 / 版本 / 语言字幕）：一行最多 5 个，其余收进「+N」（悬停看全） */
-function tagChips(list) {
+/* 名字里的标签（制作组 / 版本 / 语言字幕）：一行最多 5 个，其余收进「+N」（悬停看全）；特效字幕组名单上的组名淡紫色（反馈 26） */
+function tagChips(list, fxList) {
+  const fx = new Set(fxList || []);
   const t = [...new Set(list.filter(Boolean))];
   if (!t.length) return '';
   const show = t.slice(0, 5), rest = t.slice(5);
-  return `<div class="chips">${show.map(x => `<span class="chip${x.startsWith('第 ') ? ' hot' : x.startsWith('组 ') ? ' grp' : ''}">${esc(x)}</span>`).join('')}`
+  return `<div class="chips">${show.map(x => `<span class="chip${x.startsWith('第 ') ? ' hot' : fx.has(x) ? ' fx' : ''}">${esc(x)}</span>`).join('')}`
     + (rest.length ? `<span class="chip more" title="${esc(rest.join(' · '))}">+${rest.length}</span>` : '') + '</div>';
 }
-function fitem(path, cls, meta, extra, tags) {
+function fitem(path, cls, meta, extra, tags, fx) {
   const nm = stripExt(baseName(path));
   return `<div class="fitem ${cls || ''}"><div class="fn" title="${esc(nm)}">${esc(midTrunc(nm))}</div><div class="fp mono" title="${esc(path)}">${esc(parentOf(path))}</div>`
-    + `<div class="fm">${meta || ''}</div>${tagChips(tags || [])}${extra || ''}</div>`;
+    + `<div class="fm">${meta || ''}</div>${tagChips(tags || [], fx)}${extra || ''}</div>`;
 }
 function cardActions(c) {
   const rs = c.idx.map(i => LIST.rows[i]);
@@ -501,7 +502,7 @@ function renderTable() {
     if (c.members) {
       const keeps = c.members.filter(m => m.role === 'keep' || m.role === '版本型');
       left = keeps.map(m => fitem(m.path, 'keep', `<b>${esc(ROLE_SHORT[m.role])}</b> · ${memberLine(m)} · <span translate="no">${fmtGB(m.gb)}</span>${m.subfx ? ' · 特效字幕版' : ''}`,
-        '', [(m.parts || []).length ? `多碟装 ${m.parts.length} 张` : '', ...(m.ntags || [])])).join('');
+        '', [(m.parts || []).length ? `多碟装 ${m.parts.length} 张` : '', ...(m.ntags || [])], m.nfx)).join('');
       const rest = c.members.filter(m => !keeps.includes(m) && !isMine(m));
       if (rest.length) more = `<div class="fmore">同组另有 ${n(rest.length)} 份：${[...new Set(rest.map(m => ROLE_SHORT[m.role] || m.role))].map(esc).join('、')}（点详情看全）</div>`;
     } else {
@@ -514,10 +515,10 @@ function renderTable() {
       const ap = APPR.items[x.path];
       const rc = rowChips(x);
       return fitem(x.path, '', `${badge(x.bucket)}${m ? ' ' + memberLine(m) : ''} · <span translate="no">${fmtGB(x.gb)}</span>${ap ? ` · <span class="t-green">已批准</span>` : ''}`,
-        rc ? `<div class="chips">${rc}</div>` : '', [discOf(x), ...(x.ntags || [])]);
+        rc ? `<div class="chips">${rc}</div>` : '', [discOf(x), ...(x.ntags || [])], x.nfx);
     }).join('');
     const lh = c.members ? '留' : (first.bucket === '缺口' ? '主库里' : '参照');
-    const rh = first.bucket === '可切' ? '可清理' : first.bucket === '缺口' ? '这份等着入库' : first.bucket === '待定' ? '要你定' : '这一份';
+    const rh = first.bucket === '可切' ? '可清理' : first.bucket === '缺口' ? '这份等着入库' : first.bucket === '待定' ? (rs.length > 1 ? '同片其他几份' : '同片另一份') : '这一份';
     const tags = [...new Set(rs.flatMap(x => x.tags || []))];
     return `<article class="fcard ${picked ? 'picked' : ''}" data-key="${esc(c.key)}">
       <div class="fcard-head"><button type="button" class="pick ${picked ? 'on' : some ? 'some' : ''}" data-pickc="${esc(c.key)}" role="checkbox" aria-checked="${picked ? 'true' : some ? 'mixed' : 'false'}" aria-label="勾选这部片">${PICK}</button>
@@ -889,7 +890,7 @@ async function renderKeeps() {
   let r; try { r = await api('api/keeps'); } catch (e) { $('#keepList').innerHTML = `<div class="keep-empty">${esc(e.message)}</div>`; return; }
   const items = r.items || [];
   $('#keepList').innerHTML = items.length ? items.map(x => `<div class="keep-item"><div class="ki-main"><div class="ki-path mono" title="${esc(x.path)}">${esc(x.path)}</div>
-      <div class="ki-meta">${esc(x.at || '')} · ${esc(x.stage_name || '')} · ${esc(x.cls_name || '')} · ${fmtGB(x.gb || 0)}${x.hit ? '' : ' · <span class="t-amber">最新结果里已不在待定（可能已搬走或改判）</span>'}</div></div>
+      <div class="ki-meta">${esc(x.at || '')} · ${esc(x.stage_name || '')} · ${esc(x.cls_name || '')} · ${fmtGB(x.gb || 0)}${x.hit ? '' : ' · <span class="t-amber">最新结果里已不在「' + esc(bn('待定')) + '」里（可能已搬走或改判）</span>'}</div></div>
       <button class="btn sm" type="button" data-unkeep="${esc(x.path)}">撤销</button></div>`).join('')
     : '<div class="keep-empty">还没有。在清单里打开一条「需人工确认」，点「确认保留，以后不再提醒」。</div>';
   $$('#keepList [data-unkeep]').forEach(b => b.onclick = async () => {

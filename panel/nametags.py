@@ -40,9 +40,15 @@ def _groups(name, extra):
 
 
 def tags(path, extra_groups=()):
-    """→ ['组 nn@CHDBits', 'DIY', '国语', …]（顺序：制作组、版本属性、语言字幕）。"""
+    """→ ['nn@CHDBits', 'DIY', '国语', …]（顺序：制作组、版本属性、语言字幕）。标签就是组名本身，不加「组」字（反馈 26）。"""
     name = os.path.basename((path or '').rstrip('/'))
-    out = ['组 ' + g for g in _groups(name, extra_groups)]
+    out = list(_groups(name, extra_groups))
     out += [t for t, rx in VERSION if rx.search(name)]
     out += [t for t, rx in LANG if rx.search(name)]
     return out
+
+
+def listed(tag_list, extra_groups=()):
+    """标签里哪些是设置里那份特效字幕组名单上的（清单上用淡色单独标出来，反馈 26）。只做展示。"""
+    names = {str(g).strip().lower() for g in extra_groups or () if str(g).strip()}
+    return [t for t in tag_list if t.lower() in names]
