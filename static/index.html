@@ -1858,8 +1858,9 @@ async function renderGroup(x) {
   const ms = [...g.members].sort((a, b) => order.indexOf(a.role) - order.indexOf(b.role) || b.gb - a.gb);
   $('#dGroup').innerHTML = `<table class="grp-table"><tbody>${ms.map(m => {
     const [rn, tone] = ROLE[m.role] || [m.role, ''];
-    return `<tr class="${m.path === x.path ? 'me' : ''}"><td class="role ${tone}">${esc(rn)}${m.path === x.path ? '<br><span class="muted">（这一条）</span>' : ''}</td>
-      <td>${esc(ZONE_SHORT[m.zone] || m.zone)} · ${esc(KIND_SHORT[m.kind] || m.kind)} · ${esc(RES_SHORT[m.res] || m.res)}${m.res_src === '体积推断' ? '*' : ''} · <span translate="no">${fmtGB(m.gb)}</span>${m.subfx ? `<div class="muted">认作特效字幕版：${esc(m.subfx)}</div>` : ''}<div class="mono">${esc(m.path)}</div></td></tr>`;
+    const me = m.path === x.path || (m.parts || []).includes(x.path);
+    return `<tr class="${me ? 'me' : ''}"><td class="role ${tone}">${esc(rn)}${me ? '<br><span class="muted">（这一条）</span>' : ''}</td>
+      <td>${esc(ZONE_SHORT[m.zone] || m.zone)} · ${esc(KIND_SHORT[m.kind] || m.kind)} · ${esc(RES_SHORT[m.res] || m.res)}${m.res_src === '体积推断' ? '*' : ''} · <span translate="no">${fmtGB(m.gb)}</span>${m.subfx ? `<div class="muted">认作特效字幕版：${esc(m.subfx)}</div>` : ''}${(m.parts || []).length ? `<div class="muted">多碟装 ${m.parts.length} 张一套，算一份</div>` + m.parts.map(pp => `<div class="mono">${esc(pp)}</div>`).join('') : `<div class="mono">${esc(m.path)}</div>`}</td></tr>`;
   }).join('')}</tbody></table><div class="muted" style="font-size:11.5px;margin-top:6px">先比分辨率，同分辨率再比来源（特效字幕版 > 原盘 > DIY > REMUX > 压制），再比所在区和命名。* = 按体积推断。特效字幕组名单在设置里改。</div>`;
 }
 function renderDlg() {

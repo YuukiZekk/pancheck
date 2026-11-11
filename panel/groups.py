@@ -219,6 +219,79 @@ def _yuanpan_copies(meas):
     return out
 
 
+# ---------------- 多碟装（反馈 17）----------------
+# 同一个夹里并排放着的一套多碟（Disc1/2/3、CD1/2、碟一/二、上/下集），名字只差碟号：是一份，不是几份互为重复
+_DISC_TOK = re.compile(r'^(\d{1,2}|[一二三四五六上中下]|[A-Da-d])$')
+_DISC_KW = re.compile(r'(?i)(disc|disk|cd|dvd|bd|part|pt|vol|d)[\s._\-]*\(?$|[碟盘集部第][\s._\-]*$')
+_NOT_DISC = re.compile(r'(?i)(x26|h\.?26|\d[\.\-]|\d{3,})$')   # x264/x265、5.1/7.1、1080/2160 这类规格差一位数不算碟号
+
+
+def disc_siblings(a, b, iso):
+    """a、b：同夹两个文件名（不带扩展名）。只差一个碟号 / 分段词 → True。
+    ISO 等盘片文件不要求前面写 Disc / CD（写法不在词表里也认）；普通视频文件要求碟号前有 Disc / CD / Part / 碟 / 集 之类，
+    免得把「片名(1).mkv / 片名(2).mkv」这种下载重名副本当成一套。"""
+    if a == b:
+        return False
+    p = len(os.path.commonprefix([a, b]))
+    ra, rb = a[p:], b[p:]
+    q = len(os.path.commonprefix([ra[::-1], rb[::-1]]))
+    da, db = ra[:len(ra) - q], rb[:len(rb) - q]
+    if not (_DISC_TOK.match(da) and _DISC_TOK.match(db)):
+        return False
+    before, after = a[:p], ra[len(da):]
+    if _NOT_DISC.search(before) or re.match(r'[.\-]\d|[A-Za-z]', after):   # 5.1 / 7.1 声道；2Audio / 4Audio、5ch 这类规格
+        return False
+    if da in '上中下' or _DISC_KW.search(before):
+        return True
+    if iso:
+        return not (before.endswith('(') and after.startswith(')'))     # 「(1)」「(2)」是重名副本记号
+    return False
+
+
+def merge_sets(cs):
+    """同区、同夹、同片名年份的单文件副本里，两两只差碟号的并成一套：路径列表 + 体积加总，按一份参与分组。"""
+    buckets = defaultdict(list)
+    for c in cs:
+        if c['path'].rsplit('/', 1)[-1] == c['main_name'] or c['zone'] == 'heji':      # 单文件副本
+            buckets[(c['zone'], c['path'].rsplit('/', 1)[0], c['tm'], c['title'], c['year'])].append(c)
+    drop, add = set(), []
+    for key, ms in buckets.items():
+        if len(ms) < 2 or not (key[2] or key[3]):
+            continue
+        parent = list(range(len(ms)))
+
+        def find(i):
+            while parent[i] != i:
+                i = parent[i]
+            return i
+        stem = [os.path.splitext(m['path'].rsplit('/', 1)[-1])[0] for m in ms]
+        for i in range(len(ms)):
+            for j in range(i + 1, len(ms)):
+                iso = ms[i]['form'] in ('ISO', 'BDMV') and ms[j]['form'] in ('ISO', 'BDMV')
+                if disc_siblings(stem[i], stem[j], iso):
+                    parent[find(j)] = find(i)
+        sets = defaultdict(list)
+        for i in range(len(ms)):
+            sets[find(i)].append(ms[i])
+        for parts in sets.values():
+            if len(parts) < 2:
+                continue
+            parts.sort(key=lambda m: m['path'])
+            u = dict(parts[0])
+            u['parts'] = [(m['path'], round(m['gb'], 2)) for m in parts]
+            u['gb'] = sum(m['gb'] for m in parts)
+            u['mgb'] = u['gb']
+            u['small'] = False
+            if any(m['res'] != '?' for m in parts):           # 档位取各碟里认得出的最高那个
+                best = max(parts, key=lambda m: RES_R[m['res']])
+                u['res'], u['res_src'] = best['res'], best['res_src']
+            if u['form'] in ('ISO', 'BDMV') and u['res_src'] == '体积推断':
+                u['res'] = 'U' if max(m['gb'] for m in parts) >= 55 else 'H'     # 按单碟体积推断，不按加总
+            drop.update(id(m) for m in parts)
+            add.append(u)
+    return [c for c in cs if id(c) not in drop] + add
+
+
 def copies(cfg, gone=frozenset()):
     """全部副本。gone：已被别的线判掉的路径（原盘同名同大小），不再参与。"""
     meas = {}
@@ -268,7 +341,7 @@ def copies(cfg, gone=frozenset()):
         c['f1'] = _first_frag(c['name'] + ' ' + c['main_name'])
         c['text'] = _flat(c['name'] + ' ' + c['main_name'])
         res.append(c)
-    return res
+    return merge_sets(res)
 
 
 def _flat(s):
@@ -445,10 +518,20 @@ def scan(cfg, gone=frozenset()):
                 basis = '%s：这份 %s；留 %s' % (why, _desc(x), _desc(k))
                 fx = '；'.join(z for z in (('这份是特效字幕版（%s）' % x['subfx']) if x['subfx'] else '',
                                           ('留的是特效字幕版（%s）' % k['subfx']) if k['subfx'] else '') if z)
-                rows.append(dict(stage=STAGE, cls=cls, bucket=b, path=x['path'], gb=round(x['gb'], 2), keep=k['path'],
-                                 basis=basis + ('。' + fx if fx else ''), tags=_tags(x, k), grp=g, keep_gb=round(k['gb'], 2),
-                                 **({'subfx': fx} if fx else {})))
-                st[b] += 1
+                if k.get('parts'):
+                    fx = '；'.join(z for z in (fx, '留的那份是 %d 碟一套' % len(k['parts'])) if z)
+                tags = _tags(x, k)
+                # 多碟装整套被判掉：每张碟一行（搬运按文件），都写明是一套、要一起处理
+                for i, (pp, pg) in enumerate(x.get('parts') or [(x['path'], x['gb'])]):
+                    extra = {'subfx': fx} if fx else {}
+                    note = fx
+                    if x.get('parts'):
+                        note = '；'.join(z for z in (fx, '多碟装第 %d / %d 张，整套一起处理' % (i + 1, len(x['parts']))) if z)
+                        extra['disc_set'] = len(x['parts'])
+                    rows.append(dict(stage=STAGE, cls=cls, bucket=b, path=pp, gb=round(pg, 2), keep=k['path'],
+                                     basis=basis + ('。' + note if note else ''), tags=tags + (['多碟装'] if x.get('parts') else []),
+                                     grp=g, keep_gb=round(k['gb'], 2), **extra))
+                    st[b] += 1
         gout[g] = {'title': _gtitle(ms), 'members': members}
     for c in cs:
         by_path[c['path']] = c
@@ -458,7 +541,7 @@ def scan(cfg, gone=frozenset()):
 
 def _brief(c):
     return {'zone': c['zone'], 'kind': c['kind'], 'res': c['res'], 'res_src': c['res_src'], 'gb': round(c['gb'], 2),
-            'subfx': c.get('subfx', '')}
+            'subfx': c.get('subfx', ''), 'parts': [pp for pp, _ in c.get('parts') or []]}
 
 
 def _gtitle(ms):
