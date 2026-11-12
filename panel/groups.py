@@ -8,10 +8,10 @@
       纯拉丁名去掉年份和规格词后比）。两种键用并查集连起来：带 TMDB 的和不带的同名同年副本归同一组。
 判档：分辨率档（原盘区：Emby 实测 > 主文件名 > ISO/盘片夹体积推断；其他：文件名，ISO ≥55GB / 文件 ≥40GB 推断 4K）
       + 来源类（原盘 > DIY > REMUX > 压制）。
-保留份（用户 2026-11-11 拍板；反馈 16 加特效字幕版）：先比分辨率，同分辨率再比来源类（特效字幕版 > 原盘 > DIY > REMUX > 压制），再比命名（带 {tmdb}、在已刮削目录、规格写得全的优先，
-      裸名靠后），最后比体积。
+保留份（用户 2026-11-11 拍板；反馈 16 加特效字幕版）：先比分辨率，同分辨率再比来源类（特效字幕版 > 原盘 > DIY > REMUX > 压制），再比命名（反馈 28.4：配置说明写得越全越优先，
+      同样全的在已刮削目录 / 带 {tmdb} 的优先；只有片名 + 年份 + 分辨率的裸名垫底；单张碟不当保留份），最后比体积。
 组内其余每份：
-  - 版本对：保留份不是 DIY 时，最好的那份 DIY 两边都留；保留份是 DIY 时，最好的那份原盘两边都留 → 不同版本
+  - 版本对：保留份不是 DIY / 特效字幕版时，最好的那份 DIY / 特效字幕版两边都留；保留份是 DIY / 特效字幕版时不配对，原盘照常比（反馈 28）
   - 剪辑版本不同（导演剪辑 / 加长 / 未分级 …）的分开成小组各自比
   - 任一边分辨率看不出 → 需人工确认；例外：REMUX 没标分辨率、保留份是已确认（非推断）4K 原盘 → 可清理（沿用 2026-11-11 D1 改判）
   - 其余（分辨率更低或同档）→ 可清理
@@ -23,7 +23,7 @@ import re
 from collections import Counter, defaultdict
 
 import sieve as S
-from . import sources
+from . import nametags, sources
 from .tables import tables_of
 
 GIB = 1024 ** 3
@@ -179,30 +179,51 @@ def _res(c):
     return '?', '未知'
 
 
+def spec_words(c):
+    """名字里写了哪些配置说明（反馈 28.4）：规格词、发布组（带不带 @）、版本 / 片源词、体积标注、英文片名。分辨率另算。"""
+    t = (c.get('name') or '') + ' ' + (c.get('main_name') or '')
+    w = {m.group(0).lower() for m in sieve_spec.finditer(t)}
+    w |= {'组:' + g.lower() for g in nametags.groups_in(t)}
+    if '@' in t:
+        w.add('@')
+    w |= {m.group(0).lower() for m in _VER_WORD.finditer(t)}
+    if _SIZE_NOTE.search(t):
+        w.add('体积')
+    if _LATIN_TITLE.search(_RES_WORD.sub(' ', sieve_spec.sub(' ', _FILE_EXT.sub(' ', t)))):
+        w.add('英文片名')
+    return w
+
+
+def bare(c):
+    """裸名：除了片名、年份、分辨率什么都没写（「侠骨柔情(1946).iso」「侠骨柔情 1080p (1946)」）。"""
+    return not {w for w in spec_words(c) if not _RES_WORD.fullmatch(w)}
+
+
 def name_score(c):
-    """命名座次（越大越该留）：带 {tmdb} / 在已刮削目录 / 规格写得全；裸名靠后。"""
-    p = c['path']
-    low = p.lower()
-    s = 0
-    if '{tmdb' in low or 'tmdbid' in low:
-        s += 40
-    if '刮削' in p:
-        s += 50
-    t = len(set(m.group(0).lower() for m in sieve_spec.finditer(c['name'] + ' ' + c['main_name'])))
-    s += t if t else -100
-    return s
+    """命名座次（越大越该留，反馈 28.4）：配置说明写得越全越优先；同样全的，在已刮削目录 / 带 {tmdb} 的优先；裸名垫底。"""
+    low = c['path'].lower()
+    if bare(c):
+        return -1000 + ('刮削' in c['path']) * 50 + ('{tmdb' in low or 'tmdbid' in low) * 40
+    return len(spec_words(c)) * 100 + ('刮削' in c['path']) * 50 + ('{tmdb' in low or 'tmdbid' in low) * 40
 
 
-sieve_spec = re.compile(r'(?i)(2160p|1080p|1080i|720p|480p|\buhd\b|4k|blu-?ray|remux|bdrip|web-?dl|webrip|hdtv|x264|x265|'
-                        r'h\.?264|h\.?265|hevc|avc|dts|truehd|atmos|ddp|aac|flac|lpcm|hdr|dolby|\bdv\b|diy|字幕|国配|国语|'
+sieve_spec = re.compile(r'(?i)(2160p|1080p|1080i|720p|480p|(?<![a-z])uhd(?![a-z])|4k|blu-?ray|remux|bdrip|web-?dl|webrip|hdtv|x264|x265|'
+                        r'h\.?264|h\.?265|hevc|avc|dts|truehd|atmos|ddp|aac|flac|lpcm|hdr|dolby|(?<![a-z])dv(?![a-z])|diy|字幕|国配|国语|'
                         r'粤语|特效|双语|简繁|中字|花絮|加长)')
+_RES_WORD = re.compile(r'(?i)2160p|1080p|1080i|720p|480p|(?<![a-z])uhd(?![a-z])|4k')
+_VER_WORD = re.compile(r'(?i)官方|独占|独家|限量|典藏|收藏|珍藏|修复|重制|remaster(ed)?|导演剪辑|未删减|双碟|三碟|原盘|criterion|'
+                       r'(?<![A-Za-z])CC(?![A-Za-z])|(?<![A-Za-z])(kino|arrow|eureka|bfi)(?![A-Za-z])|[美欧日港台韩英法德意澳国]版|无中字|无字幕')
+_SIZE_NOTE = re.compile(r'(?i)\d+(\.\d+)?\s*[GT]B?(?![A-Za-z])')
+_FILE_EXT = re.compile(r'(?i)\.(iso|mkv|mp4|m2ts|ts|avi|wmv|mov|rmvb)(?![A-Za-z0-9])')
+_LATIN_TITLE = re.compile(r'[A-Za-z]{3,}[\s._]+[A-Za-z]{2,}')
 
 
 ZONE_R = {'yuanpan': 3, 'remux': 2, 'pack': 1, 'heji': 0}   # 同分辨率同来源：原盘区那份是参照库，优先留
 
 
 def rank(c):
-    return (RES_R[c['res']], KIND_R[c['kind']], ZONE_R[c['zone']] + (10 if c.get('main') else 0), name_score(c), c['gb'])
+    # 没并成套、只是其中一张碟的不当保留份（反馈 28.4 顺带：配置说明写得全的单碟不能把整组拖成待定）
+    return (RES_R[c['res']], KIND_R[c['kind']], ZONE_R[c['zone']] + (10 if c.get('main') else 0), not _partial(c), name_score(c), c['gb'])
 
 
 # ---------------- 人口 ----------------
@@ -496,77 +517,20 @@ def _partial(c):
     return bool(PARTIAL_MARK.search((c['main_name'] if single and c['main_name'] else c['name']) or ''))
 
 
-# ---------------- 片源（反馈 26）----------------
-# 地区版（美版 / 港版 / 法版 …，也认 USA / HK / FRA 这类发行代码）和发行商（CC / KINO / Arrow / Eureka …）。
-# 两份都写了、而且对不上 → 不是同一张碟；有一边没写 → 拿不准，当同源（宁可两边都留）。
-_REGION = [('us', r'美版|美国版|(?<![A-Za-z])USA(?![A-Za-z])'), ('eu', r'欧版|(?<![A-Za-z])EUR(?![A-Za-z])'),
-           ('jp', r'日版|(?<![A-Za-z])JPN(?![A-Za-z])'), ('hk', r'港版|(?<![A-Za-z])HKG?(?![A-Za-z])'),
-           ('tw', r'台版|(?<![A-Za-z])TWN?(?![A-Za-z])'), ('kr', r'韩版|(?<![A-Za-z])KOR(?![A-Za-z])'),
-           ('uk', r'英版|(?<![A-Za-z])(GBR|UK)(?![A-Za-z])'), ('fr', r'法版|(?<![A-Za-z])FRA(?![A-Za-z])'),
-           ('de', r'德版|(?<![A-Za-z])GER(?![A-Za-z])'), ('it', r'意版|(?<![A-Za-z])ITA(?![A-Za-z])'),
-           ('es', r'西班牙版|西版|(?<![A-Za-z])ESP(?![A-Za-z])'), ('nordic', r'北欧版'), ('au', r'澳版|(?<![A-Za-z])AUS(?![A-Za-z])'),
-           ('cn', r'国版|大陆版|(?<![A-Za-z])CHN(?![A-Za-z])'), ('th', r'泰版'), ('ru', r'俄版'), ('in', r'印度版')]
-_REGION = [(k, re.compile(p)) for k, p in _REGION]
-_EUROPE = {'uk', 'fr', 'de', 'it', 'es', 'nordic'}          # 「欧版」可能就是其中哪一国的盘：和它们不算冲突
-_LABEL = [('CC', r'(?i)criterion|(?<![A-Za-z])CC(?=版|标准|[\s._\-\]】)]|$)'), ('KINO', r'(?i)(?<![A-Za-z])kino(?![A-Za-z])'),
-          ('Arrow', r'(?i)(?<![A-Za-z])arrow(?![A-Za-z])'), ('Eureka', r'(?i)(?<![A-Za-z])eureka(?![A-Za-z])|尤里卡'),
-          ('BFI', r'(?<![A-Za-z])BFI(?![A-Za-z])'), ('Spectrum', r'(?i)(?<![A-Za-z])spectrum(?![A-Za-z])'),
-          ('88 Films', r'(?i)88\s*films'), ('Shout Factory', r'(?i)shout\s*factory'), ('Vinegar Syndrome', r'(?i)vinegar\s*syndrome'),
-          ('CEE', r'(?<![A-Za-z])CEE(?![A-Za-z])'), ('碟影', r'碟影'), ('新索', r'新索')]
-_LABEL = [(k, re.compile(p)) for k, p in _LABEL]
-_REGION_WORD = {'us': '美版', 'eu': '欧版', 'jp': '日版', 'hk': '港版', 'tw': '台版', 'kr': '韩版', 'uk': '英版', 'fr': '法版',
-                'de': '德版', 'it': '意版', 'es': '西班牙版', 'nordic': '北欧版', 'au': '澳版', 'cn': '国版', 'th': '泰版', 'ru': '俄版',
-                'in': '印度版'}
-
-
-def _sources(c):
-    if '_src' not in c:
-        t = (c.get('name') or '') + ' ' + (c.get('main_name') or '')
-        c['_src'] = ({k for k, rx in _REGION if rx.search(t)}, {k for k, rx in _LABEL if rx.search(t)})
-    return c['_src']
-
-
-def source_words(c):
-    r, l = _sources(c)
-    return [_REGION_WORD[x] for x in sorted(r)] + sorted(l) or ['片源没写']
-
-
-def _region_ok(a, b):
-    return bool(a & b) or ('eu' in a and b & _EUROPE) or ('eu' in b and a & _EUROPE)
-
-
-def source_rel(a, b):
-    """两份是不是同一片源 → 'same'（标注对得上）/ 'diff'（两边都写了、对不上）/ '?'（有一边没写）。"""
-    (ra, la), (rb, lb) = _sources(a), _sources(b)
-    if (ra and rb and not _region_ok(ra, rb)) or (la and lb and not la & lb):
-        return 'diff'
-    if (ra and rb) or (la and lb):
-        return 'same'
-    return '?'
-
-
 def judge(ms):
     """一组（同片、同剪辑版本）→ [(副本, 类, 保留份, 依据)]，保留份本身不出行。"""
     ms = sorted(ms, key=rank, reverse=True)
     keep = ms[0]
     rest = ms[1:]
     fam = lambda c: 'DT' if c['kind'] in DIY_FAMILY else c['kind']
-    if keep['kind'] not in DIY_FAMILY:
-        partner = next((m for m in rest if m['kind'] in DIY_FAMILY), None)
-    else:
-        # 反馈 26：特效字幕版 / DIY 和原盘成一对、两边都留。照旧取排在最前的那份原盘；只有它的片源标注明确对不上（港版 × 法版）、
-        # 而另有一份同分辨率、片源对得上的原盘（同一张碟）时，改配那一份。没有对得上的也照样留一份——不因为片源对不上就把原盘清掉
-        cands = [m for m in rest if m['kind'] == 'I']
-        partner = cands[0] if cands else None
-        if partner is not None and (partner['res'] != keep['res'] or source_rel(partner, keep) == 'diff'):
-            partner = next((m for m in cands if m['res'] == keep['res'] and source_rel(m, keep) == 'same'), partner)
+    # 反馈 28.2 / 28.3（推翻 26 的两边都留）：留下的是特效字幕版 / DIY 时，它就是原盘加了中文字幕做出来的，留它一份就够，
+    # 对面的原盘照常和它比（同分辨率 → 可清理）。反过来留下的是原盘（或别的）时，最好的那份 DIY / 特效字幕版有原盘没有的字幕，照旧两边都留
+    partner = next((m for m in rest if m['kind'] in DIY_FAMILY), None) if keep['kind'] not in DIY_FAMILY else None
     out = []
     for x in rest:
         if x is partner:
-            rel = source_rel(x, keep)
-            out.append((x, 'V', keep, '%s 和 %s 是一对版本（加了中文字幕的和原版%s），两份都留' % (
-                KIND_NAME[keep['kind']], KIND_NAME[x['kind']],
-                '，同一片源 %s' % '/'.join(source_words(x)) if rel == 'same' else '')))
+            out.append((x, 'V', keep, '%s 和 %s 是一对版本（原版和加了中文字幕的），两份都留' % (
+                KIND_NAME[keep['kind']], KIND_NAME[x['kind']])))
             continue
         # 和版本对里同一家的那份比（多出来的 DIY / 特效字幕版跟留下的那份比），否则跟保留份比
         k = partner if (partner is not None and fam(x) == fam(partner)) else keep
@@ -589,6 +553,8 @@ def judge(ms):
             continue
         if RES_R[x['res']] < RES_R[k['res']]:
             out.append((x, 'A', k, '分辨率比保留的那份低'))
+        elif x['kind'] == 'I' and k['kind'] in DIY_FAMILY:
+            out.append((x, 'B', k, '保留的那份是%s（原盘加了中文字幕做的），同分辨率的原盘不用再留' % KIND_NAME[k['kind']]))
         else:
             out.append((x, 'B', k, '和保留的那份同分辨率，保留的那份来源 / 位置 / 命名更好'))
     return keep, out

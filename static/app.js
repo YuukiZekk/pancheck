@@ -313,8 +313,22 @@ function scopeHtml() {
   let h = kv('主媒体库', path(CFG.main_lib_dir) || '未指定', CFG.main_lib_dir ? '' : 'amber')
     + kv('查重区', CFG.quarantine_dir ? path(CFG.quarantine_dir) + ' · 不扫' : '未指定 · 可清理的没地方搬', CFG.quarantine_dir ? '' : 'amber')
     + kv('待入库区', CFG.staging_on === false ? '关：留下的片留在原地' : (path(CFG.staging_dir) || '未指定') + ' · 开', CFG.staging_on === false || CFG.staging_dir ? '' : 'amber')
-    + kv('筛查的目录', roots.length ? roots.map(r => path(r)).join('<br>') : '还没勾，不进筛查', roots.length ? '' : 'amber');
-  if (skip.length) h += kv('其中不筛', skip.map(r => path(r)).join('<br>'));
+    + kv('筛查的目录', roots.length ? roots.length + ' 个' : '还没勾，不进筛查', roots.length ? '' : 'amber');
+  // 反馈 27：只显示末段目录名（全路径悬停看），左对齐、行首带序号；其中不筛默认收起，点开按父目录分组
+  const last = p => String(p).replace(/\/+$/, '').split('/').pop() || p;
+  const parent = p => String(p).replace(/\/+$/, '').split('/').slice(0, -1).join('/') || '/';
+  const items = (list, from) => list.map((p, i) => `<li><span class="sl-n">${from + i}</span><span class="sl-name" title="${esc(p)}">${esc(last(p))}</span></li>`).join('');
+  if (roots.length) h += `<ol class="scope-list">${items(roots, 1)}</ol>`;
+  if (skip.length) {
+    const byParent = {};
+    skip.forEach(p => (byParent[parent(p)] = byParent[parent(p)] || []).push(p));
+    let i = 1, body = '';
+    for (const [par, list] of Object.entries(byParent)) {
+      body += `<div class="sl-group" title="${esc(par)}">${esc(last(par))}</div><ol class="scope-list">${items(list, i)}</ol>`;
+      i += list.length;
+    }
+    h += `<details class="scope-skip"><summary>其中不筛 ${skip.length} 个目录 <span class="sl-arrow">▸</span></summary>${body}</details>`;
+  }
   if (!CFG.tree_model && ((CFG.protect_names || []).length || (CFG.listpack_names || []).length))
     h += kv('旧设置', '还在按名字保护：' + esc([...(CFG.protect_names || []), ...(CFG.listpack_names || [])].join('、')) + '。点「改筛查范围」换成勾选，没勾 = 不筛');
   return h;

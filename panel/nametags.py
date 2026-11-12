@@ -15,8 +15,11 @@ _NOT_GROUP = {'hd', 'ma', 'dl', 'rip', 'x264', 'x265', 'hevc', 'avc', 'dts', 're
               'atmos', 'truehd', 'ddp', 'aac', 'flac', 'lpcm', 'disc', 'cd', 'iso', 'mkv', 'mp4', 'ac3', 'eac3', 'mpeg', 'vc'}
 VERSION = [('官方', re.compile(r'官方')), ('独占', re.compile(r'独占')), ('DIY', re.compile(r'(?i)(?<![a-z])diy(?![a-z])')),
            ('原盘', re.compile(r'原盘')), ('REMUX', re.compile(r'(?i)remux')), ('压制', re.compile(r'(?i)压制|(?<![a-z0-9])x26[45](?![0-9])'))]
+# 「无中字」「无字幕」是否定说法，单独成标签，不能当成有中字（反馈 28.1）
 LANG = [('国语', re.compile(r'国语|国配')), ('粤语', re.compile(r'粤语|粤配')), ('简繁', re.compile(r'简繁')),
-        ('特效字幕', re.compile(r'特效.{0,4}?字幕')), ('双语', re.compile(r'双语')), ('中字', re.compile(r'中字|中文字幕'))]
+        ('特效字幕', re.compile(r'特效.{0,4}?字幕')), ('双语', re.compile(r'双语')),
+        ('无中字', re.compile(r'无中字|无中文字幕')), ('无字幕', re.compile(r'无字幕')),
+        ('中字', re.compile(r'(?<![无没])(中字|中文字幕)'))]
 _EXT = re.compile(r'(?i)\.(iso|mkv|mp4|m2ts|ts|avi|wmv|mov|rmvb|flv)$')
 
 
@@ -37,6 +40,11 @@ def _groups(name, extra):
         elif g in name and not name.startswith(g):                     # 中文组名（至尊宝、雅典娜）：片名开头的不算
             out.append(g)
     return out[:2]
+
+
+def groups_in(text, extra_groups=()):
+    """名字里认得出的发布组（保留份排序数配置说明用，反馈 28.4）。"""
+    return _groups(text or '', extra_groups)
 
 
 def tags(path, extra_groups=()):
