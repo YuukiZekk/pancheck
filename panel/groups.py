@@ -34,7 +34,7 @@ KIND_NAME = {'T': '特效字幕版', 'I': '原盘', 'D': 'DIY', 'R': 'REMUX', 'O
 DIY_FAMILY = ('D', 'T')                              # 在原盘上加了字幕的：和原版成「版本对」
 RES_NAME = {'U': '4K', 'H': '1080p', 'S': '720p 及以下', '?': '画质未知'}
 ZONE_NAME = {'heji': '合集区', 'yuanpan': '原盘区', 'remux': 'REMUX 区', 'pack': '整夹合集区'}
-BUCKET = {'A': '可切', 'B': '可切', 'N': '可切', 'V': '版本型', 'U': '待定', 'H': '可切'}
+BUCKET = {'A': '可切', 'B': '可切', 'N': '可切', 'V': '版本型', 'U': '待定', 'H': '可切', 'F': '可切'}
 SMALL_GB, LOW_GB = 8, 15                             # 小文件层（同原第三刀人口口径）
 _TAG = re.compile(r'(?i)[\[【][^\]】]*(豆瓣|评分|imdb|tt\d{6,})[^\]】]*[\]】]')     # [豆瓣电影评分8.8] [tt0440963]
 _MULTI = re.compile(r'[一-鿿]{2,}\s*[+＋]\s*[一-鿿]{2,}|三部曲|四部曲|全\s*\d+\s*部|\d+\s*部合集|合集|系列\s*\d+\s*部')
@@ -518,17 +518,37 @@ def _partial(c):
     return bool(PARTIAL_MARK.search((c['main_name'] if single and c['main_name'] else c['name']) or ''))
 
 
-def judge(ms):
+FLIP_GB = 5      # 反馈 30：原盘和 DIY 两份都留时，DIY 大这么多（含）就只留 DIY
+
+
+def _flip_to_diy(keep, partner):
+    """反馈 30：原盘当留、DIY / 特效字幕版是它的版本对时，DIY 那份按整份总大小（多碟装按整套）大 5 GB 及以上、
+    且分辨率不低于原盘那份（两边都认得出）→ 改留 DIY。没并成套的单张碟不比（大小不代表整份）。只翻这一对，排序本身不动。"""
+    return (partner is not None and keep['kind'] == 'I' and partner['kind'] in DIY_FAMILY
+            and keep['res'] != '?' and partner['res'] != '?' and RES_R[partner['res']] >= RES_R[keep['res']]
+            and not _partial(keep) and not _partial(partner) and partner['gb'] - keep['gb'] >= FLIP_GB - 1e-9)
+
+
+def judge(ms, _flip=None):
     """一组（同片、同剪辑版本）→ [(副本, 类, 保留份, 依据)]，保留份本身不出行。"""
     ms = sorted(ms, key=rank, reverse=True)
+    if _flip is not None:                                  # 反馈 30 翻转后：DIY 那份当保留份，原来的原盘跟它比
+        ms.remove(_flip['diy'])
+        ms.insert(0, _flip['diy'])
     keep = ms[0]
     rest = ms[1:]
     fam = lambda c: 'DT' if c['kind'] in DIY_FAMILY else c['kind']
     # 反馈 28.2 / 28.3（推翻 26 的两边都留）：留下的是特效字幕版 / DIY 时，它就是原盘加了中文字幕做出来的，留它一份就够，
     # 对面的原盘照常和它比（同分辨率 → 可清理）。反过来留下的是原盘（或别的）时，最好的那份 DIY / 特效字幕版有原盘没有的字幕，照旧两边都留
     partner = next((m for m in rest if m['kind'] in DIY_FAMILY), None) if keep['kind'] not in DIY_FAMILY else None
+    if _flip is None and _flip_to_diy(keep, partner):
+        return judge(ms, _flip={'diy': partner, 'disc': keep})
     out = []
     for x in rest:
+        if _flip is not None and x is _flip['disc']:
+            out.append((x, 'F', keep, '同片的%s那份大 %.1f GB（%s，这份 %s），分辨率不低于这份，留它就够，这份原盘可清理' % (
+                KIND_NAME[keep['kind']], keep['gb'] - x['gb'], _size_word(keep), _size_word(x))))
+            continue
         if x is partner:
             out.append((x, 'V', keep, '%s 和 %s 是一对版本（原版和加了中文字幕的），两份都留' % (
                 KIND_NAME[keep['kind']], KIND_NAME[x['kind']])))
@@ -766,6 +786,10 @@ def scan(cfg, gone=frozenset(), tab=None):
     st['copies'] = len(cs) + len(gate)
     st['hash'] = gst
     return rows, gout, dict(st), gs
+
+
+def _size_word(c):
+    return '%.2f GB%s' % (c['gb'], '，%d 碟一套' % len(c['parts']) if c.get('parts') else '')
 
 
 def _brief(c):
