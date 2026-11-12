@@ -17,7 +17,7 @@ from .tables import Tables
 sys.path.insert(0, str(C.APP_DIR))
 
 # 分类 → 面板桶。只有「可切」将来能被批准；待定/孤本永远没有执行入口。
-BUCKETS = ['可切', '待定', '版本型', '不动', '孤本', '缺口', '提醒', '剧集分流']
+BUCKETS = ['可切', '待定', '版本型', '多碟合集', '不动', '孤本', '缺口', '提醒', '剧集分流']
 
 
 def emit(step, msg, pct=None):
@@ -210,7 +210,9 @@ def main(mode, run_dir):
     sieve.LP_ON = not cfg.get('tree_model')                      # 勾选模型：没勾 = 不筛，不再另认榜单包
     rows = []
     emit('dupes', '查找原盘区完全重复', 20)
-    rows += yuanpan_dupes(result, tab)
+    # 反馈 31：并成套的多碟装不参加任何自动判断——原盘同名同大小这条线也不碰套里的碟（两边哪边是套都不判）
+    sets0 = {pp for c in G.copies(cfg, frozenset(), tab) for pp, _ in (c.get('parts') or [])}
+    rows += [r for r in yuanpan_dupes(result, tab) if r['path'] not in sets0 and r.get('keep') not in sets0]
     l1 = {r['path'] for r in rows}
 
     emit('groups', '把同一部片的副本归组', 35)
@@ -261,6 +263,11 @@ def main(mode, run_dir):
     extra_lp = list(cfg['listpack_names'])
     if extra_lp:
         rows = [r for r in rows if r['stage'] == '剧集分流' or not sources.listpack_hit(r['path'], extra_lp, cfg, rule=False)]
+
+    # 反馈 31：并成套的多碟装只在「多碟合集」里出现（一套一条），别的线（主库对比、孤本、REMUX 对主库、剧集分流…）不再出它的行
+    set_paths = tab.obj('set_paths') or set()
+    if set_paths:
+        rows = [r for r in rows if r['bucket'] == G.SET_BUCKET or (r['path'] not in set_paths and r.get('keep') not in set_paths)]
 
     # 红线：可切里只要有一条落在保护区/榜单包，整批拒绝（不部分放行）
 

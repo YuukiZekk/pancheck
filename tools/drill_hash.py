@@ -39,7 +39,7 @@ put(H + '包A/乙片.1998.BluRay.1080p.iso', 31, h('d1'))
 # E 有一份没 Sha1：不进门（片名分组照常处理）
 put(H + '包A/丙片.1997.1080p.mkv', 12, None)
 put(H + '包B/丙片.1997.1080p.mkv', 12, h('e1'))
-# F 多碟装：整套对上才切；只有一张碟对上的不切
+# F 多碟装（反馈 31）：并成套的不进门，字节相同的两套也都进「多碟合集」，一套一条
 put(H + '包M/丁片 (1990) 双碟版/丁片.1990.Disc1.iso', 20, h('f1'))
 put(H + '包M/丁片 (1990) 双碟版/丁片.1990.Disc2.iso', 20, h('f2'))
 put(H + '包N/丁片 (1990) 双碟版/丁片.1990.Disc1.iso', 20, h('f1'))
@@ -55,6 +55,20 @@ put(H + '包A/戊片.2005.1080p.mkv', 14, h('i1'))
 put(H + '包B/戊片.2005.1080p.mkv', 14, h('i1'))
 put(Y + '4K/戊片 (2005)/戊片.2005.2160p.iso', 60, h('i2'))
 put(Y + '4K/己片 (2006)/己片.2006.2160p.iso', 61, h('i3'))
+
+# J 码头风云型（反馈 31）：3 碟套原盘进多碟合集；剩下的单碟里 4K DIY 当留，1080p 单碟可清理
+for i in (1, 2, 3):
+    put(Y + '单/庚片(1954) 4K 美版原盘 三碟 DISC %d.iso' % i, 85, h('j%d' % i))      # 和真库一样：散放在多片夹里的几张碟并成一套
+put(Y + '单/庚片(1954) 4K 美版原盘 DIY 简繁字幕 HDSky 84.1GB .iso', 84, h('j7'))
+put(Y + '单/庚片(1954) 1080p Blu-ray AVC.iso', 40, h('j8'))
+put(Y + '单/占位(2000) 1080p.iso', 30, h('j9'))
+# K 一组里全是套：整组进多碟合集，不出别的判断
+for tag, dirn in (('k', '甲套'), ('m', '乙套')):
+    for i in (1, 2):
+        put(H + '%s/辛片 (1977)/辛片.1977.1080p.Disc%d.iso' % (dirn, i), 25 + (tag == 'm'), h(tag + str(i)))
+# L 名字带碟号、没并成套的单张碟：不算套，照老规矩（需人工确认）
+put(Y + '单/壬片(1953) 4K DIY DISC.1.iso', 45, h('l1'))
+put(H + '包A/壬片.1953.2160p.mkv', 20, h('l2'))
 
 conf = os.path.join(W, 'cd2conf'); os.makedirs(conf)
 c = sqlite3.connect(os.path.join(conf, 'dir_cache.sqlite'))
@@ -133,7 +147,9 @@ check('C 夹里多外挂字幕 → 不算同一份，门不切', not any('甲片
 check('D 夹里只多海报 / nfo → 算同一份，门切一份', sum('乙片' in p for p in by) == 1, [p for p in by if '乙片' in p])
 check('E 有一份没 Sha1 → 不进门', not any('丙片' in p for p in by), [p for p in by if '丙片' in p])
 fset = [p for p in by if '丁片' in p]
-check('F 多碟装整套对上 → 整套两张碟都切、标多碟装', len(fset) == 2 and all(by[p].get('disc_set') == 2 for p in fset), fset)
+sets = [r for r in rows if r['bucket'] == '多碟合集' and '丁片' in r['path']]
+check('F 字节相同的两套不进门、都进多碟合集（一套一条、写碟数）', not fset and len(sets) == 2 and all(r['disc_set'] == 2 and len(r['parts']) == 2 for r in sets), sets)
+check('F 套里的碟不在别的栏出现', not any('丁片' in r['path'] and r['bucket'] != '多碟合集' for r in rows), [r for r in rows if '丁片' in r['path']])
 check('G 剧集不进门（在归组之前就分到剧集分流了）', not any('某剧' in p for p in by), [p for p in by if '某剧' in p])
 check('H 锁定（金庸）那份留、另一份切', by.get(H + '包A/射雕英雄传.1983.mkv', {}).get('keep') == H + '金庸/射雕英雄传.1983.mkv', by.get(H + '包A/射雕英雄传.1983.mkv'))
 ir = [by[p] for p in by if '戊片' in p]
@@ -142,7 +158,16 @@ check('I 留下那份又被 4K 判掉 → 依据写明真正留的是 4K 原盘'
 check('I 那份 1080p 照常被片名分组判可清理（4K 原盘留）', any(r['path'].startswith(H + '包') and '戊片' in r['path'] and r['stage'] == '重复副本'
                                                        and 'H' != r['cls'] and r['bucket'] == '可切' for r in rows), [r for r in rows if '戊片' in r['path']])
 check('同一份不出两行', len(rows) == len({(r['path'], r['stage']) for r in rows}), len(rows))
-check('统计：组数 / 多出份数 / 可清理份数', st.get('groups') == 6 and st.get('cut') == 7 and st.get('dup') == 7, st)
+check('统计：组数 / 多出份数 / 可清理份数', st.get('groups') == 5 and st.get('cut') == 6 and st.get('dup') == 6, st)
 check('卡片成员里有门切的份', any(m['role'] == '可切' and '热浴盆' in m['path'] for g in gs.values() for m in g['members']), '')
+jr = [r for r in rows if '庚片' in r['path'] or '庚片' in (r.get('film') or '')]
+jset = [r for r in jr if r['bucket'] == '多碟合集']
+check('J 三碟套进多碟合集一条（3 张、总大小）', len(jset) == 1 and jset[0]['disc_set'] == 3 and abs(jset[0]['gb'] - 255) < 0.1, jr)
+check('J 剩下单碟里 4K DIY 当留、1080p 单碟可清理', any(r['bucket'] == '可切' and '1080p' in r['path'] and 'HDSky' in r['keep'] for r in jr)
+      and not any('HDSky' in r['path'] for r in jr), jr)
+kr = [r for r in rows if '辛片' in r['path']]
+check('K 全是套的组：整组进多碟合集，没有别的判断', len(kr) == 2 and all(r['bucket'] == '多碟合集' for r in kr), kr)
+lr = [r for r in rows if '壬片' in r['path'] and r['stage'] == '重复副本']
+check('L 没并成套的 DISC.1 照老规矩（需人工确认）', any(r['bucket'] == '待定' for r in lr) and not any(r['bucket'] == '多碟合集' for r in lr), lr)
 print('\nALL PASS' if not fails else '\nFAILED: %s' % fails)
 sys.exit(1 if fails else 0)

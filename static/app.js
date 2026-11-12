@@ -46,8 +46,8 @@ const PICK = `<svg class="check" viewBox="0 0 24 24" fill="none" stroke="current
 
 /* ---------- 白话名（来自 panel/labels.py） ---------- */
 let LB = {buckets: {}, stages: {}, classes: {}};
-const BUCKET_ORDER = ['可切', '待定', '版本型', '不动', '孤本', '缺口', '提醒', '剧集分流'];
-const TONE = {'可切': 'green', '待定': 'amber', '版本型': 'sky', '不动': 'violet', '孤本': 'zinc', '缺口': 'sky', '提醒': 'zinc', '剧集分流': 'zinc'};
+const BUCKET_ORDER = ['可切', '待定', '版本型', '多碟合集', '不动', '孤本', '缺口', '提醒', '剧集分流'];
+const TONE = {'可切': 'green', '待定': 'amber', '版本型': 'sky', '多碟合集': 'violet', '不动': 'violet', '孤本': 'zinc', '缺口': 'sky', '提醒': 'zinc', '剧集分流': 'zinc'};
 const bn = b => (LB.buckets[b] || {}).name || b;
 const sn = s => (LB.stages[s] || {}).name || s;
 const cn = (s, c) => LB.classes[s + '|' + c] || c;
@@ -406,7 +406,7 @@ function renderListStats() {
     + kpi('已勾选', 'check', n(LIST.sel.size), LIST.sel.size ? '跨页保留' : '勾选后可导出' + (execOn ? '或批准' : ''));
 }
 let OPEN_FACET = '';
-const TABS = ['可切', '待定', '缺口', '孤本'];
+const TABS = ['可切', '待定', '缺口', '孤本', '多碟合集'];
 function renderTabs() {
   const S = b => ((RES && RES.summary) || {})[b] || {count: 0};
   const sel = LIST.f.bucket, only = sel.size === 1 ? [...sel][0] : '';
@@ -514,7 +514,7 @@ function renderTable() {
   box.innerHTML = LIST.cards.map(c => {
     const rs = c.idx.map(i => LIST.rows[i]), first = rs[0];
     const picked = rs.every(x => LIST.sel.has(x.path)), some = !picked && rs.some(x => LIST.sel.has(x.path));
-    const title = c.title || stripExt(baseName(first.path));
+    const title = c.title || first.film || stripExt(baseName(first.path));
     const mine = new Set(rs.flatMap(x => [x.path]));
     const isMine = m => mine.has(m.path) || (m.parts || []).some(pp => mine.has(pp));
     let left = '', right = '', more = '';
@@ -527,6 +527,7 @@ function renderTable() {
     } else {
       const k = first.keep || '';
       left = k ? (k.startsWith('/') ? fitem(k, 'keep', `<b>参照</b>${first.keep_gb ? ' · <span translate="no">' + fmtGB(first.keep_gb) + '</span>' : ''}`) : `<div class="fitem keep"><div class="fn">${esc(k)}</div></div>`)
+        : first.bucket === '多碟合集' ? (first.parts || []).map((pp, i) => fitem(pp, '', `第 ${i + 1} / ${first.parts.length} 张`)).join('')
         : `<div class="fitem"><div class="fm">${esc({孤本: '全库只有这一份', 缺口: 'Emby 片库里没有这部片'}[first.bucket] || '—')}</div></div>`;
     }
     right = rs.map(x => {
@@ -536,8 +537,8 @@ function renderTable() {
       return fitem(x.path, '', `${badge(x.bucket)}${m ? ' ' + memberLine(m) : ''} · <span translate="no">${fmtGB(x.gb)}</span>${ap ? ` · <span class="t-green">已批准</span>` : ''}`,
         rc ? `<div class="chips">${rc}</div>` : '', [discOf(x), ...(x.ntags || [])], x.nfx);
     }).join('');
-    const lh = c.members ? '留' : (first.bucket === '缺口' ? '主库里' : '参照');
-    const rh = first.bucket === '可切' ? '可清理' : first.bucket === '缺口' ? '这份等着入库' : first.bucket === '待定' ? (rs.length > 1 ? '同片其他几份' : '同片另一份') : '这一份';
+    const lh = c.members ? '留' : (first.bucket === '缺口' ? '主库里' : first.bucket === '多碟合集' ? '这一套的碟' : '参照');
+    const rh = first.bucket === '可切' ? '可清理' : first.bucket === '缺口' ? '这份等着入库' : first.bucket === '待定' ? (rs.length > 1 ? '同片其他几份' : '同片另一份') : first.bucket === '多碟合集' ? '多碟合集' : '这一份';
     const tags = [...new Set(rs.flatMap(x => x.tags || []))];
     return `<article class="fcard ${picked ? 'picked' : ''}" data-key="${esc(c.key)}">
       <div class="fcard-head"><button type="button" class="pick ${picked ? 'on' : some ? 'some' : ''}" data-pickc="${esc(c.key)}" role="checkbox" aria-checked="${picked ? 'true' : some ? 'mixed' : 'false'}" aria-label="勾选这部片">${PICK}</button>

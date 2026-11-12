@@ -589,6 +589,7 @@ def judge(ms, _flip=None):
 _META_EXT = {'.nfo', '.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tbn', '.bif', '.txt', '.url', '.lnk', '.db', '.ini',
              '.md5', '.sfv', '.torrent', '.strm', '.json', '.ds_store'}
 GATE_STAGE = STAGE
+SET_BUCKET = '多碟合集'
 _RES_SRC_R = {'实测': 3, '文件名': 2, '体积推断': 1, '未知': 0}
 
 
@@ -726,13 +727,28 @@ def scan(cfg, gone=frozenset(), tab=None):
     """→ (rows, groups_out, stats)。rows 用 runner.row 的字段；groups_out = {组号: 成员摘要}。"""
     tab = tables_of(tab)
     cs = copies(cfg, gone, tab)
+    # 反馈 31：并成套的多碟装不参加任何自动判断（哈希门、留哪份、切哪份），只在「多碟合集」里一套一条列出来
+    sets = [c for c in cs if c.get('parts')]
+    cs = [c for c in cs if not c.get('parts')]
     cs, gate, gst = hash_gate(cs, tab, cfg)                # 反馈 29.2：哈希是一道门，片名分组只看过了门的份
-    gs = group(cs)
+    gs = group(cs + sets)
+    set_rows = []
     rows, gout = [], {}
     st = Counter()
     by_path = {}
     gid = 0
     for ms in gs:
+        in_sets = [m for m in ms if m.get('parts')]
+        if in_sets and len(ms) >= 2:                       # 同片有别的份（或别的套）才列：一套一条，写清几张碟、多大、放在哪
+            others = len(ms) - 1
+            for m in in_sets:
+                set_rows.append(dict(stage=STAGE, cls='M', bucket=SET_BUCKET, path=m['parts'][0][0], gb=round(m['gb'], 2), keep='',
+                                     basis='%d 张碟一套，共 %.2f GB（%s · %s）；同片另有 %d 份。多碟装不参加自动判断，以后统一处理' % (
+                                         len(m['parts']), m['gb'], ZONE_NAME[m['zone']], KIND_NAME[m['kind']], others),
+                                     tags=['多碟装'], disc_set=len(m['parts']), parts=[pp for pp, _ in m['parts']],
+                                     film=_gtitle(ms)))
+                st['sets'] += 1
+        ms = [m for m in ms if not m.get('parts')]
         if len(ms) < 2:
             continue
         st['groups'] += 1
@@ -783,7 +799,9 @@ def scan(cfg, gone=frozenset(), tab=None):
     for c in cs:
         by_path[c['path']] = c
     rows += _gate_rows(gate, rows, gout, st)
-    st['copies'] = len(cs) + len(gate)
+    rows += set_rows
+    tab.attach('set_paths', {pp for m in sets for pp, _ in m['parts']})
+    st['copies'] = len(cs) + len(gate) + len(sets)
     st['hash'] = gst
     return rows, gout, dict(st), gs
 
