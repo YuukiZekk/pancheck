@@ -9,7 +9,7 @@
 判档：分辨率档（原盘区：Emby 实测 > 主文件名 > ISO/盘片夹体积推断；其他：文件名，ISO ≥55GB / 文件 ≥40GB 推断 4K）
       + 来源类（原盘 > DIY > REMUX > 压制）。
 保留份（用户 2026-11-11 拍板；反馈 16 加特效字幕版）：先比分辨率，同分辨率再比来源类（特效字幕版 > 原盘 > DIY > REMUX > 压制），再比命名（反馈 28.4：配置说明写得越全越优先，
-      同样全的在已刮削目录 / 带 {tmdb} 的优先；只有片名 + 年份 + 分辨率的裸名垫底；单张碟不当保留份），最后比体积。
+      同样全的带 {tmdb} 的优先（刮削目录不算，反馈 29.1）；只有片名 + 年份 + 分辨率的裸名垫底；单张碟不当保留份），最后比体积。
 组内其余每份：
   - 版本对：保留份不是 DIY / 特效字幕版时，最好的那份 DIY / 特效字幕版两边都留；保留份是 DIY / 特效字幕版时不配对，原盘照常比（反馈 28）
   - 剪辑版本不同（导演剪辑 / 加长 / 未分级 …）的分开成小组各自比
@@ -200,11 +200,12 @@ def bare(c):
 
 
 def name_score(c):
-    """命名座次（越大越该留，反馈 28.4）：配置说明写得越全越优先；同样全的，在已刮削目录 / 带 {tmdb} 的优先；裸名垫底。"""
+    """命名座次（越大越该留，反馈 28.4）：配置说明写得越全越优先；同样全的带 {tmdb} 的优先；裸名垫底。
+    在不在刮削目录不算（反馈 29.1：刮削夹在播放链路上没有特殊地位）。"""
     low = c['path'].lower()
     if bare(c):
-        return -1000 + ('刮削' in c['path']) * 50 + ('{tmdb' in low or 'tmdbid' in low) * 40
-    return len(spec_words(c)) * 100 + ('刮削' in c['path']) * 50 + ('{tmdb' in low or 'tmdbid' in low) * 40
+        return -1000 + ('{tmdb' in low or 'tmdbid' in low) * 40
+    return len(spec_words(c)) * 100 + ('{tmdb' in low or 'tmdbid' in low) * 40
 
 
 sieve_spec = re.compile(r'(?i)(2160p|1080p|1080i|720p|480p|(?<![a-z])uhd(?![a-z])|4k|blu-?ray|remux|bdrip|web-?dl|webrip|hdtv|x264|x265|'

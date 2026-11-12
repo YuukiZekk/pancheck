@@ -54,7 +54,7 @@ def plan(items, is_top, pack_of, pack_size):
 #   - 组里只要有一份沾保留档（保护目录、内置保留档词、内核榜单包）→ 整组不动
 #   - 暂缓成员（碟内文件、另议包、剧集标记）不搬也不当保留份；剩不到 2 份的组整组搁置
 #   - 落在保护/榜单名下的成员（守卫会拦）可以当保留份，但不搬
-#   - 保留份 = 计分最低：裸名 +100、文件名规格词每个 −1、路径带「刮削」−50、带 {tmdb} −40、区域 ×10（原盘 0 / REMUX 1 / 其他 2）、
+#   - 保留份 = 计分最低：裸名 +100、文件名规格词每个 −1、带 {tmdb} −40（路径带「刮削」不再算，反馈 29.1）、区域 ×10（原盘 0 / REMUX 1 / 其他 2）、
 #     直接散放在分区或包根 +5；同分按父路径
 SPEC = re.compile(r'(?i)(2160p|1080p|1080i|720p|480p|\buhd\b|4k|blu-?ray|remux|bdrip|web-?dl|webrip|hdtv|x264|x265|h\.?264|h\.?265|hevc|avc|dts|truehd|atmos|ddp|aac|flac|lpcm|hdr|dolby|\bdv\b|diy|字幕|国配|国语|粤语|特效|双语|简繁|中字|花絮|加长|@)')
 AREA = {'yuanpan': 0, 'remux': 1}
@@ -65,8 +65,6 @@ def keeper_rank(it):
     parent, name = p.rsplit('/', 1)
     t = len(set(m.group(0).lower() for m in SPEC.finditer(name)))
     s = (100 if t == 0 else 0) - t
-    if '刮削' in p:
-        s -= 50
     low = p.lower()
     if '{tmdb' in low or 'tmdbid' in low:
         s -= 40

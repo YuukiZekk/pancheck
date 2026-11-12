@@ -216,7 +216,7 @@ def hidden_dupes(cfg, rows, result, tab):
     moves, st = dupes.plan_hidden(groups, held, gone=lambda p: p in cut)
     how = 'Sha1 完全一致' if use_sha1 else '字节数完全一致'
     out = [row(HIDDEN_STAGE, 'SHA', '可切', x['path'], x['size'] / GIB, keep=k['path'],
-               basis='和保留的那份%s、只是名字不同；留规格标注更全 / 已刮削的那份' % how, tags=['同字节']) for x, k in moves]
+               basis='和保留的那份%s、只是名字不同；留规格标注更全的那份' % how, tags=['同字节']) for x, k in moves]
     result['hidden'] = dict(st, key='sha1' if use_sha1 else 'size', moves=len(out),
                             move_groups=len({id(k) for _, k in moves}), gb=round(sum(r['gb'] for r in out), 1))
     result['stats']['a2_l2'] = result['hidden']
