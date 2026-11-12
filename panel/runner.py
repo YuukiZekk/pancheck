@@ -183,46 +183,6 @@ def remux_vs_mainlib(cfg, rows, result, tab):
     return out
 
 
-HIDDEN_STAGE = '重复副本'        # 同字节：独立一条线（口径不变），结果归到「重复副本」，带标签
-
-
-def hidden_dupes(cfg, rows, result, tab):
-    """A2 第二层：内容完全相同、名字不同的隐藏重复（缓存模式按 Sha1，否则按字节数）。
-    已被前面各模块判可清理的份视同已搬走（当轮 build16b 也是先扣掉已搬集合）。"""
-    import sieve
-    from . import cross, dupes
-    if not tab.has('hidden_all.csv'):
-        result['hidden'] = {'skipped': '这个数据来源没有全区文件清单（CSV 模式不支持）'}
-        return []
-    use_sha1 = result['stats'].get('hash_mode') == 'sha1'
-    items = []
-    for r in tab.rows('hidden_all.csv'):
-        items.append({'path': r['path'], 'size': int(r['size']), 'zone': r['zone'], 'root_depth': int(r['root_depth']),
-                      'tier': r['tier'] == '1', 'guard': r['guard'] == '1',
-                      'key': (r['sha1'] if use_sha1 else r['size'])})
-    parked = list(sieve.EXCL) + [x for x in cfg['exclude_names'] if x not in sieve.EXCL]
-
-    def held(x):
-        p = x['path']
-        if '/BDMV/' in p.upper() or '/VIDEO_TS/' in p.upper():
-            return '碟内文件'
-        if any(w in p for w in parked):
-            return '另议包'
-        if sieve.EP.search(p.rsplit('/', 1)[1]):
-            return '剧集标记'
-        return ''
-    cut = {r['path'] for r in rows if r['bucket'] == '可切'}
-    groups = dupes.hidden_groups(items, cross.keyof)
-    moves, st = dupes.plan_hidden(groups, held, gone=lambda p: p in cut)
-    how = 'Sha1 完全一致' if use_sha1 else '字节数完全一致'
-    out = [row(HIDDEN_STAGE, 'SHA', '可切', x['path'], x['size'] / GIB, keep=k['path'],
-               basis='和保留的那份%s、只是名字不同；留规格标注更全的那份' % how, tags=['同字节']) for x, k in moves]
-    result['hidden'] = dict(st, key='sha1' if use_sha1 else 'size', moves=len(out),
-                            move_groups=len({id(k) for _, k in moves}), gb=round(sum(r['gb'] for r in out), 1))
-    result['stats']['a2_l2'] = result['hidden']
-    return out
-
-
 def main(mode, run_dir):
     os.makedirs(run_dir, exist_ok=True)
     cfg = C.load()
@@ -278,8 +238,9 @@ def main(mode, run_dir):
     for x in lone:
         rows.append(row(LONE_STAGE, '孤本', '孤本', x['path'], x['gb'], basis='原盘区、合集、REMUX 区、Emby 片库里都没有别的副本'))
 
-    emit('hidden', '查找改了名的完全重复', 75)
-    rows += hidden_dupes(cfg, rows, result, tab)
+    # 反馈 29.2：原来的同字节层（hidden_dupes）由分组前的哈希门取代——它跳过「片名相同」的同字节对子，正是漏掉的那一块
+    result['hidden'] = gst.get('hash') or {}
+    result['stats']['hash_gate'] = result['hidden']
 
     emit('b7', '比对 REMUX 与主库', 82)
     rows += remux_vs_mainlib(cfg, rows, result, tab)

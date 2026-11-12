@@ -21,6 +21,13 @@ class Tables:
     def __init__(self, dump_dir=None):
         self.dump_dir = dump_dir
         self._t = {}
+        self._o = {}                   # 只在内存里传、不落盘的东西（哈希门的文件索引、Emby 指向的路径）
+
+    def attach(self, name, obj):
+        self._o[name] = obj
+
+    def obj(self, name, default=None):
+        return self._o.get(name, default)
 
     def put(self, name, header, rows, enc=None):
         self._t[name] = [{h: _s(r.get(h)) for h in header} for r in rows]

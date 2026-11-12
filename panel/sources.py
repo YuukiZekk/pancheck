@@ -295,6 +295,9 @@ def scan_inputs(cfg, tab, progress):
         raw, stats['source'] = cd2cache.zone_items(cfg, progress, errors)
         drops = stats['source'].pop('drops', {})
         sha1 = stats['source'].pop('sha1', {})
+        allfiles = stats['source'].pop('allfiles', [])
+        if sha1:                       # 哈希门（反馈 29.2）：分区里全部文件（含没有 Sha1 的，夹里缺一个就不算指纹）+ 各自的 Sha1
+            tab.attach('sha1_index', (sorted(set(allfiles)), sha1))
     else:
         # 兜底：遍历 CD2 挂载目录（大库很慢，且每个目录都会经 CD2 向网盘发请求）
         raw, drops, sha1 = {}, {}, {}
@@ -726,6 +729,10 @@ def write_emby_csvs(cfg, tab, errors, yuanpan_paths=()):
             cur = by_tmdb.get(i['tmdb'])
             if cur is None or min(i['width'], i['height']) > min(cur):
                 by_tmdb[i['tmdb']] = (i['width'], i['height'])
+    # 哈希门（反馈 29.2）：Emby 条目指向的网盘路径（去掉前缀；strm 镜像保留目录结构）。同文件的几份里，这份先留——清掉它会断库条目
+    if pre:
+        rel = [i['path'][len(pre):] for i in items if i['path'].startswith(pre + '/')]
+        _as_tables(tab).attach('emby_rel', rel)
     path_hits = len(yp)
     tmdb_tagged = 0
     for vp in yuanpan_paths:

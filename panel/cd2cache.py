@@ -298,7 +298,7 @@ def zone_items(cfg, progress, errors):
     minb = cfg['min_video_mb'] * 1024 * 1024
     api_sql, api_args = _api_where(cfg)
     raw, tmins, tmaxs, rows_read, drops, unlisted = {}, [], [], 0, {}, {}
-    sha1 = {}
+    sha1, allfiles = {}, []
     try:
         for zone, label in S.C.ZONES:
             raw[zone], drops[zone] = [], S.Counter()
@@ -335,6 +335,7 @@ def zone_items(cfg, progress, errors):
                             disc_roots.add(ppath)
                     elif ftype == 4:
                         files.append((vp, size or 0))
+                        allfiles.append(vp)
                         if fh:
                             m = _SHA1.search(fh)
                             if m:
@@ -372,5 +373,5 @@ def zone_items(cfg, progress, errors):
                               label, u['count'], '（其中 %d 个在原盘碟内）' % u['in_disc'] if u['in_disc'] else ''))
     meta = {'kind': 'cache', 'db': db, 'open_mode': how, 'rows_read': rows_read, 'drops': drops, 'unlisted': unlisted,
             'time_min': min(tmins) if tmins else None, 'time_max': max(tmaxs) if tmaxs else None,
-            'api_name': api_args[0], 'api_user': cfg.get('cd2_api_user') or '', 'sha1': sha1}
+            'api_name': api_args[0], 'api_user': cfg.get('cd2_api_user') or '', 'sha1': sha1, 'allfiles': allfiles}
     return raw, meta

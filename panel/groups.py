@@ -34,7 +34,7 @@ KIND_NAME = {'T': '特效字幕版', 'I': '原盘', 'D': 'DIY', 'R': 'REMUX', 'O
 DIY_FAMILY = ('D', 'T')                              # 在原盘上加了字幕的：和原版成「版本对」
 RES_NAME = {'U': '4K', 'H': '1080p', 'S': '720p 及以下', '?': '画质未知'}
 ZONE_NAME = {'heji': '合集区', 'yuanpan': '原盘区', 'remux': 'REMUX 区', 'pack': '整夹合集区'}
-BUCKET = {'A': '可切', 'B': '可切', 'N': '可切', 'V': '版本型', 'U': '待定'}
+BUCKET = {'A': '可切', 'B': '可切', 'N': '可切', 'V': '版本型', 'U': '待定', 'H': '可切'}
 SMALL_GB, LOW_GB = 8, 15                             # 小文件层（同原第三刀人口口径）
 _TAG = re.compile(r'(?i)[\[【][^\]】]*(豆瓣|评分|imdb|tt\d{6,})[^\]】]*[\]】]')     # [豆瓣电影评分8.8] [tt0440963]
 _MULTI = re.compile(r'[一-鿿]{2,}\s*[+＋]\s*[一-鿿]{2,}|三部曲|四部曲|全\s*\d+\s*部|\d+\s*部合集|合集|系列\s*\d+\s*部')
@@ -561,9 +561,152 @@ def judge(ms):
     return keep, out
 
 
+# ---------------- 哈希门（反馈 29.2）----------------
+# Sha1 相同 = 同一个文件，不靠片名、不用猜：在片名分组之前先判，每个指纹留 1 份，其余可清理并退出流水线。
+# 指纹按「能整体搬走的那一份」算：单文件就是它的 Sha1；夹（盘片夹 / 单片夹）是夹里全部文件的 Sha1 排好序拼起来
+# （海报 / nfo 这类整理产物不算，外挂字幕算——多一份字幕就不是同一份东西）；多碟装是整套各碟拼起来，只有整套对上才算。
+# 夹里有一个文件没 Sha1 → 这份没有指纹、不进门；没有 Sha1 的数据源（挂载遍历 / CSV）门整个关着，不拿体积凑。
+_META_EXT = {'.nfo', '.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tbn', '.bif', '.txt', '.url', '.lnk', '.db', '.ini',
+             '.md5', '.sfv', '.torrent', '.strm', '.json', '.ds_store'}
+GATE_STAGE = STAGE
+_RES_SRC_R = {'实测': 3, '文件名': 2, '体积推断': 1, '未知': 0}
+
+
+def _fingerprint(c, paths, sha):
+    import bisect
+    import hashlib
+    hs = []
+    for u in ([pp for pp, _ in c['parts']] if c.get('parts') else [c['path']]):
+        i = bisect.bisect_left(paths, u)
+        if i < len(paths) and paths[i] == u:                    # 单个文件
+            members = [u]
+        else:                                                    # 夹：底下全部文件
+            lo, hi = bisect.bisect_left(paths, u + '/'), bisect.bisect_left(paths, u + '/\U0010ffff')
+            members = [p for p in paths[lo:hi] if os.path.splitext(p)[1].lower() not in _META_EXT]
+        if not members:
+            return ''
+        for p in members:
+            h = sha.get(p)
+            if not h:
+                return ''
+            hs.append(h)
+    return hashlib.sha1('|'.join(sorted(hs)).encode()).hexdigest() if hs else ''
+
+
+def _pointed_check(cfg, tab):
+    """→ 函数：这份是不是 Emby 条目指向的（或在主媒体库里）。清掉它会断库条目，同文件的几份里它先留。"""
+    rel = tab.obj('emby_rel') or []
+    exact = set(rel)
+    noext = {os.path.splitext(p)[0] for p in rel}
+    dirs = {p.rsplit('/', 1)[0] for p in rel}
+
+    def pointed(c):
+        p = c['path']
+        return bool(c.get('main') or p in exact or os.path.splitext(p)[0] in noext or p in dirs)
+    return pointed
+
+
+def _merge_twins(ms):
+    """同一个文件的几份，名字说的都算数：任一份说是特效字幕版 / DIY，内容就是；分辨率取最可靠的那份说的（实测 > 文件名 > 体积推断）。"""
+    donor = next((m for m in ms if m['kind'] == 'T'), None) or next((m for m in ms if m['kind'] == 'D'), None)
+    best = max(ms, key=lambda m: _RES_SRC_R.get(m['res_src'], 0))
+    for m in ms:
+        if donor is not None and m['kind'] not in DIY_FAMILY:
+            m['kind'] = donor['kind']
+            m['subfx'] = m['subfx'] or donor.get('subfx', '')
+        if _RES_SRC_R.get(best['res_src'], 0) > _RES_SRC_R.get(m['res_src'], 0):
+            m['res'], m['res_src'], m['vh'] = best['res'], best['res_src'], best.get('vh')
+
+
+def hash_gate(cs, tab, cfg):
+    """→ (过门的副本, [(多余份, 类, 保留份, 依据)], 统计)。门里只切多余份，留下的那份照常去片名分组。"""
+    idx = tab.obj('sha1_index') if tab is not None else None
+    if not idx:
+        return cs, [], {'on': False, 'why': '这次的数据来源没有 Sha1（只有读 CD2 目录缓存时才有），哈希门没开'}
+    paths, sha = idx
+    pointed = _pointed_check(cfg, tab)
+    by = defaultdict(list)
+    st = Counter()
+    for c in cs:
+        if S.EP.search(c['name'] + ' ' + c['main_name']):        # 剧集走剧集分流，不进门
+            st['skip_episode'] += 1
+            continue
+        c['fp'] = _fingerprint(c, paths, sha)
+        if c['fp']:
+            by[c['fp']].append(c)
+        else:
+            st['no_fp'] += 1
+    gone, out = set(), []
+    for ms in by.values():
+        if len(ms) < 2:
+            continue
+        st['groups'] += 1
+        _merge_twins(ms)
+        # 留哪份：锁定的（榜单包 / 排除词 / 多片同碟，本来就不动）> Emby 指向的 / 主库里的 > 名字写得最全 > 所在区 > 路径
+        ms.sort(key=lambda c: (c['locked'], pointed(c), name_score(c), ZONE_R[c['zone']], c['path']), reverse=True)
+        keep = ms[0]
+        for x in ms[1:]:
+            gone.add(id(x))
+            st['dup_gb'] += x['gb']
+            st['dup'] += 1
+            if x['locked']:
+                out.append((x, 'locked', keep, ''))
+                st['locked'] += 1
+            elif pointed(x):
+                out.append((x, 'U', keep, '和保留的那份是同一个文件（Sha1 一致），但 Emby 里这份也有条目，清掉会断那一条，请自己看'))
+                st['pointed'] += 1
+            else:
+                out.append((x, 'H', keep, '和保留的那份是同一个文件（Sha1 完全一致%s），只是名字 / 位置不同' % (
+                    '，整套 %d 碟都对上' % len(x['parts']) if x.get('parts') else '')))
+                st['cut'] += 1
+                st['cut_gb'] += x['gb']
+    st['cut_gb'] = round(st['cut_gb'], 1)
+    st['dup_gb'] = round(st['dup_gb'], 1)
+    return [c for c in cs if id(c) not in gone], out, dict(st, on=True)
+
+
+def _gate_rows(gate, rows, gout, st):
+    """门里判掉的份出行，挂到留下那份所在的卡上（一部片一张卡）；留下那份不在任何卡上就单开一张。
+    留下那份后来又被片名分组判可清理的，依据里写明真正留的是哪份。"""
+    where = {m['path']: g for g, v in gout.items() for m in v['members']}
+    later = {r['path']: r['keep'] for r in rows if r['bucket'] == '可切'}
+    extra, hid = [], 0
+    by_keep = defaultdict(list)
+    for x, cls, k, why in gate:
+        by_keep[k['path']].append((x, cls, k, why))
+    for kp, items in by_keep.items():
+        k = items[0][2]
+        g = where.get(kp)
+        if g is None:
+            hid += 1
+            g = 'h%d' % hid
+            gout[g] = {'title': _gtitle([k] + [x for x, *_ in items]), 'members': [dict(path=k['path'], role='keep', **_brief(k))]}
+        for x, cls, _, why in items:
+            if cls == 'locked':
+                gout[g]['members'].append(dict(path=x['path'], role='locked', **_brief(x)))
+                continue
+            b = BUCKET[cls]
+            gout[g]['members'].append(dict(path=x['path'], role=b, **_brief(x)))
+            final = later.get(kp)
+            basis = '同文件哈希：%s；留 %s' % (why, _desc(k))
+            if final:
+                basis += '。留下的那份又因为同片有更好的版本被判可清理，这一组真正留的是 %s' % final.rsplit('/', 1)[-1]
+            for i, (pp, pg) in enumerate(x.get('parts') or [(x['path'], x['gb'])]):
+                e = {}
+                if x.get('parts'):
+                    e = {'disc_set': len(x['parts']), 'disc_no': i + 1}
+                extra.append(dict(stage=GATE_STAGE, cls=cls, bucket=b, path=pp, gb=round(pg, 2), keep=final or k['path'],
+                                  basis=basis + ('。多碟装第 %d / %d 张，整套一起处理' % (i + 1, len(x['parts'])) if x.get('parts') else ''),
+                                  tags=['同文件哈希'] + (['多碟装'] if x.get('parts') else []), grp=g, keep_gb=round(k['gb'], 2), **e))
+                st[b] += 1
+    return extra
+
+
 def scan(cfg, gone=frozenset(), tab=None):
     """→ (rows, groups_out, stats)。rows 用 runner.row 的字段；groups_out = {组号: 成员摘要}。"""
+    tab = tables_of(tab)
     cs = copies(cfg, gone, tab)
+    cs, gate, gst = hash_gate(cs, tab, cfg)                # 反馈 29.2：哈希是一道门，片名分组只看过了门的份
     gs = group(cs)
     rows, gout = [], {}
     st = Counter()
@@ -619,7 +762,9 @@ def scan(cfg, gone=frozenset(), tab=None):
         gout[g] = {'title': _gtitle(ms), 'members': members}
     for c in cs:
         by_path[c['path']] = c
-    st['copies'] = len(cs)
+    rows += _gate_rows(gate, rows, gout, st)
+    st['copies'] = len(cs) + len(gate)
+    st['hash'] = gst
     return rows, gout, dict(st), gs
 
 

@@ -111,20 +111,21 @@ class Job:
                 self.state['tail'] = (self.state['tail'] + [line])[-30:]
         code = proc.wait()
         log.close()
-        self.state.update(running=False, exit=code, finished=time.time())
+        # 先把上轮批准带过来，再报「跑完了」：否则界面 / 调用方一看到结束就去读批准，会读到还没带过来的空表
+        msg = self.state['msg']
         if self.state.get('cancelled'):
             # 结果文件只在跑完时原子写入，停掉的任务不会留下半份结果
-            self.state['msg'] = '已停止（这次没有产出结果，之前的结果不受影响）'
-        elif code != 0 and not self.state['msg'].startswith('失败'):
-            self.state['msg'] = '失败（退出码 %s），见日志' % code
+            msg = '已停止（这次没有产出结果，之前的结果不受影响）'
+        elif code != 0 and not msg.startswith('失败'):
+            msg = '失败（退出码 %s），见日志' % code
         elif self.state.get('mode') == 'full':
             try:
                 rep = carry_after_run(self.state['run_id'])
                 if rep and rep['prev']:
-                    self.state['msg'] += '；上轮批准 %d 条：带过来 %d 条、已失效 %d 条' % (
-                        rep['prev'], rep['carried'], len(rep['dropped']))
+                    msg += '；上轮批准 %d 条：带过来 %d 条、已失效 %d 条' % (rep['prev'], rep['carried'], len(rep['dropped']))
             except Exception as e:              # 带不过来不影响结果本身；批准照旧清空，用户重新勾
-                self.state['msg'] += '；上轮批准没能带过来（%s），请重新批准' % e
+                msg += '；上轮批准没能带过来（%s），请重新批准' % e
+        self.state.update(running=False, exit=code, finished=time.time(), msg=msg)
 
     def cancel(self):
         with self.lock:

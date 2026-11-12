@@ -285,7 +285,12 @@ async function renderOverview() {
   const dh = (st.dropped || {}).heji || {};
   if (Object.keys(dh).length) h += kv('没计入', Object.entries(dh).map(([k, v]) => (k === 'small' ? '小于体积门槛' : k.slice(3) + ' 格式') + ' ' + n(v)).join('，'));
   h += kv('Emby 电影', em.movies !== undefined ? `${n(em.movies)} 部 · ${esc(em.movie_rule || '')}` : '没连上', em.movies ? 'green' : 'amber');
-  if (st.hash_mode) h += kv('改名重复分组', st.hash_mode === 'sha1' ? '按 Sha1' : '按字节数');
+  // 反馈 29.2：哈希门（同一个文件、Sha1 一致）这一轮的账
+  const hg = st.hash_gate || (r && r.hidden && r.hidden.on !== undefined ? r.hidden : null);
+  if (hg) h += kv('同文件哈希', hg.on
+    ? `${n(hg.groups || 0)} 组 · 多出 ${n(hg.dup || 0)} 份 ${fmtGB(hg.dup_gb || 0)} · 标可清理 ${n(hg.cut || 0)} 份 ${fmtGB(hg.cut_gb || 0)}`
+      + (hg.pointed ? ` · ${n(hg.pointed)} 份 Emby 也指着、待定` : '')
+    : esc(hg.why || '没开'), hg.on ? '' : 'amber');
   h += kv('执行态', execOn ? '执行已开 · ' + (ex.backend === 'cd2' ? 'CD2 直连' : '挂载改名') : (ex.allowed ? '界面已锁定' : '只读默认态'), execOn ? 'amber' : 'zinc');
   h += '<p class="kv-note">画质档：4K / 1080p / 720p 及以下 / 未知 · 带 * 为按体积推断，非实测</p>';
   const errs = (r && r.errors) || (inv && inv.errors) || [], ne = (r && r.error_count) || (inv && inv.error_count) || 0;
