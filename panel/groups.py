@@ -39,7 +39,8 @@ SMALL_GB, LOW_GB = 8, 15                             # 小文件层（同原第�
 _TAG = re.compile(r'(?i)[\[【][^\]】]*(豆瓣|评分|imdb|tt\d{6,})[^\]】]*[\]】]')     # [豆瓣电影评分8.8] [tt0440963]
 _MULTI = re.compile(r'[一-鿿]{2,}\s*[+＋]\s*[一-鿿]{2,}|三部曲|四部曲|全\s*\d+\s*部|\d+\s*部合集|合集|系列\s*\d+\s*部')
 _LAT_JUNK = re.compile(r'(?i)\b(4k|diy|uhd|hdr\d*|dv|bd|iso|remux|bluray|blu ray|web|dl|cc|criterion|collection|'
-                       r'extended|remastered|repack|proper|complete|edition|cut|version|v\d)\b')
+                       r'extended|remastered|repack|proper|complete|edition|cut|version|v\d|'
+                       r'jpn|usa|eur|gbr|fra|ger|ita|esp|aus|kor|hkg|twn|chn|nor|swe|den|ned|cee)\b')   # 发行地区代码（反馈 32：JPN 混进片名）
 
 
 # ---------------- 认片 ----------------
@@ -266,11 +267,13 @@ def _yuanpan_copies(meas, tab):
 # ---------------- 多碟装（反馈 17）----------------
 # 同一个夹里并排放着的一套多碟（Disc1/2/3、CD1/2、碟一/二、上/下集），名字只差碟号：是一份，不是几份互为重复
 _DISC_TOK = re.compile(r'^(\d{1,2}|[一二三四五六上中下]|[A-Da-d])$')
-_DISC_KW = re.compile(r'(?i)(disc|disk|cd|dvd|bd|part|pt|vol|d)[\s._\-]*\(?$|[碟盘集部第][\s._\-]*$')
+# 反馈 32：只认明确的碟号写法（Disc / CD / DVD / BD / D1 / 碟 / 盘）。「部 / 集 / 第」不算——「天龙八部 01 / 02」「第 01 集」是剧集分集；
+# Part / Vol 多半是上下两部独立上映的片（死亡圣器 Part 1 / 2），也不算
+_DISC_KW = re.compile(r'(?i)(disc|disk|cd|dvd|bd|d)[\s._\-]*\(?$|[碟盘][\s._\-]*$')
 _NOT_DISC = re.compile(r'(?i)(x26|h\.?26|\d[\.\-]|\d{3,})$')   # x264/x265、5.1/7.1、1080/2160 这类规格差一位数不算碟号
 # 名字里任意位置写着的碟号（Disc2、DISC.01、CD1、D1、第二碟、碟一、上集 / (下)）；「2-Disc Edition」这种不算
 DISC_MARK = re.compile(r'(?i)[\s._\-\[(（]*(?:dis[ck]|cd)[\s._\-]*0?(\d{1,2})(?!\d)[\])）]?'
-                       r'|[\s._\-]*(?:第[一二三四五六]碟|碟[一二三四五六])|[\s._\-]*[(（]?[上下]集[)）]?|[\s._\-]*[(（][上下][)）]')
+                       r'|[\s._\-]*(?:第[一二三四五六]碟|第\s*0?\d{1,2}\s*碟|碟[一二三四五六])|[\s._\-]*[(（]?[上下]集[)）]?|[\s._\-]*[(（][上下][)）]')
 
 
 def _norm_stem(s):
@@ -305,9 +308,37 @@ def disc_siblings(a, b, iso):
         return False
     if da in '上中下' or _DISC_KW.search(before):
         return True
-    if iso:
-        return not (before.endswith('(') and after.startswith(')'))     # 「(1)」「(2)」是重名副本记号
-    return False
+    return False                       # 反馈 32：ISO 也一样，光有编号（倚天屠龙记 -01 / -02.iso）不算碟号
+
+
+# 反馈 32：正片碟 / 花絮碟 / 花絮 1、花絮 2 也是碟的标记——同一部片的正片碟和花絮碟是一套（只认盘片文件：ISO / 盘片夹）
+EXTRA_MARK = re.compile(r'[\s._\-\[(（]*(?:正片碟|花絮碟|正片|花絮)[\s._\-]*(?:0?\d{1,2}(?!\d))?[\])）]?')
+
+
+def _strip_marks(s):
+    return _norm_stem(EXTRA_MARK.sub(' ', DISC_MARK.sub(' ', s or '')))
+
+
+def extra_siblings(a, b, iso):
+    """正片碟 + 花絮碟（或花絮 1 + 花絮 2）：至少一边写了正片 / 花絮，去掉碟号和这类标记后两边一样。"""
+    return bool(iso and a != b and (EXTRA_MARK.search(a) or EXTRA_MARK.search(b)) and _strip_marks(a) == _strip_marks(b))
+
+
+def numbered_siblings(a, b):
+    """两个名字只差一个裸编号（倚天屠龙记 -01 / -02、天龙八部 01 / 02、某片 Part 1 / 2）：不当一套（反馈 32），
+    但也不能当成同一部片的两份去比——标成「像剧集」，所在组整组挂起不判。下载重名的「(1) / (2)」不算。"""
+    if a == b:
+        return False
+    p = len(os.path.commonprefix([a, b]))
+    ra, rb = a[p:], b[p:]
+    q = len(os.path.commonprefix([ra[::-1], rb[::-1]]))
+    da, db = ra[:len(ra) - q], rb[:len(rb) - q]
+    if not (da.isdigit() and db.isdigit() and len(da) <= 3 and len(db) <= 3):
+        return False
+    before, after = a[:p], ra[len(da):]
+    if _NOT_DISC.search(before) or re.match(r'[.\-]\d(?!\d)|[A-Za-z]', after):
+        return False
+    return not (before.endswith('(') and after.startswith(')'))
 
 
 def merge_sets(cs):
@@ -315,7 +346,11 @@ def merge_sets(cs):
     buckets = defaultdict(list)
     for c in cs:
         if c['path'].rsplit('/', 1)[-1] == c['main_name'] or c['zone'] == 'heji':      # 单文件副本
-            buckets[(c['zone'], c['path'].rsplit('/', 1)[0], c['tm'], c['title'], c['year'])].append(c)
+            if S.EP.search(c['name']):                         # 反馈 32：带集号的剧集分集不参加并套
+                continue
+            # 反馈 32：分桶用去掉碟号 / 正片花絮标记之后的名字认片——不然 Disc1、Disc2 被认成两部片（thefightformoscowjpndisc1 / …disc2），分不到一个桶
+            tm, title, year = ident(EXTRA_MARK.sub(' ', DISC_MARK.sub(' ', c['name'])))
+            buckets[(c['zone'], c['path'].rsplit('/', 1)[0], tm or c['tm'], title or c['title'], year or c['year'])].append(c)
     drop, add = set(), []
     for key, ms in buckets.items():
         if len(ms) < 2 or not (key[2] or key[3]):
@@ -330,8 +365,10 @@ def merge_sets(cs):
         for i in range(len(ms)):
             for j in range(i + 1, len(ms)):
                 iso = ms[i]['form'] in ('ISO', 'BDMV') and ms[j]['form'] in ('ISO', 'BDMV')
-                if disc_siblings(stem[i], stem[j], iso):
+                if disc_siblings(stem[i], stem[j], iso) or extra_siblings(stem[i], stem[j], iso):
                     parent[find(j)] = find(i)
+                elif numbered_siblings(stem[i], stem[j]):
+                    ms[i]['series'] = ms[j]['series'] = True
         sets = defaultdict(list)
         for i in range(len(ms)):
             sets[find(i)].append(ms[i])
@@ -340,6 +377,9 @@ def merge_sets(cs):
                 continue
             parts.sort(key=lambda m: m['path'])
             u = dict(parts[0])
+            u['tm'], u['title'], u['year'] = key[2], key[3], key[4]          # 一套按去掉碟号 / 正片花絮标记后的片名认
+            bare_name = EXTRA_MARK.sub(' ', DISC_MARK.sub(' ', u['name'] + ' ' + u['main_name']))
+            u['f1'], u['text'] = _first_frag(bare_name), _flat(bare_name)
             u['parts'] = [(m['path'], round(m['gb'], 2)) for m in parts]
             u['gb'] = sum(m['gb'] for m in parts)
             u['mgb'] = u['gb']
@@ -398,9 +438,10 @@ def copies(cfg, gone=frozenset(), tab=None):
         c['res'], c['res_src'] = _res(c)
         c['small'] = c['zone'] == 'heji' and (c['gb'] < SMALL_GB or (bool(S.LOWMARK.search(c['name'])) and c['gb'] < LOW_GB))
         # 认片看夹名（单元 / 盘片夹的名字就是片名）；夹名里缺的（TMDB / 片名 / 年份）再从主文件名补。两者拼起来会让拉丁片名重复一遍，对不上单文件
-        c['tm'], c['title'], c['year'] = ident(c['name'])
+        # 反馈 32：认片前先去掉碟号（Disc1 / CD2 / 第二碟），不然同一部片的几张碟被认成几部片
+        c['tm'], c['title'], c['year'] = ident(DISC_MARK.sub(' ', c['name']))
         if c['main_name'] and c['main_name'] != c['name']:
-            tm2, t2, y2 = ident(c['main_name'])
+            tm2, t2, y2 = ident(DISC_MARK.sub(' ', c['main_name']))
             c['tm'] = c['tm'] or tm2
             if not c['title']:
                 c['title'], c['year'] = t2, c['year'] or y2
@@ -484,7 +525,7 @@ def group(cs):
 def _held(ms):
     """像剧集：≥2 份带集号，或合集区 ≥3 份在同一个夹（原盘区一个夹里平铺很多 ISO 是常态，不算）。"""
     fc = Counter(m['path'].rsplit('/', 1)[0] for m in ms if m['zone'] == 'heji')
-    return (max(fc.values()) if fc else 0) >= 3 or sum(1 for m in ms if S.EP.search(m['name'])) >= 2
+    return (max(fc.values()) if fc else 0) >= 3 or sum(1 for m in ms if S.EP.search(m['name']) or m.get('series')) >= 2
 
 
 def _desc(c):

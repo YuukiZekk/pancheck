@@ -70,6 +70,26 @@ for tag, dirn in (('k', '甲套'), ('m', '乙套')):
 put(Y + '单/壬片(1953) 4K DIY DISC.1.iso', 45, h('l1'))
 put(H + '包A/壬片.1953.2160p.mkv', 20, h('l2'))
 
+# 反馈 32：剧集分集不并套（天龙八部的「部」、ISO 光有编号），也不当同一部片的几份去切
+for i in (1, 2, 3):
+    put(Y + '单/天龙八部(1997) %02d.iso' % i, 20 + i, h('tl%d' % i))
+    put(Y + '单/倚天屠龙记(1994)-%02d.iso' % i, 15 + i, h('yt%d' % i))
+# 反馈 32：Disc1 / Disc2 认片时去掉碟号 → 并成一套
+put(Y + '单/The.Fight.for.Moscow.1985.JPN.Disc1.iso', 40, h('mo1'))
+put(Y + '单/The.Fight.for.Moscow.1985.JPN.Disc2.iso', 41, h('mo2'))
+put(H + '包A/The.Fight.for.Moscow.1985.1080p.mkv', 12, h('mo3'))
+# 反馈 32：正片碟 + 花絮碟是一套；Disc1 + Disc2 + 花絮碟三张一套；花絮 1 + 花絮 2 一套
+put(Y + '单/卡萨布兰卡(1942) 原盘 正片碟.iso', 45.9, h('ka1'))
+put(Y + '单/卡萨布兰卡(1942) 原盘 花絮碟.iso', 23.0, h('ka2'))
+put(H + '包A/卡萨布兰卡.1942.1080p.mkv', 10, h('ka3'))
+put(Y + '单/浩劫(1985) 原盘 Disc1.iso', 45.5, h('hj1'))
+put(Y + '单/浩劫(1985) 原盘 Disc2.iso', 45.5, h('hj2'))
+put(Y + '单/浩劫(1985) 原盘 花絮碟.iso', 44.3, h('hj3'))
+put(H + '包A/浩劫.1985.1080p.mkv', 11, h('hj4'))
+put(Y + '单/公民凯恩(1941) 原盘 花絮1.iso', 20, h('gm1'))
+put(Y + '单/公民凯恩(1941) 原盘 花絮2.iso', 21, h('gm2'))
+put(H + '包A/公民凯恩.1941.1080p.mkv', 10, h('gm3'))
+
 conf = os.path.join(W, 'cd2conf'); os.makedirs(conf)
 c = sqlite3.connect(os.path.join(conf, 'dir_cache.sqlite'))
 c.executescript('''CREATE TABLE cached_item (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, path TEXT NOT NULL UNIQUE, insert_time INTEGER NOT NULL);
@@ -169,5 +189,17 @@ kr = [r for r in rows if '辛片' in r['path']]
 check('K 全是套的组：整组进多碟合集，没有别的判断', len(kr) == 2 and all(r['bucket'] == '多碟合集' for r in kr), kr)
 lr = [r for r in rows if '壬片' in r['path'] and r['stage'] == '重复副本']
 check('L 没并成套的 DISC.1 照老规矩（需人工确认）', any(r['bucket'] == '待定' for r in lr) and not any(r['bucket'] == '多碟合集' for r in lr), lr)
+sr = {r['film']: r for r in rows if r['bucket'] == '多碟合集' and r.get('film')}
+def setof(word):
+    return [r for r in rows if r['bucket'] == '多碟合集' and any(word in pp for pp in r.get('parts') or [])]
+check('32 天龙八部 / 倚天屠龙记分集不并套、也不被当同一部片切', not setof('天龙八部') and not setof('倚天屠龙记')
+      and not any(('天龙八部' in r['path'] or '倚天屠龙记' in r['path']) and r['bucket'] == '可切' for r in rows),
+      [r for r in rows if '天龙八部' in r['path'] or '倚天屠龙记' in r['path']])
+check('32 莫斯科保卫战 Disc1 + Disc2 并成一套进多碟合集', len(setof('Moscow')) == 1 and setof('Moscow')[0]['disc_set'] == 2
+      and not any('Moscow' in r['path'] and r['bucket'] == '待定' for r in rows), [r for r in rows if 'Moscow' in r['path']])
+check('32 卡萨布兰卡 正片碟 + 花絮碟一套', len(setof('卡萨布兰卡')) == 1 and setof('卡萨布兰卡')[0]['disc_set'] == 2, setof('卡萨布兰卡'))
+check('32 浩劫 Disc1 + Disc2 + 花絮碟三张一套', len(setof('浩劫')) == 1 and setof('浩劫')[0]['disc_set'] == 3
+      and abs(setof('浩劫')[0]['gb'] - 135.3) < 0.1 and not any('花絮碟' in r['path'] and r['bucket'] != '多碟合集' for r in rows), [r for r in rows if '浩劫' in r['path']])
+check('32 公民凯恩 花絮 1 + 花絮 2 一套', len(setof('公民凯恩')) == 1 and setof('公民凯恩')[0]['disc_set'] == 2, setof('公民凯恩'))
 print('\nALL PASS' if not fails else '\nFAILED: %s' % fails)
 sys.exit(1 if fails else 0)
